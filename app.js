@@ -51,6 +51,22 @@
       loadSpectator();
       return false;
     }
+    if (!current || current.id !== sessionId) {
+      let summary = null;
+      try {
+        const loaded = readSaved(true);
+        state = loaded.state; summary = loaded.summary;
+      } catch (_) {
+        quarantined = true; storageOK = false;
+        showToast('最新存档无法读取，当前进度请导出备份。');
+      }
+      lastTick = Date.now();
+      try { localStorage.setItem(LEASE_KEY, JSON.stringify({ id: sessionId, expires: lastTick + 45000 })); lastLease = lastTick; }
+      catch (_) { storageOK = false; }
+      render();
+      if (document.visibilityState === 'visible') showOffline(summary);
+      return true;
+    }
     if (Date.now() - lastLease > 10000) {
       try { localStorage.setItem(LEASE_KEY, JSON.stringify({ id: sessionId, expires: Date.now() + 45000 })); lastLease = Date.now(); }
       catch (_) { storageOK = false; }
