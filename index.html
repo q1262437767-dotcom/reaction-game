@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f1e9">
+  <meta name="description" content="等屏幕变绿，马上点击。测一测你的反应速度。">
+  <title>手速实验室 · 反应力小游戏</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; color: #242720; background: #f5f1e9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; }
+    main { width: min(100% - 36px, 820px); margin: auto; padding: 38px 0 24px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; }
+    .brand { font-weight: 800; letter-spacing: .08em; }
+    .brand::before { content: "●"; color: #e4623c; margin-right: 10px; }
+    .tag { border: 1px solid #d7d5ca; border-radius: 30px; padding: 6px 12px; color: #5a6054; white-space: nowrap; }
+    h1 { margin: 46px 0 12px; font-size: clamp(32px, 6vw, 52px); line-height: 1.2; letter-spacing: -.04em; }
+    .intro { color: #626659; line-height: 1.8; margin: 0 0 26px; }
+    .arena { position: relative; width: 100%; min-height: 300px; padding: 34px 24px; border: 0; border-radius: 24px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; color: white; background: #2c342d; cursor: pointer; font: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .arena:focus-visible, .reset:focus-visible { outline: 4px solid #e4623c; outline-offset: 5px; }
+    .arena[data-state="waiting"] { background: #aa432c; }
+    .arena[data-state="ready"] { background: #257341; }
+    .arena[data-state="early"] { background: #735126; }
+    .icon { font-size: 44px; font-weight: 400; line-height: 1; }
+    .title { font-size: clamp(27px, 5vw, 42px); font-weight: 800; line-height: 1.2; }
+    .hint { font-size: 15px; opacity: .9; line-height: 1.65; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+    .stat { padding: 22px 24px; border: 1px solid #dddcd1; border-radius: 18px; background: #fbf9f3; }
+    .label { color: #696d5e; font-size: 13px; margin-bottom: 10px; }
+    .value { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .unit { font-size: 13px; font-weight: 400; color: #696d5e; margin-left: 5px; }
+    .help { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #626659; font-size: 13px; line-height: 1.7; }
+    .reset { border: 0; background: transparent; padding: 8px 0 8px 10px; text-decoration: underline; text-underline-offset: 4px; font: inherit; color: #626659; cursor: pointer; white-space: nowrap; }
+    footer { margin-top: 40px; color: #76796d; font-size: 12px; line-height: 1.8; }
+    @media (max-width: 480px) { main { padding-top: 24px; } h1 { margin-top: 34px; } .arena { min-height: 280px; } .stat { padding: 18px; } .help { align-items: flex-start; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><span class="brand">手速实验室</span><span class="tag">01 / 反应力测试</span></header>
+    <h1>你的反应，有多快？</h1>
+    <p class="intro">等区域变绿，立刻点击。别抢跑，看看自己最快能到多少毫秒。</p>
+    <button id="arena" class="arena" type="button" data-state="idle" aria-label="点击开始反应力测试">
+      <span id="icon" class="icon" aria-hidden="true">◎</span>
+      <span id="title" class="title">点击开始</span>
+      <span id="hint" class="hint">等变绿后，再点一次</span>
+    </button>
+    <div class="stats" aria-live="polite" aria-atomic="true">
+      <div class="stat"><div class="label">本次成绩</div><span id="last" class="value">—</span><span class="unit">ms</span></div>
+      <div class="stat"><div class="label">个人最佳</div><span id="best" class="value">—</span><span class="unit">ms</span></div>
+    </div>
+    <div class="help"><span>手机直接点击；电脑也可以聚焦按钮后按空格。</span><button id="reset" class="reset" type="button">清除纪录</button></div>
+    <footer>数值越小，反应越快。最佳成绩保存在当前浏览器中。</footer>
+  </main>
+  <script>
+    const arena = document.getElementById('arena');
+    const title = document.getElementById('title');
+    const hint = document.getElementById('hint');
+    const icon = document.getElementById('icon');
+    const lastLabel = document.getElementById('last');
+    const bestLabel = document.getElementById('best');
+    const recordKey = 'reaction-lab-best-v1';
+    let state = 'idle';
+    let timer = null;
+    let readyAt = 0;
+    let best = null;
+
+    try {
+      const stored = Number(localStorage.getItem(recordKey));
+      if (Number.isFinite(stored) && stored > 0) best = stored;
+    } catch (_) { /* 即使浏览器禁止存储，游戏也能继续。 */ }
+    bestLabel.textContent = best === null ? '—' : String(best);
+
+    function show(nextState, heading, detail, symbol) {
+      state = nextState;
+      arena.dataset.state = nextState;
+      title.textContent = heading;
+      hint.textContent = detail;
+      icon.textContent = symbol;
+      arena.setAttribute('aria-label', heading + '。' + detail);
+    }
+
+    function cancelTimer() {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    }
+
+    function start() {
+      cancelTimer();
+      show('waiting', '先等等…', '变绿再点，别抢跑', '···');
+      timer = setTimeout(() => {
+        timer = null;
+        requestAnimationFrame(() => {
+          if (state !== 'waiting') return;
+          readyAt = performance.now();
+          show('ready', '就是现在！', '立即点击', '↯');
+        });
+      }, 1500 + Math.random() * 2500);
+    }
+
+    arena.addEventListener('click', () => {
+      if (state === 'waiting') {
+        cancelTimer();
+        show('early', '抢跑啦', '点击再试一次，等变绿再出手', '↺');
+      } else if (state === 'ready') {
+        const elapsed = Math.max(1, Math.round(performance.now() - readyAt));
+        lastLabel.textContent = String(elapsed);
+        const isBest = best === null || elapsed < best;
+        if (isBest) {
+          best = elapsed;
+          bestLabel.textContent = String(best);
+          try { localStorage.setItem(recordKey, String(best)); } catch (_) {}
+        }
+        show('result', elapsed + ' ms', isBest ? '新的个人最佳！点击再来一局' : '点击再来一局，挑战你的最佳成绩', '✓');
+      } else {
+        start();
+      }
+    });
+
+    arena.addEventListener('keydown', event => {
+      if (event.repeat && (event.key === ' ' || event.key === 'Enter')) event.preventDefault();
+    });
+
+    document.getElementById('reset').addEventListener('click', () => {
+      cancelTimer();
+      best = null;
+      lastLabel.textContent = '—';
+      bestLabel.textContent = '—';
+      try { localStorage.removeItem(recordKey); } catch (_) {}
+      show('idle', '点击开始', '纪录已清除，等变绿后再点一次', '◎');
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && (state === 'waiting' || state === 'ready')) {
+        cancelTimer();
+        show('idle', '这一局已暂停', '回来了？点击重新开始', '↺');
+      }
+    });
+  </script>
+</body>
+</html>
+
