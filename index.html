@@ -3,141 +3,59 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f1e9">
-  <meta name="description" content="等屏幕变绿，马上点击。测一测你的反应速度。">
-  <title>手速实验室 · 反应力小游戏</title>
-  <style>
-    :root { color-scheme: light; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; color: #242720; background: #f5f1e9; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100svh; }
-    main { width: min(100% - 36px, 820px); margin: auto; padding: 38px 0 24px; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; }
-    .brand { font-weight: 800; letter-spacing: .08em; }
-    .brand::before { content: "●"; color: #e4623c; margin-right: 10px; }
-    .tag { border: 1px solid #d7d5ca; border-radius: 30px; padding: 6px 12px; color: #5a6054; white-space: nowrap; }
-    h1 { margin: 46px 0 12px; font-size: clamp(32px, 6vw, 52px); line-height: 1.2; letter-spacing: -.04em; }
-    .intro { color: #626659; line-height: 1.8; margin: 0 0 26px; }
-    .arena { position: relative; width: 100%; min-height: 300px; padding: 34px 24px; border: 0; border-radius: 24px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; color: white; background: #2c342d; cursor: pointer; font: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-    .arena:focus-visible, .reset:focus-visible { outline: 4px solid #e4623c; outline-offset: 5px; }
-    .arena[data-state="waiting"] { background: #aa432c; }
-    .arena[data-state="ready"] { background: #257341; }
-    .arena[data-state="early"] { background: #735126; }
-    .icon { font-size: 44px; font-weight: 400; line-height: 1; }
-    .title { font-size: clamp(27px, 5vw, 42px); font-weight: 800; line-height: 1.2; }
-    .hint { font-size: 15px; opacity: .9; line-height: 1.65; }
-    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
-    .stat { padding: 22px 24px; border: 1px solid #dddcd1; border-radius: 18px; background: #fbf9f3; }
-    .label { color: #696d5e; font-size: 13px; margin-bottom: 10px; }
-    .value { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .unit { font-size: 13px; font-weight: 400; color: #696d5e; margin-left: 5px; }
-    .help { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #626659; font-size: 13px; line-height: 1.7; }
-    .reset { border: 0; background: transparent; padding: 8px 0 8px 10px; text-decoration: underline; text-underline-offset: 4px; font: inherit; color: #626659; cursor: pointer; white-space: nowrap; }
-    footer { margin-top: 40px; color: #76796d; font-size: 12px; line-height: 1.8; }
-    @media (max-width: 480px) { main { padding-top: 24px; } h1 { margin-top: 34px; } .arena { min-height: 280px; } .stat { padding: 18px; } .help { align-items: flex-start; } }
-  </style>
+  <meta name="theme-color" content="#173d33">
+  <meta name="description" content="放置修仙：打坐修炼、突破境界、采药炼丹、炼器与自动历练。自动保存进度，离线最多结算八小时。">
+  <title>放置修仙 · 道途始于此刻</title>
+  <link rel="stylesheet" href="style.css?v=xian-1">
+  <script src="game.js?v=xian-1" defer></script>
+  <script src="app.js?v=xian-1" defer></script>
 </head>
 <body>
-  <main>
-    <header><span class="brand">手速实验室</span><span class="tag">01 / 反应力测试</span></header>
-    <h1>你的反应，有多快？</h1>
-    <p class="intro">等区域变绿，立刻点击。别抢跑，看看自己最快能到多少毫秒。</p>
-    <button id="arena" class="arena" type="button" data-state="idle" aria-label="点击开始反应力测试">
-      <span id="icon" class="icon" aria-hidden="true">◎</span>
-      <span id="title" class="title">点击开始</span>
-      <span id="hint" class="hint">等变绿后，再点一次</span>
-    </button>
-    <div class="stats" aria-live="polite" aria-atomic="true">
-      <div class="stat"><div class="label">本次成绩</div><span id="last" class="value">—</span><span class="unit">ms</span></div>
-      <div class="stat"><div class="label">个人最佳</div><span id="best" class="value">—</span><span class="unit">ms</span></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="./" aria-label="放置修仙首页"><span class="brand-mark" aria-hidden="true">道</span><span>放置修仙<small>一念入道 · 日积月累</small></span></a>
+      <div class="sidebar-world"><span class="live-dot"></span> 山中无岁月 <span>初入仙途</span></div>
+      <div class="nav-caption">修行技艺</div>
+      <nav id="skill-nav" aria-label="游戏导航"></nav>
+      <div class="sidebar-footer"><span>一呼一吸，皆为修行。</span><small>离线修行 · 最多结算 8 小时</small></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>洞府</span><span class="breadcrumb-slash">/</span><strong id="breadcrumb">打坐修炼</strong></div>
+        <div class="topbar-actions"><span class="coin-pill"><span aria-hidden="true">◇</span><b id="coins">25</b><small>灵石</small></span><button id="save-menu" class="icon-button" type="button" aria-label="打开存档管理">存档 <span aria-hidden="true">↗</span></button></div>
+      </header>
+      <div id="session-warning" class="notice" hidden></div>
+      <div class="content-layout">
+        <main id="main-content" class="main-content">
+          <section class="page-heading"><div><div id="section-kicker" class="eyebrow">修行 / 吐纳天地</div><h1 id="section-title">打坐修炼</h1><p id="section-description">静心吐纳，积蓄修为。一点一滴，踏上长生之路。</p></div><div id="section-level" class="level-badge"><span>技艺等级</span><strong id="skill-level">1</strong></div></section>
+          <div id="skill-xp" class="skill-xp"><div><span id="xp-label">技艺经验</span><b id="xp-number">0 / 100</b></div><div class="track"><span id="xp-fill"></span></div></div>
+          <section id="region-banner" class="region-banner" aria-label="修行之地"><div class="region-copy"><span class="region-tag">大道漫漫，从此启程</span><h2>山间洞府</h2><p>云起青山，灵气渐聚。守得一方清静，自有一日精进。</p><div class="region-meta"><span>● 灵气充盈</span><span>修炼持续进行</span></div></div><div id="region-scene" class="region-scene" aria-hidden="true"></div></section>
+          <div id="section-tools" class="section-tools"><h2 id="cards-title">选择修炼法门</h2><span id="cards-subtitle">选定一项活动后，便会持续自动进行。</span></div>
+          <section id="cards" class="cards" aria-label="活动选择"></section>
+          <section id="combat-display" class="combat-display" hidden></section>
+          <p id="empty-state" class="empty-state" hidden></p>
+          <section id="cultivation-profile" class="cultivation-profile" aria-label="境界与修为"></section>
+          <section id="journey" class="journey"><div class="section-row"><h2>初入仙途</h2><span id="journey-count">0 / 4</span></div><div id="journey-steps" class="journey-steps"></div></section>
+          <section class="log-panel"><div class="section-row"><h2>修行记录</h2><span>最近的进展</span></div><ul id="event-log"><li>道友，先从打坐开始，积蓄第一次突破的修为。</li></ul></section>
+        </main>
+        <aside class="right-rail" aria-label="角色与当前活动">
+          <section class="player-card">
+            <div class="player-heading"><div class="avatar" aria-hidden="true">仙</div><div><strong>无名道友</strong><span>修行自此始，前路自此开。</span></div><span class="player-badge">散修</span></div>
+            <div class="realm-panel"><div class="realm-heading"><span>当前境界</span><strong id="realm-name">炼气一层</strong></div><div class="realm-progress-label"><span id="realm-next">下一境界：炼气二层</span><b id="cultivation-number">0 / 80</b></div><div class="track realm-track"><span id="realm-fill"></span></div><button id="breakthrough" class="primary-button breakthrough-button" type="button" disabled>修为尚不足</button></div>
+            <div class="hp-heading"><span>气血</span><b id="hp-number">100 / 100</b></div><div class="track hp-track"><span id="hp-fill"></span></div>
+            <div class="player-stats"><div><small>攻击</small><strong id="attack">0</strong></div><div><small>防御</small><strong id="defense">0</strong></div><div><small>历练胜场</small><strong id="kills">0</strong></div></div><div class="equipment-label">当前法器</div><div id="equipment" class="equipment"></div><div class="food-note"><span aria-hidden="true">◉</span><span>受伤时自动服用丹药</span><b id="food-count">5</b></div>
+          </section>
+          <section class="activity-card"><div class="activity-caption"><span id="activity-status">尚未开始修行</span><span class="live-dot"></span></div><div id="activity-icon" class="activity-icon" aria-hidden="true">☯</div><h2 id="activity-name">静心，开始修行</h2><p id="activity-detail">打坐、采集、炼制或历练，选定后即可自动进行。</p><div class="track activity-track"><span id="activity-fill"></span></div><div class="activity-timing"><span id="activity-time">等待开始</span><span id="activity-percent">—</span></div><button id="stop-action" class="secondary-button" type="button" disabled>停止修行</button><div class="offline-note">离开网页后，也会按当前活动结算修行所得。</div></section>
+          <section class="tip-card"><span class="eyebrow">修行手记</span><p id="game-tip">打坐积累修为，突破提升实力。采药炼丹可为历练恢复生命，采矿炼器可提升攻击和防御。</p><div class="tip-links"><button type="button" data-view="mining">去采矿 ↗</button><button type="button" data-view="smithing">去炼器 ↗</button></div></section>
+          <div class="save-status"><span id="save-dot" class="live-dot"></span><span id="save-status">自动存档已开启</span></div>
+        </aside>
+      </div>
+      <footer class="page-footer"><span>放置修仙 <span class="footer-dot">·</span> 初入仙途 v1.0</span><span>修行进度保存在当前浏览器。</span></footer>
     </div>
-    <div class="help"><span>手机直接点击；电脑也可以聚焦按钮后按空格。</span><button id="reset" class="reset" type="button">清除纪录</button></div>
-    <footer>数值越小，反应越快。最佳成绩保存在当前浏览器中。</footer>
-  </main>
-  <script>
-    const arena = document.getElementById('arena');
-    const title = document.getElementById('title');
-    const hint = document.getElementById('hint');
-    const icon = document.getElementById('icon');
-    const lastLabel = document.getElementById('last');
-    const bestLabel = document.getElementById('best');
-    const recordKey = 'reaction-lab-best-v1';
-    let state = 'idle';
-    let timer = null;
-    let readyAt = 0;
-    let best = null;
-
-    try {
-      const stored = Number(localStorage.getItem(recordKey));
-      if (Number.isFinite(stored) && stored > 0) best = stored;
-    } catch (_) { /* 即使浏览器禁止存储，游戏也能继续。 */ }
-    bestLabel.textContent = best === null ? '—' : String(best);
-
-    function show(nextState, heading, detail, symbol) {
-      state = nextState;
-      arena.dataset.state = nextState;
-      title.textContent = heading;
-      hint.textContent = detail;
-      icon.textContent = symbol;
-      arena.setAttribute('aria-label', heading + '。' + detail);
-    }
-
-    function cancelTimer() {
-      if (timer !== null) clearTimeout(timer);
-      timer = null;
-    }
-
-    function start() {
-      cancelTimer();
-      show('waiting', '先等等…', '变绿再点，别抢跑', '···');
-      timer = setTimeout(() => {
-        timer = null;
-        requestAnimationFrame(() => {
-          if (state !== 'waiting') return;
-          readyAt = performance.now();
-          show('ready', '就是现在！', '立即点击', '↯');
-        });
-      }, 1500 + Math.random() * 2500);
-    }
-
-    arena.addEventListener('click', () => {
-      if (state === 'waiting') {
-        cancelTimer();
-        show('early', '抢跑啦', '点击再试一次，等变绿再出手', '↺');
-      } else if (state === 'ready') {
-        const elapsed = Math.max(1, Math.round(performance.now() - readyAt));
-        lastLabel.textContent = String(elapsed);
-        const isBest = best === null || elapsed < best;
-        if (isBest) {
-          best = elapsed;
-          bestLabel.textContent = String(best);
-          try { localStorage.setItem(recordKey, String(best)); } catch (_) {}
-        }
-        show('result', elapsed + ' ms', isBest ? '新的个人最佳！点击再来一局' : '点击再来一局，挑战你的最佳成绩', '✓');
-      } else {
-        start();
-      }
-    });
-
-    arena.addEventListener('keydown', event => {
-      if (event.repeat && (event.key === ' ' || event.key === 'Enter')) event.preventDefault();
-    });
-
-    document.getElementById('reset').addEventListener('click', () => {
-      cancelTimer();
-      best = null;
-      lastLabel.textContent = '—';
-      bestLabel.textContent = '—';
-      try { localStorage.removeItem(recordKey); } catch (_) {}
-      show('idle', '点击开始', '纪录已清除，等变绿后再点一次', '◎');
-    });
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden && (state === 'waiting' || state === 'ready')) {
-        cancelTimer();
-        show('idle', '这一局已暂停', '回来了？点击重新开始', '↺');
-      }
-    });
-  </script>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="offline-dialog" class="game-dialog"><form method="dialog"><button class="dialog-close" aria-label="关闭离线收益">×</button><div class="dialog-symbol" aria-hidden="true">☯</div><div class="eyebrow">道友，欢迎归来</div><h2>山中一日，修行未歇。</h2><p id="offline-duration"></p><div id="offline-rewards" class="offline-rewards"></div><p id="offline-stop" class="dialog-hint"></p><button class="primary-button" value="close">继续修行</button></form></dialog>
+  <dialog id="save-dialog" class="game-dialog"><button id="close-save" class="dialog-close" type="button" aria-label="关闭存档管理">×</button><div class="eyebrow">留存修行所得</div><h2>存档与备份</h2><p>游戏会自动保存。导出一份备份，可以把修行进度带到另一个浏览器。</p><div class="save-options"><button id="export-save" class="primary-button" type="button">导出存档</button><label class="secondary-button file-label" for="import-file">选择存档文件<input id="import-file" type="file" accept="application/json,.json"></label></div><div id="import-preview" class="import-preview" hidden><p id="import-description"></p><button id="confirm-import" type="button" class="primary-button">载入这份存档</button><small>载入后会替换当前进度，请先导出备份。</small></div><p id="save-message" class="dialog-hint" role="status"></p></dialog>
+  <noscript><div class="noscript">这个小游戏需要浏览器启用 JavaScript。</div></noscript>
 </body>
 </html>
-
