@@ -115,8 +115,18 @@
     if (!owner || !renew()) { lastTick = Date.now(); return null; }
     const now = Date.now(), delta = Math.max(0, now - lastTick);
     lastTick = now;
+    const wasCombat = state.active?.kind === 'combat';
     const summary = G.advance(state, delta);
     state.updatedAt = now;
+    if (!$('advanced-mode').open) {
+      if (state.active && actionById[state.active.id].skill === 'cultivation') {
+        const best = G.bestCultivation(state);
+        if (best.id !== state.active.id) G.start(state, best.id);
+      } else if (wasCombat && summary.stopped) {
+        G.start(state, G.bestCultivation(state).id);
+        summary.stopped = '历练结束，已返回修炼。';
+      }
+    }
     if (summary.actions || summary.stopped) render();
     else renderProgress();
     if (summary.stopped) showToast(summary.stopped);
@@ -142,10 +152,13 @@
   function renderSaveStatus() {
     $('save-status').textContent = !owner ? '此标签页查看存档' : !storageOK ? '无法自动保存，请导出备份' : '已自动保存 · ' + new Date(lastSave || Date.now()).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     $('save-dot').style.background = storageOK && owner ? '' : '#c49355';
+    $('simple-save-status').textContent = $('save-status').textContent;
   }
   function renderSession() {
     $('session-warning').hidden = owner;
     if (!owner) $('session-warning').innerHTML = '<span>修行正在另一个标签页进行。这里显示最近存档。</span>' + button('在这里继续修行', 'data-op="takeover"', false, 'secondary-button');
+    $('simple-warning').hidden = owner;
+    if (!owner) $('simple-warning').innerHTML = '另一个标签页正在修行。' + button('在这里继续', 'data-op="takeover"', false, 'secondary-button');
   }
   function renderNav() {
     $('skill-nav').innerHTML = Object.entries(G.SKILLS).map(([id, skill]) => '<button type="button" class="nav-button' + (view === id ? ' selected' : '') + '" data-view="' + id + '" data-key="nav-' + id + '"' + (view === id ? ' aria-current="page"' : '') + '><span class="nav-icon">' + skill.icon + '</span><span class="nav-name">' + skill.name + '</span><span class="nav-level">' + G.level(state.xp[id]) + '</span></button>').join('') + '<div class="nav-caption nav-separator">随身行囊</div>' + ['bag', 'shop'].map((id) => '<button type="button" class="nav-button' + (view === id ? ' selected' : '') + '" data-view="' + id + '" data-key="nav-' + id + '"' + (view === id ? ' aria-current="page"' : '') + '><span class="nav-icon">' + (id === 'bag' ? '▣' : '◈') + '</span><span class="nav-name">' + views[id].place + '</span><span class="nav-level">' + (id === 'bag' ? Object.keys(state.inventory).length : '↗') + '</span></button>').join('');
@@ -242,9 +255,37 @@
     }).join('');
     $('food-count').textContent = n(Object.entries(state.inventory).reduce((sum, [id, qty]) => sum + (G.ITEMS[id].heal ? qty : 0), 0));
     $('event-log').innerHTML = state.log.slice().reverse().map((entry) => '<li>' + esc(entry) + '</li>').join('');
-    $('game-tip').textContent = view === 'cultivation' ? '先打坐积累修为，约一分钟就能进行首次突破。突破按钮在上方境界卡片，后续境界还需准备丹药与灵石。' : view === 'combat' ? '开始历练前穿戴法器并备好丹药。气血偏低会自动服丹，丹药耗尽后受伤可能被击退。' : '采药和灵植提供丹药原料，采矿和炼器打造法器。背包里的多余物品可以出售换灵石。';
+    $('game-tip').textContent = view === 'cultivation' ? '积累修为就能突破。首页会自动选用已解锁的高效功法，不用手动挑选。' : view === 'combat' ? '首页会帮你挑选合适的妖兽，获胜后恢复部分气血。也可以在这里自行挑战其他目标。' : '采药炼丹、采矿炼器是可选玩法。首页也可以用灵石一键提升装备。';
+  }
+  function renderSimple() {
+    const realm = G.realmInfo(state), stats = G.stats(state);
+    const current = state.active && actionById[state.active.id];
+    const training = current?.skill === 'cultivation', fighting = current?.kind === 'combat';
+    $('simple-realm').textContent = realm.current.name;
+    $('simple-next').textContent = realm.next ? '下一境界：' + realm.next.name : '已达化神之境';
+    $('simple-cultivation').textContent = n(state.cultivation) + (realm.next ? ' / ' + n(realm.cost.cultivation) : '') + ' 修为';
+    $('simple-fill').style.width = realm.percent + '%';
+    $('simple-practice').textContent = training ? '暂停修炼' : fighting ? '返回修炼' : '开始修炼';
+    $('simple-practice').disabled = !owner;
+    $('simple-breakthrough').textContent = realm.next ? '突破境界' : '已至化神';
+    $('simple-breakthrough').disabled = !owner || !realm.canBreakthrough;
+    $('simple-breakthrough').title = realm.reason || '修为足够，点击突破。';
+    $('simple-hint').textContent = !owner ? '在这里接管后，就能继续修行。' : realm.canBreakthrough ? '修为已满，点「突破境界」提升实力。' : training ? '正在自动修炼 · 每次 +' + n(G.cultivationGain(state, current)) + ' 修为' : fighting ? '正在自动历练 · 随时可以返回修炼。' : current ? '正在' + current.name + '，也可以切回修炼。' : '点「开始修炼」，就会自动积累修为。';
+    $('simple-coins').textContent = n(state.coins);
+    $('simple-attack').textContent = n(stats.attack);
+    $('simple-defense').textContent = n(stats.defense);
+    $('simple-expedition').textContent = fighting ? '返回修炼' : '开始历练';
+    $('simple-expedition').disabled = !owner;
+    const gear = G.upgradeInfo(state);
+    $('simple-gear').textContent = !gear.next ? '装备已满级' : gear.next.cost === 0 ? '穿戴' + gear.next.name : '提升装备 · ' + n(gear.next.cost) + ' 灵石';
+    $('simple-gear').disabled = !owner || !gear.canUpgrade;
+    $('simple-gear').title = gear.reason || (gear.next ? '下次提升：' + gear.next.name : '当前装备已满级');
+    $('simple-combat').hidden = !fighting;
+    if (fighting) $('simple-combat').innerHTML = '<div class="simple-battle-heading"><span>' + current.enemy.icon + ' ' + esc(current.enemy.name) + '</span><span>气血 ' + n(state.hp) + ' / ' + n(stats.maxHp) + '</span></div><div class="simple-progress-head"><span>妖兽气血</span><b>' + n(state.enemyHp) + ' / ' + current.enemy.hp + '</b></div><div class="simple-track"><span style="width:' + state.enemyHp / current.enemy.hp * 100 + '%"></span></div>';
+    $('simple-log').innerHTML = state.log.slice(-3).reverse().map((entry) => '<li>' + esc(entry) + '</li>').join('');
   }
   function renderProgress() {
+    renderSimple();
     const a = state.active && actionById[state.active.id];
     $('stop-action').disabled = !a || !owner;
     $('activity-status').textContent = !owner ? '在其他标签页修行' : a ? a.kind === 'combat' ? '正在自动历练' : '正在持续修行' : '当前未修行';
@@ -292,6 +333,10 @@
     }
     const id = target.dataset.id;
     switch (target.dataset.op) {
+      case 'practice': mutate(() => { if (state.active && actionById[state.active.id].skill === 'cultivation') { G.stop(state); return { reason: '已暂停修炼。' }; } return G.start(state, G.bestCultivation(state).id); }); break;
+      case 'expedition': mutate(() => state.active?.kind === 'combat' ? G.start(state, G.bestCultivation(state).id) : G.startExpedition(state)); break;
+      case 'gear': mutate(() => G.upgradeEquipment(state)); break;
+      case 'save': tick(false); $('save-dialog').showModal(); break;
       case 'action': mutate(() => { if (state.active?.id === id) { G.stop(state); return { reason: '已暂停修行。' }; } return G.start(state, id); }); break;
       case 'equip': mutate(() => G.equip(state, id)); break;
       case 'sell': mutate(() => G.sell(state, id, target.dataset.qty === 'all' ? state.inventory[id] : Number(target.dataset.qty))); break;
@@ -368,6 +413,7 @@
     if (event.key === LEASE_KEY && owner) renew();
     if (event.key === SAVE_KEY && !owner) loadSpectator();
   });
+  $('simple-scene').innerHTML = scene();
   render();
   if (owner) persist();
   showOffline(initialSummary);

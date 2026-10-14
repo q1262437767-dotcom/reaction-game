@@ -71,17 +71,23 @@
   var REALMS = [
     { id: 'qi_1', name: '炼气一层', cost: { cultivation: 0, coins: 0, items: {} }, attack: 0, defense: 0, maxHp: 100, multiplier: 1 },
     { id: 'qi_2', name: '炼气二层', cost: { cultivation: 80, coins: 0, items: {} }, attack: 1, defense: 0, maxHp: 106, multiplier: 1.25 },
-    { id: 'qi_3', name: '炼气三层', cost: { cultivation: 220, coins: 20, items: {} }, attack: 2, defense: 1, maxHp: 112, multiplier: 1.6 },
-    { id: 'qi_4', name: '炼气四层', cost: { cultivation: 600, coins: 50, items: { cooked_fish: 2 } }, attack: 3, defense: 1, maxHp: 118, multiplier: 2 },
-    { id: 'qi_5', name: '炼气五层', cost: { cultivation: 1600, coins: 100, items: { cooked_fish: 3 } }, attack: 5, defense: 2, maxHp: 126, multiplier: 2.6 },
-    { id: 'qi_6', name: '炼气六层', cost: { cultivation: 4500, coins: 250, items: { cooked_fish: 6 } }, attack: 7, defense: 3, maxHp: 135, multiplier: 3.4 },
-    { id: 'qi_7', name: '炼气七层', cost: { cultivation: 12000, coins: 600, items: { cooked_trout: 2 } }, attack: 9, defense: 4, maxHp: 145, multiplier: 4.6 },
-    { id: 'qi_8', name: '炼气八层', cost: { cultivation: 32000, coins: 1500, items: { cooked_trout: 5 } }, attack: 12, defense: 5, maxHp: 158, multiplier: 6.2 },
-    { id: 'qi_9', name: '炼气九层', cost: { cultivation: 85000, coins: 3000, items: { cooked_trout: 10 } }, attack: 15, defense: 7, maxHp: 175, multiplier: 8.5 },
-    { id: 'foundation', name: '筑基', cost: { cultivation: 250000, coins: 10000, items: { cooked_trout: 25, ancient_shard: 3 } }, attack: 24, defense: 10, maxHp: 220, multiplier: 14 },
-    { id: 'golden_core', name: '金丹', cost: { cultivation: 1000000, coins: 40000, items: { cooked_trout: 80, ancient_shard: 15 } }, attack: 40, defense: 15, maxHp: 300, multiplier: 25 },
-    { id: 'nascent_soul', name: '元婴', cost: { cultivation: 5000000, coins: 150000, items: { cooked_trout: 200, ancient_shard: 60 } }, attack: 65, defense: 22, maxHp: 420, multiplier: 45 },
-    { id: 'spirit', name: '化神', cost: { cultivation: 25000000, coins: 600000, items: { cooked_trout: 500, ancient_shard: 200 } }, attack: 100, defense: 35, maxHp: 600, multiplier: 85 }
+    { id: 'qi_3', name: '炼气三层', cost: { cultivation: 220, coins: 0, items: {} }, attack: 2, defense: 1, maxHp: 112, multiplier: 1.6 },
+    { id: 'qi_4', name: '炼气四层', cost: { cultivation: 600, coins: 0, items: {} }, attack: 3, defense: 1, maxHp: 118, multiplier: 2 },
+    { id: 'qi_5', name: '炼气五层', cost: { cultivation: 1600, coins: 0, items: {} }, attack: 5, defense: 2, maxHp: 126, multiplier: 2.6 },
+    { id: 'qi_6', name: '炼气六层', cost: { cultivation: 4500, coins: 0, items: {} }, attack: 7, defense: 3, maxHp: 135, multiplier: 3.4 },
+    { id: 'qi_7', name: '炼气七层', cost: { cultivation: 12000, coins: 0, items: {} }, attack: 9, defense: 4, maxHp: 145, multiplier: 4.6 },
+    { id: 'qi_8', name: '炼气八层', cost: { cultivation: 32000, coins: 0, items: {} }, attack: 12, defense: 5, maxHp: 158, multiplier: 6.2 },
+    { id: 'qi_9', name: '炼气九层', cost: { cultivation: 85000, coins: 0, items: {} }, attack: 15, defense: 7, maxHp: 175, multiplier: 8.5 },
+    { id: 'foundation', name: '筑基', cost: { cultivation: 250000, coins: 0, items: {} }, attack: 24, defense: 10, maxHp: 220, multiplier: 14 },
+    { id: 'golden_core', name: '金丹', cost: { cultivation: 1000000, coins: 0, items: {} }, attack: 40, defense: 15, maxHp: 300, multiplier: 25 },
+    { id: 'nascent_soul', name: '元婴', cost: { cultivation: 5000000, coins: 0, items: {} }, attack: 65, defense: 22, maxHp: 420, multiplier: 45 },
+    { id: 'spirit', name: '化神', cost: { cultivation: 25000000, coins: 0, items: {} }, attack: 100, defense: 35, maxHp: 600, multiplier: 85 }
+  ];
+  var SIMPLE_GEAR_STEPS = [
+    { id: 'easy_bronze_sword', name: '青铜剑', icon: '⚔️', description: '提升攻击，历练更快。购买后自动装备。', cost: 60, item: 'bronze_sword' },
+    { id: 'easy_bronze_armor', name: '青铜法袍', icon: '🥋', description: '减少受到的伤害。购买后自动装备。', cost: 90, item: 'bronze_armor' },
+    { id: 'easy_iron_sword', name: '玄铁剑', icon: '⚔️', description: '进一步提升攻击，挑战更强妖兽。购买后自动装备。', cost: 220, item: 'iron_sword' },
+    { id: 'easy_iron_armor', name: '玄铁法袍', icon: '🥋', description: '以玄铁灵纹护身。购买后自动装备。', cost: 300, item: 'iron_armor' }
   ];
   var ACTION_BY_ID = Object.create(null);
   var SHOP_BY_ID = Object.create(null);
@@ -181,6 +187,99 @@
       if (offer.type === 'upgrade' && offer.skill === action.skill && state.upgrades[offer.id]) factor *= offer.multiplier;
     });
     return Math.max(1000, Math.round(action.duration * factor));
+  }
+  function bestCultivation(state) {
+    var best = null;
+    var bestRate = -1;
+    ACTIONS.forEach(function (action) {
+      if (!action.cultivation || !canStart(state, action.id).ok) return;
+      var rate = cultivationGain(state, action) / duration(state, action);
+      if (rate > bestRate) { best = action; bestRate = rate; }
+    });
+    return best;
+  }
+  function recommendedCombat(state) {
+    var currentStats = stats(state);
+    var recovery = currentStats.maxHp * 0.2;
+    var best = null;
+    var bestRate = -1;
+    ACTIONS.forEach(function (action) {
+      if (action.kind !== 'combat' || !canStart(state, action.id).ok) return;
+      var rounds = Math.ceil(action.enemy.hp / currentStats.attack);
+      var damage = (rounds - 1) * Math.max(1, action.enemy.attack - currentStats.defense);
+      // Each victory restores this amount, so these encounters remain sustainable without pills.
+      if (damage > recovery || damage >= state.hp) return;
+      var rate = action.enemy.coins / (rounds * duration(state, action));
+      if (rate > bestRate) { best = action; bestRate = rate; }
+    });
+    return best;
+  }
+  function startExpedition(state) {
+    // The simple home-screen action includes preparation; manual combat keeps its existing health rules.
+    state.hp = stats(state).maxHp;
+    var action = recommendedCombat(state);
+    if (!action) return { ok: false, reason: '暂时没有适合的历练目标，提升境界或法器后再来。' };
+    var result = start(state, action.id);
+    if (!result.ok) return result;
+    return { ok: true, reason: '已整备气血，开始历练' + action.name + '。' };
+  }
+  function gearPower(id) {
+    var item = ITEMS[id];
+    return item ? (item.attack || 0) + (item.defense || 0) : 0;
+  }
+  function strongestOwned(state, slot) {
+    var best = state.equipment[slot] || null;
+    Object.keys(ITEMS).forEach(function (id) {
+      if (ITEMS[id].slot === slot && state.inventory[id] > 0 && gearPower(id) > gearPower(best)) best = id;
+    });
+    return best;
+  }
+  function upgradeInfo(state) {
+    var step = 0;
+    SIMPLE_GEAR_STEPS.forEach(function (offer) {
+      var slot = ITEMS[offer.item].slot;
+      if (gearPower(state.equipment[slot]) >= gearPower(offer.item)) step++;
+    });
+    // Claiming an already-owned upgrade takes priority over spending more spirit stones.
+    var slots = ['weapon', 'armor'];
+    for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+      var slot = slots[slotIndex];
+      var owned = strongestOwned(state, slot);
+      if (owned && gearPower(owned) > gearPower(state.equipment[slot])) {
+        var ownedOffer = SIMPLE_GEAR_STEPS.filter(function (offer) { return offer.item === owned; })[0];
+        if (ownedOffer) {
+          return {
+            next: Object.assign({}, ownedOffer, { cost: 0, owned: true }),
+            canUpgrade: true, reason: '背包中已有' + ITEMS[owned].name + '，可免费穿戴。', step: step, total: SIMPLE_GEAR_STEPS.length
+          };
+        }
+      }
+    }
+    for (var offerIndex = 0; offerIndex < SIMPLE_GEAR_STEPS.length; offerIndex++) {
+      var offer = SIMPLE_GEAR_STEPS[offerIndex];
+      var itemSlot = ITEMS[offer.item].slot;
+      if (gearPower(strongestOwned(state, itemSlot)) >= gearPower(offer.item)) continue;
+      var canUpgrade = state.coins >= offer.cost;
+      return {
+        next: Object.assign({}, offer, { owned: false }), canUpgrade: canUpgrade,
+        reason: canUpgrade ? '花费 ' + offer.cost + ' 灵石，购买后自动装备。' : '还需 ' + (offer.cost - state.coins) + ' 灵石。',
+        step: step, total: SIMPLE_GEAR_STEPS.length
+      };
+    }
+    return { next: null, canUpgrade: false, reason: '法器已全部升至玄铁。', step: step, total: SIMPLE_GEAR_STEPS.length };
+  }
+  function upgradeEquipment(state) {
+    var info = upgradeInfo(state);
+    if (!info.canUpgrade || !info.next) return { ok: false, reason: info.reason };
+    var offer = info.next;
+    if (!offer.owned) {
+      state.coins -= offer.cost;
+      state.inventory[offer.item] = (state.inventory[offer.item] || 0) + 1;
+    }
+    var result = equip(state, offer.item);
+    if (!result.ok) return result;
+    var message = offer.owned ? '已免费装备' + offer.name + '。' : '花费 ' + offer.cost + ' 灵石，已装备' + offer.name + '。';
+    return { ok: true, reason: message };
   }
   function addLog(state, message) {
     state.log.push(message);
@@ -287,6 +386,7 @@
           summary.coins += gainedCoins;
           Object.keys(action.enemy.loot).forEach(function (id) { changeItem(state, summary, id, action.enemy.loot[id]); });
           awardXp(state, summary, 'combat', action.xp * 2);
+          state.hp = Math.min(stats(state).maxHp, state.hp + Math.ceil(stats(state).maxHp * 0.2));
           addLog(state, '击败' + action.enemy.name + '，获得 ' + gainedCoins + ' 灵石。');
           state.enemyHp = action.enemy.hp;
         } else {
@@ -423,9 +523,10 @@
   }
 
   return {
-    MAX_OFFLINE_MS: MAX_OFFLINE_MS, SKILLS: SKILLS, ITEMS: ITEMS, ACTIONS: ACTIONS, SHOP: SHOP, REALMS: REALMS,
+    MAX_OFFLINE_MS: MAX_OFFLINE_MS, SKILLS: SKILLS, ITEMS: ITEMS, ACTIONS: ACTIONS, SHOP: SHOP, REALMS: REALMS, SIMPLE_GEAR_STEPS: SIMPLE_GEAR_STEPS,
     fresh: fresh, level: level, xpInfo: xpInfo, stats: stats, duration: duration,
     cultivationGain: cultivationGain, realmInfo: realmInfo, breakthrough: breakthrough,
+    bestCultivation: bestCultivation, recommendedCombat: recommendedCombat, startExpedition: startExpedition, upgradeInfo: upgradeInfo, upgradeEquipment: upgradeEquipment,
     canStart: canStart, start: start, stop: stop, advance: advance,
     hydrate: hydrate, equip: equip, sell: sell, buy: buy
   };
