@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101c23">
+  <title>遗迹小队 · 双人探险</title>
+  <meta name="description" content="灯火未熄，探险继续。独自出发，或邀请一位朋友，探索苔石深处的秘密。">
+  <link rel="stylesheet" href="style.css?v=1">
+  <script defer src="engine.js?v=1"></script>
+  <script defer src="renderer.js?v=1"></script>
+  <script defer src="vendor/peerjs.min.js?v=1"></script>
+  <script defer src="net.js?v=1"></script>
+  <script defer src="app.js?v=1"></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="遗迹小队首页"><span class="brand-mark" aria-hidden="true"><i></i></span><span>遗迹小队<small>RUIN RUNNERS</small></span></a>
+      <div class="header-note"><span class="live-dot"></span>一盏灯，两位探险家</div>
+      <nav class="header-actions" aria-label="游戏菜单">
+        <button id="open-camp" class="button-quiet" title="营地与装备"><span aria-hidden="true">◇</span><span>营地</span></button>
+        <button id="help-game" class="icon-button" title="操作指南" aria-label="操作指南">?</button>
+        <button id="mute-game" class="icon-button" title="切换声音" aria-label="切换声音" aria-pressed="false"><span aria-hidden="true">♪</span></button>
+        <button id="pause-game" class="icon-button" title="暂停游戏" aria-label="暂停游戏"><span class="pause-icon" aria-hidden="true"></span></button>
+      </nav>
+    </header>
+
+    <section class="game-stage" aria-label="遗迹探险游戏">
+      <div id="game-wrap" class="game-wrap">
+        <canvas id="game" width="960" height="600" tabindex="0" aria-label="遗迹探险游戏画面，使用 WASD 移动，鼠标瞄准并攻击，空格闪避，E 互动。"></canvas>
+        <div class="game-grain" aria-hidden="true"></div>
+        <div class="hud">
+          <div class="hud-location"><span class="eyebrow">探索中</span><strong id="hud-stage">苔石前庭</strong><span id="hud-objective">清除敌人，寻找出口</span></div>
+          <div class="hud-stats">
+            <div class="stat stat-health"><span class="stat-symbol" aria-hidden="true">♥</span><span id="hud-health">100 / 100</span></div>
+            <div class="stat stat-dash"><span class="stat-symbol" aria-hidden="true">↯</span><span id="hud-dash">闪避就绪</span></div>
+            <div class="stat stat-loot"><span class="stat-symbol" aria-hidden="true">◆</span><span id="hud-loot">0</span></div>
+            <div class="stat stat-team"><span class="stat-symbol" aria-hidden="true">◉</span><span id="hud-team">独自探险</span></div>
+          </div>
+        </div>
+
+        <div id="start-screen" class="screen start-screen">
+          <div class="start-copy">
+            <span class="chapter-tag"><i></i> 第一章 · 苔石之下</span>
+            <h1>灯火未熄。<br><span>一起向遗迹深处。</span></h1>
+            <p class="start-description">穿过沉睡的石门，躲开暗处的守卫。<br>带上勇气，也可以带上一位朋友。</p>
+            <div class="start-buttons"><button id="solo-start" class="button button-primary"><span>独自探险</span><span aria-hidden="true">↗</span></button><button id="open-coop" class="button button-secondary"><span class="duo-icon" aria-hidden="true">♧</span>邀请朋友</button></div>
+            <div class="loadout-row"><label for="start-loadout">出发装备</label><select id="start-loadout"><option value="pistol">旅人手枪</option><option value="scatter" disabled>散射枪 · 待解锁</option></select><span class="loadout-dot" aria-hidden="true"></span></div>
+            <p id="campaign-status" class="campaign-status">每次探索，都能带回新的故事。</p>
+          </div>
+          <div class="start-corner"><span>01</span><i></i>每一段旅程，从营地出发</div>
+        </div>
+
+        <div id="pause-screen" class="screen centered-screen" hidden>
+          <section class="screen-card"><span class="dialog-kicker">TAKE A BREATH</span><span class="card-emblem" aria-hidden="true">Ⅱ</span><h2 id="pause-title">在灯火边歇一会儿</h2><p id="pause-copy">遗迹会等你。准备好后，继续向前。</p><div class="stack-actions"><button id="resume-game" class="button button-primary">继续探险 <span aria-hidden="true">→</span></button><button id="restart-game" class="button button-secondary">重新出发</button><button id="back-camp" class="text-button">返回营地</button></div></section>
+        </div>
+
+        <div id="end-screen" class="screen centered-screen" hidden>
+          <section class="screen-card end-card"><span class="dialog-kicker">A STORY TO BRING HOME</span><span class="card-emblem relic-emblem" aria-hidden="true">◆</span><h2 id="end-title">带着宝藏归来</h2><p id="end-copy">石门之后的秘密，已成为你们的故事。</p><div id="end-reward" class="reward-box">获得遗物</div><div class="stack-actions"><button id="end-restart" class="button button-primary">再探一次 <span aria-hidden="true">↗</span></button><button id="end-camp" class="button button-secondary">返回营地</button></div></section>
+        </div>
+
+        <div id="interaction-hint" class="interaction-hint" role="status" hidden></div>
+        <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+        <div id="touch-controls" class="touch-controls" hidden><div id="joystick" class="joystick" aria-label="移动摇杆"><div id="joystick-stick" class="joystick-stick"></div></div><div class="touch-actions"><button id="touch-interact" class="touch-button touch-interact" aria-label="互动">E</button><button id="touch-dash" class="touch-button touch-dash" aria-label="闪避">↯</button><button id="touch-shoot" class="touch-button touch-shoot" aria-label="射击">＋</button></div></div>
+      </div>
+      <footer class="game-footer"><div class="controls-hint"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动</span><span class="mouse-hint"><i aria-hidden="true"></i> 瞄准 / 攻击</span><span><kbd>空格</kbd> 闪避</span><span><kbd>E</kbd> 互动</span></div><span class="footer-note">探索 · 协作 · 把故事带回来</span></footer>
+    </section>
+    <div class="page-caption"><span>一个可以和朋友分享的小小冒险</span><span>耳机就绪，勇气装满。<span class="tiny-star" aria-hidden="true">✦</span></span></div>
+  </main>
+
+  <dialog id="help-dialog" class="modal"><div class="dialog-heading"><span class="dialog-kicker">FIELD NOTES</span><button id="close-help" class="icon-button close-dialog" aria-label="关闭指南">×</button></div><h2>探险家的口袋手册</h2><p class="dialog-intro">留意脚下的机关，也别忘了身边的伙伴。</p><div class="help-grid"><div><span class="help-key">W A S D</span><strong>自由移动</strong><p>也可以使用方向键，寻找合适的位置。</p></div><div><span class="help-key">鼠标左键</span><strong>瞄准并攻击</strong><p>指向目标，按住左键持续射击。</p></div><div><span class="help-key">SPACE</span><strong>翻滚闪避</strong><p>穿过危险，短暂的无敌时间能救你一命。</p></div><div><span class="help-key">E</span><strong>与身边互动</strong><p>搬起道具、投掷、穿过石门或救起队友。</p></div></div><div class="field-tip"><span aria-hidden="true">✦</span><p>木箱可以挡住攻击。试试把爆炸桶扔向敌人，或用水罐熄灭火焰。</p></div><div class="help-bottom"><span><kbd>ESC</kbd> 暂停 / 继续</span><span>手机端使用屏幕摇杆与按钮</span></div></dialog>
+
+  <dialog id="coop-dialog" class="modal coop-modal"><div class="dialog-heading"><span class="dialog-kicker">BETTER TOGETHER</span><button id="close-coop" class="icon-button close-dialog" aria-label="关闭联机面板">×</button></div><h2>给朋友留一个位置</h2><p class="dialog-intro">创建一间营地，分享房间码，就能一起出发。</p><button id="host-room" class="button button-primary full-width">创建双人房间 <span aria-hidden="true">＋</span></button><div class="or-divider"><span>或加入朋友的房间</span></div><div class="join-form"><label class="sr-only" for="room-code">房间码</label><input id="room-code" type="text" maxlength="12" placeholder="输入房间码" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="join-room" class="button button-secondary">加入</button></div><div class="room-ticket"><span class="eyebrow">你的房间码</span><div class="room-code-row"><strong id="room-id">— — — — — —</strong><button id="copy-room" class="text-button">复制</button></div><p id="room-message" role="status">两个人，一起把故事带回来。</p></div><div class="room-bottom"><button id="leave-room" class="text-button">离开房间</button><button id="start-room" class="button button-primary" disabled>等待伙伴 <span aria-hidden="true">→</span></button></div><p class="quiet-note">房主选择出发装备，队友准备好后即可开始。</p></dialog>
+
+  <dialog id="camp-dialog" class="modal camp-modal"><div class="dialog-heading"><span class="dialog-kicker">BACK AT THE CAMP</span><button id="camp-close" class="icon-button close-dialog" aria-label="关闭营地">×</button></div><h2>火光里的小小收获</h2><p id="camp-copy" class="dialog-intro">把遗迹里的晶石带回营地，为下一次出发添一点底气。</p><div class="equipment-card"><div class="equipment-art" aria-hidden="true"><i class="pixel-gun"></i><span>Ⅱ</span></div><div class="equipment-copy"><span class="eyebrow">营地工坊</span><h3>散射枪</h3><p>一次射出多枚弹丸，适合近距离突破包围。</p><button id="unlock-scatter" class="button button-primary">解锁散射枪 <span aria-hidden="true">◆</span></button></div></div><p class="quiet-note">已解锁的装备与带回的晶石会保存在这台设备上。</p></dialog>
+</body>
+</html>
