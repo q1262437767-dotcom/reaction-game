@@ -1,9 +1,9 @@
 (function () {
   'use strict';
-  const E = window.AdventureEngine, R = window.AdventureRenderer;
+  const E = window.AdventureEngine, R = window.AdventureRenderer, C = window.AdventureCampaign;
   const $ = id => document.getElementById(id);
   const canvas = $('game'), ctx = canvas.getContext('2d');
-  const STORE = 'ruins-squad-camp-v1';
+  const STORE = 'ruins-squad-camp-v2', LEGACY_STORE = 'ruins-squad-camp-v1';
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol';
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
@@ -12,15 +12,11 @@
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, active: false };
   const touch = { mx: 0, my: 0, shoot: false, dash: false, interact: false };
   let dashPulse = false, interactPulse = false;
-  const blank = () => ({ v: 1, coins: 0, wins: 0, runs: 0, scatter: false, clearedRuns: [] });
+  const blank = () => C.normalize(null);
   function readCamp() {
     try {
-      const raw = JSON.parse(localStorage.getItem(STORE) || 'null');
-      if (!raw || raw.v !== 1) return blank();
-      return { v: 1, coins: Math.max(0, Math.min(1000000, Number(raw.coins) || 0)),
-        wins: Math.max(0, Number(raw.wins) || 0), runs: Math.max(0, Number(raw.runs) || 0),
-        scatter: raw.scatter === true,
-        clearedRuns: Array.isArray(raw.clearedRuns) ? raw.clearedRuns.filter(x => typeof x === 'string').slice(-80) : [] };
+      const raw = JSON.parse(localStorage.getItem(STORE) || localStorage.getItem(LEGACY_STORE) || 'null');
+      return C.normalize(raw);
     } catch (_) { storageOK = false; return camp || blank(); }
   }
   function writeCamp() {
@@ -65,17 +61,54 @@
       } else if (event.type === 'player-hit') tone(92, 0.13, 0.04, 'sawtooth');
       else if (event.type === 'dash') tone(420, 0.075, 0.02);
       else if (event.type === 'explosion') tone(55, 0.22, 0.05, 'sawtooth');
-      else if (event.type === 'room-clear' || event.type === 'revive') tone(680, 0.18, 0.03);
+      else if (['room-clear', 'revive', 'relic-selected', 'cache-searched', 'wave-clear'].includes(event.type)) tone(680, 0.18, 0.03);
     }
   }
   function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
+  function missionInfo(id) { return C.MISSIONS.find(mission => mission.id === id) || C.MISSIONS[0]; }
+  function selectedMission() { return missionInfo($('mission-select').value).id; }
+  function selectedDifficulty() { return $('difficulty-select').value === '2' ? 2 : 1; }
+  function escapeHTML(value) { return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
+  function showMission() {
+    const mission = missionInfo(selectedMission()), completion = camp.missions[mission.id];
+    $('mission-name').textContent = mission.name;
+    $('mission-description').textContent = mission.description;
+    $('mission-goal').textContent = mission.goal;
+    $('mission-reward').textContent = `带回 ${mission.reward + (selectedDifficulty() === 2 ? 20 : 0)} 星屑`;
+    const unlocked = C.canPlay(camp, mission.id, selectedDifficulty());
+    $('mission-lock').textContent = unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
+    $('mission-lock').hidden = false;
+    $('solo-start').disabled = !unlocked;
+    if (!state && net && net.connected && net.role === 'host') net.send({ type: 'lobby', mission: mission.id, difficulty: selectedDifficulty() });
+  }
   function updateCamp() {
     const option = $('start-loadout').querySelector('option[value="scatter"]');
     option.disabled = !camp.scatter; option.textContent = camp.scatter ? '散射枪' : '散射枪 · 待解锁';
-    $('campaign-status').textContent = camp.wins ? `已通关 ${camp.wins} 次 · 营地星屑 ${camp.coins}` : '约 5–10 分钟一局 · 通关带回 40 星屑';
-    $('camp-copy').textContent = `已完成 ${camp.runs} 次探险，通关 ${camp.wins} 次。现有 ${camp.coins} 星屑。${storageOK ? '进度保存在当前浏览器。' : '当前浏览器未允许保存，刷新后进度可能丢失。'}`;
+    const progress = C.progress(camp);
+    $('campaign-status').textContent = `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
+    $('mission-progress').textContent = `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
+    $('camp-copy').textContent = `营地三盏灯已点亮 ${progress.lit} 盏。${progress.allCleared ? '所有任务已完成，可挑战险境和收集遗物。' : '完成三个不同的任务，让营地重新亮起来。'}现有 ${camp.coins} 星屑。${storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
+    $('camp-objectives').innerHTML = C.MISSIONS.map((mission, i) => {
+      const complete = camp.missions[mission.id].clears > 0;
+      return `<div class="camp-lamp${complete ? ' lit' : ''}" data-complete="${complete}"><i aria-hidden="true"></i><strong>第 ${i + 1} 盏营灯</strong><span>${escapeHTML(mission.name)} · ${complete ? '已点亮' : '等待修复'}</span></div>`;
+    }).join('');
+    $('journal-list').innerHTML = C.BADGES.map(badge => {
+      const earned = camp.badges.includes(badge.id);
+      return `<div class="journal-item${earned ? ' earned' : ''}"><span class="journal-icon" aria-hidden="true"><span>${earned ? '◆' : '◇'}</span></span><div><strong>${escapeHTML(badge.name)}</strong><p>${escapeHTML(badge.description)}</p></div><span class="journal-status">${earned ? '已达成' : '未达成'}</span></div>`;
+    }).join('');
+    for (const mission of C.MISSIONS) {
+      const item = $('mission-select').querySelector(`option[value="${mission.id}"]`);
+      item.disabled = !C.canPlay(camp, mission.id, 1);
+      item.textContent = `${mission.name}${item.disabled ? ' · 待解锁' : camp.missions[mission.id].clears ? ' · 已完成' : ''}`;
+    }
+    if (!C.canPlay(camp, selectedMission(), 1)) $('mission-select').value = 'ember';
+    const hard = $('difficulty-select').querySelector('option[value="2"]');
+    hard.disabled = !progress.allCleared;
+    hard.textContent = progress.allCleared ? '险境 · 更多危险与奖励' : '险境 · 三盏营灯后开启';
+    if (!progress.allCleared) $('difficulty-select').value = '1';
     $('unlock-scatter').disabled = camp.scatter || camp.coins < 30;
     $('unlock-scatter').textContent = camp.scatter ? '已解锁 · 出发前可选择' : `30 星屑解锁${camp.coins < 30 ? ' · 通关一局即可' : ''}`;
+    showMission();
   }
   function closeDialogs() {
     ['help-dialog', 'camp-dialog', 'coop-dialog'].forEach(id => { if ($(id).open) $(id).close(); });
@@ -119,12 +152,16 @@
     if (isCoop && (!net || !net.connected || net.role !== 'host')) return;
     if (!isCoop) shutdownNet();
     mode = isCoop ? 'host' : 'solo';
-    state = E.create({ players: isCoop ? 2 : 1, loadout: selectedWeapon(), seed: Date.now() >>> 0 });
+    let mission = selectedMission(), difficulty = selectedDifficulty();
+    // Restart the actual expedition, including after the player edited camp settings.
+    if (state && state.mission) { mission = state.mission.id; difficulty = state.difficulty || 1; }
+    if (!C.canPlay(camp, mission, difficulty)) { toast('这项任务尚未解锁，请先完成前一项任务。'); return; }
+    state = E.create({ players: isCoop ? 2 : 1, loadout: selectedWeapon(), seed: Date.now() >>> 0, mission, difficulty });
     if (state.players.p2) state.players.p2.weapon = remoteWeapon;
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; displayPause();
-    if (isCoop && !net.send({ type: 'start', state: E.snapshot(state), runId })) {
+    if (isCoop && !net.send({ type: 'start', state: E.snapshot(state, true), runId })) {
       pause(true, false); toast('开局消息尚未送达，请稍后点“重新出发”。');
     }
     enableAudio(); canvas.focus(); hud();
@@ -133,16 +170,19 @@
     if (!state || state.status === 'playing' || finished === runId) return;
     finished = runId; clearInput(); paused = false; $('pause-screen').hidden = true;
     if (storageOK) camp = readCamp();
-    let reward = 0;
-    if (!camp.clearedRuns.includes(runId)) {
-      camp.clearedRuns.push(runId); camp.clearedRuns = camp.clearedRuns.slice(-80); camp.runs++;
-      if (state.status === 'won') { reward = Math.min(52, Math.max(0, Number(state.reward && state.reward.coins) || 40)); camp.coins += reward; camp.wins++; }
-      writeCamp();
-    } else if (state.status === 'won') reward = Number(state.reward && state.reward.coins) || 40;
+    const result = C.applyResult(camp, state, runId);
+    camp = result.profile;
+    if (!result.duplicate) writeCamp();
+    const reward = result.reward;
     const won = state.status === 'won';
-    $('end-title').textContent = won ? '炉心已熄，带着星屑归来' : '这次，走到这里';
+    const mission = missionInfo(state.mission && state.mission.id);
+    $('end-title').textContent = won ? `${mission.name} · 任务完成` : '这次，走到这里';
     $('end-copy').textContent = won ? `击败 ${state.stats.kills} 名守卫 · 用时 ${Math.floor(state.elapsed / 60)} 分 ${Math.floor(state.elapsed % 60)} 秒${state.secretCleared ? ' · 找到了隐藏星藏' : ''}` : '倒下也没关系。利用木箱挡弹，看到红色预警就闪避，再试一次。';
     $('end-reward').textContent = won ? `+ ${reward} 星屑 · 营地现有 ${camp.coins}` : `本局未带回星屑 · 营地仍有 ${camp.coins}`;
+    $('end-goal').textContent = `营灯 ${C.progress(camp).lit} / 3 · ${won ? mission.goal : state.objective}`;
+    $('end-unlocks').textContent = result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
+    $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
+    if (won && C.progress(camp).nextMission) { $('mission-select').value = C.progress(camp).nextMission; showMission(); }
     $('end-restart').disabled = mode === 'guest';
     $('end-restart').textContent = mode === 'guest' ? '等待房主重新出发' : '再探一次 ↗';
     $('end-screen').hidden = false;
@@ -157,7 +197,8 @@
   function validState(s) {
     if (!s || s.version !== 1 || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || s.room.index > 6 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (!s.players || !s.players.p1 || !s.players.p2 || Object.keys(s.players).length !== 2) return false;
-    const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, rooms: 7 };
+    if (!s.mission || !C.MISSIONS.some(m => m.id === s.mission.id) || ![1, 2].includes(s.difficulty) || !Array.isArray(s.runBuffs) || s.runBuffs.length > 3) return false;
+    const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, rooms: 7, interactables: 30 };
     for (const [key, cap] of Object.entries(limits)) if (!Array.isArray(s[key]) || s[key].length > cap) return false;
     for (const p of Object.values(s.players)) if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp)) return false;
     return true;
@@ -178,6 +219,9 @@
     if (msg.type === 'pause' && typeof msg.paused === 'boolean') {
       pause(msg.paused, false);
       if (net.role === 'host') net.send({ type: 'pause', paused: msg.paused, reason: 'partner' });
+    }
+    if (msg.type === 'lobby' && net.role === 'guest' && C.MISSIONS.some(m => m.id === msg.mission)) {
+      $('room-message').textContent = `队长选择：${missionInfo(msg.mission).name}${msg.difficulty === 2 ? ' · 险境' : ' · 普通'}，等待出发。`;
     }
   }
   function disconnectedPeer() {
@@ -205,12 +249,15 @@
         $('start-room').textContent = instance.role === 'host' ? '一起出发 →' : '等待房主出发';
         $('room-message').textContent = instance.role === 'host' ? '搭档已到齐，可以一起出发。' : '已加入，等待房主开始探险。';
         if (instance.role === 'guest') instance.send({ type: 'loadout', weapon: selectedWeapon() });
+        else instance.send({ type: 'lobby', mission: selectedMission(), difficulty: selectedDifficulty() });
       }, onMessage: receive,
       onDisconnect() { if (net === instance) disconnectedPeer(); }
     });
     net = instance; return instance;
   }
   $('solo-start').onclick = () => begin(false);
+  $('mission-select').addEventListener('change', showMission);
+  $('difficulty-select').addEventListener('change', showMission);
   $('open-coop').onclick = () => { enableAudio(); openDialog('coop-dialog'); };
   $('host-room').onclick = async () => {
     const connection = setupNet(); $('host-room').disabled = true; $('join-room').disabled = true;
@@ -311,6 +358,8 @@
     $('hud-dash').textContent = p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     $('hud-loot').textContent = `${camp.coins} 星屑`;
     $('hud-team').textContent = state && Object.keys(state.players).length === 2 ? (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
+    const buffs = { pierce: '穿透棱镜', swift: '疾风羽饰', vigor: '生命苔石' };
+    $('route-progress').textContent = state && state.mission ? `${missionInfo(state.mission.id).name} · ${state.difficulty === 2 ? '险境' : '普通'} · ${state.mission.progress} / ${state.mission.total}${state.runBuffs.length ? ' · ' + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '完成三个任务，点亮三盏营灯';
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
     $('interaction-hint').textContent = hint || ''; $('interaction-hint').hidden = !hint;
     $('touch-controls').hidden = !playing() || paused || hasDialog();
@@ -333,10 +382,10 @@
       }
     } else accumulator = 0;
     if (mode === 'host' && net && net.connected && state && now - lastSend >= 50) {
-      net.send({ type: 'state', state: E.snapshot(state), runId }); lastSend = now;
+      net.send({ type: 'state', state: E.snapshot(state, true), runId }); lastSend = now;
     }
     settle();
-    try { if (state) R.draw(ctx, state, { localId: localId(), now }); else R.preview(ctx); }
+    try { if (state) R.draw(ctx, state, { localId: localId(), now }); else R.preview(ctx, C.progress(camp)); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);

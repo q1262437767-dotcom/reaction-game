@@ -153,6 +153,61 @@
     for(let i=0;i<4;i++){const a=i*Math.PI/2+.5;rect(c,x+Math.cos(a)*r-3,y+Math.sin(a)*r*.5-4,6,4,'#8d9b7a');}
     label(c,'补水泉',x,y+r*.6+12,'#a6c5ad',8);
   }
+  function interactable(c, item, time, state, localId) {
+    if (!item || (item.kind === 'relic' && item.used)) return;
+    const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
+    const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
+    const color = kind === 'cache' ? '#9ac9c3' : kind === 'relic' ? item.buff === 'vigor' ? '#e3a38a' : item.buff === 'swift' ? '#b9d698' : '#a0c8df' : kind === 'extraction' ? '#bed6a3' : '#e9c780';
+    shadow(c, x, y, kind === 'beacon' ? 28 : 19, .3);
+    if (active) {
+      glow(c, x, y - 8, nearby ? 66 : 44, kind === 'cache' ? '#a6d8cc1c' : '#d3d8a51c');
+      c.strokeStyle = color + (nearby ? 'a0' : '48'); c.lineWidth = nearby ? 2 : 1; c.setLineDash([4,5]); c.beginPath(); c.ellipse(x, y + 7, 25 + Math.sin(time * .003) * 2, 11, 0, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
+    }
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    if (kind === 'cache') {
+      rect(c, -20, -11, 40, 26, '#112c2c'); rect(c, -18, -11, 36, 23, '#405d58'); rect(c, -16, -9, 32, 18, '#5a7970'); rect(c, -16, -9, 5, 18, '#829982'); rect(c, 11, -9, 5, 18, '#345650');
+      rect(c, -19, item.used ? -21 : -16, 38, 7, item.used ? '#849f87' : '#7d9e8b'); rect(c, -16, item.used ? -22 : -17, 32, 3, '#a7bca0');
+      if (item.used) { rect(c, -14, -11, 28, 6, '#203f39'); rect(c, -9, -6, 18, 3, '#b6b389'); }
+      else { rect(c, -4, -11, 8, 16, active ? '#b9d9c3' : '#857e60'); rect(c, -8, -7, 16, 7, active ? '#9fc9b6' : '#857e60'); rect(c, -2, -6, 4, 5, active ? '#edf2c7' : '#263e36'); }
+      rect(c, -18, 10, 36, 4, '#294b40');
+    } else if (kind === 'beacon') {
+      const mission = state.mission || {}, running = mission.phase === 'defend', lit = mission.started || mission.phase === 'extract';
+      ellipse(c, 0, 11, 29, 12, '#152e2c'); ellipse(c, 0, 7, 25, 11, '#5d7258'); ellipse(c, 0, 3, 21, 9, '#81916a'); ellipse(c, 0, 1, 15, 6, '#3e5948');
+      rect(c, -8, -28, 16, 30, '#233e33'); rect(c, -6, -28, 12, 27, '#75855f'); rect(c, -5, -28, 4, 26, '#acac77'); rect(c, -11, -34, 22, 8, '#9a9b65'); rect(c, -8, -37, 16, 4, '#c6b87a');
+      crystal(c, 0, -45 + Math.sin(time * .004) * 2, 1.05, lit ? '#f5d98a' : '#90a379');
+      if (lit) {
+        glow(c, 0, -44, 80, '#f0c66d2b'); path(c, [[0,-50],[0,-105]], '#ead59318', 15); path(c, [[0,-50],[0,-105]], '#eed79a50', 2);
+        for (let i = 0; i < 3; i++) { const rise = (time * .022 + i * 21) % 65; alpha(c, 1 - rise / 65, () => rect(c, Math.sin(i * 5 + time * .002) * 11, -42 - rise, 2, 4, '#f0d791')); }
+        c.strokeStyle = running ? '#e5bd6c66' : '#d6d8a066'; c.lineWidth = 2; c.beginPath(); c.ellipse(0, 6, 41 + Math.sin(time * .004) * 3, 18, 0, 0, Math.PI * 2); c.stroke();
+      }
+      c.restore();
+      const waveText = running ? `第 ${num(mission.wave, 1)} / ${num(mission.waves, 3)} 波` : mission.phase === 'prep' ? `下一波 ${Math.ceil(num(mission.prep))} 秒` : mission.phase === 'extract' ? '守夜完成' : '启动后守住三波';
+      label(c, waveText, x, y - 74, lit ? '#f1d78e' : '#a9bd93', 10);
+      if (lit) { bar(c, x, y + 28, 58, num(mission.progress) / Math.max(1, num(mission.total, 3)), '#d9bd77', 3); }
+      label(c, nearby && active ? 'E · ' + (item.label || '启动信标') : item.label || '守夜信标', x, y + 43, nearby && active ? '#f3dfaa' : color, 9);
+      return;
+    } else if (kind === 'extraction') {
+      ellipse(c, 0, 6, 31, 14, '#16342d'); ellipse(c, 0, 3, 27, 12, active ? '#6a8c61' : '#4c6250'); ellipse(c, 0, 1, 21, 9, '#254837');
+      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; rect(c, Math.cos(a) * 25 - 3, Math.sin(a) * 10 - 1, 6, 4, active ? '#b2d097' : '#667e5b'); }
+      rect(c, -3, -43, 6, 43, '#445f45'); rect(c, -2, -44, 3, 42, active ? '#c8d4a1' : '#7b9067');
+      c.fillStyle = active ? '#a4c786' : '#637b58'; c.beginPath(); c.moveTo(1,-42); c.lineTo(25,-35); c.lineTo(4,-25); c.closePath(); c.fill();
+      if (active) { glow(c, 1, -35, 55, '#a9d59220'); path(c, [[-13,-12],[-6,-19],[1,-12]], '#c4ddac', 3); path(c, [[-13,-20],[-6,-27],[1,-20]], '#c4ddac88', 2); }
+    } else if (kind === 'relic') {
+      ellipse(c, 0, 6, 19, 8, '#213e36'); rect(c, -14, -3, 28, 9, '#4d6753'); rect(c, -12, -6, 24, 5, '#879a72');
+      const bob = Math.sin(time * .003 + x) * 3; c.translate(0, bob - 22); glow(c, 0, 0, 37, item.buff === 'vigor' ? '#e3a38a22' : item.buff === 'swift' ? '#b9d69822' : '#a0c8df22');
+      if (item.buff === 'swift') {
+        c.save(); c.rotate(.45); rect(c,-3,-13,6,26,'#729675');rect(c,-1,-13,2,28,'#e1e6b6');for(let i=0;i<4;i++){rect(c,-9+i*2,-10+i*5,8-i,4,'#b8cf99');rect(c,2,-9+i*5,7-i,4,'#8eb789');}c.restore();
+      } else if (item.buff === 'vigor') {
+        rect(c,-10,-6,20,13,'#56774f');rect(c,-7,-10,14,20,'#8cab76');rect(c,-3,-8,6,16,'#e5bd92');rect(c,-8,-3,16,6,'#e5bd92');rect(c,-2,-7,3,14,'#f5d8aa');
+      } else {
+        c.save();c.rotate(Math.PI/4);rect(c,-10,-10,20,20,'#527c87');rect(c,-7,-7,14,14,'#9cc8ce');rect(c,-4,-4,8,8,'#e6eac2');c.restore();path(c,[[-17,1],[17,-2]],'#cfebe0',2);rect(c,12,-4,7,4,'#eff5c7');
+      }
+    }
+    c.restore();
+    const name = item.used ? '已回收' : item.label || (kind === 'cache' ? '物资箱' : kind === 'extraction' ? '撤离点' : '遗物');
+    label(c, nearby && active ? 'E · ' + name : name, x, y + (kind === 'relic' ? 25 : 30), item.used ? '#758f7b' : active ? color : '#7e927b', kind === 'relic' ? 9 : 10);
+    if (nearby && item.description && !item.used) label(c, item.description, x, y + (kind === 'relic' ? 42 : 47), active ? '#c6d0aa' : '#94a58c', 8);
+  }
   function fire(c, f, time) {
     const x = num(f.x), y = num(f.y), r = num(f.r, 20);
     ellipse(c, x, y + 4, r, r * .5, '#1b2925');
@@ -254,11 +309,12 @@
         const rr = boss ? 104 : 38;
         ellipse(c, x, y + 5, rr, rr * .65, '#e696631b'); c.strokeStyle = '#de947a'; c.lineWidth = 2; c.setLineDash([6,5]); c.beginPath(); c.ellipse(x, y + 5, rr, rr * .65, 0, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
       } else {
-        const angle = Math.atan2(num(e.aimY, y) - y, num(e.aimX, x + 100) - x), length = boss ? 550 : kind === 'shooter' ? 500 : 60;
+        const angle = Math.atan2(num(e.aimY, y) - y, num(e.aimX, x + 100) - x), length = boss ? 550 : kind === 'shooter' ? 500 : kind === 'charger' ? 360 : 60;
         const tx = x + Math.cos(angle) * length, ty = y + Math.sin(angle) * length;
-        path(c, [[x,y],[tx,ty]], '#d0876a22', boss ? 18 : 9); c.setLineDash([7,5]); path(c, [[x,y],[tx,ty]], '#eea17b9c', 2); c.setLineDash([]);
+        path(c, [[x,y],[tx,ty]], kind === 'charger' ? '#ef8d702b' : '#d0876a22', boss ? 18 : kind === 'charger' ? 29 : 9); c.setLineDash([7,5]); path(c, [[x,y],[tx,ty]], kind === 'charger' ? '#ffb692cc' : '#eea17b9c', 2); c.setLineDash([]);
       }
     }
+    if (kind === 'charger' && e.chargeTime > 0) { const a = Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', 18); }
     c.save(); c.translate(Math.round(x), Math.round(y));
     if (boss) {
       glow(c, 0, -12, 56, '#cfa66217');
@@ -269,6 +325,17 @@
       rect(c, -10, -35, 7, 4, '#e7b96d'); rect(c, 4, -35, 7, 4, '#e7b96d'); rect(c, -8, -26, 16, 3, '#334b3e');
       c.save(); c.rotate(Math.PI / 4); rect(c, -6, -7, 12, 12, '#c8ab63'); rect(c, -3, -4, 6, 6, '#eee0a0'); c.restore();
       grass(c, -12, -48, '#9cab6b'); grass(c, 12, -42, '#879f63');
+    } else if (kind === 'shield') {
+      rect(c,-10,3+step,7,12,'#172b29');rect(c,4,3-step,7,12,'#172b29');rect(c,-10,4+step,7,7,'#827f68');rect(c,4,4-step,7,7,'#827f68');
+      rect(c,-14,-16,28,24,'#172c2b');rect(c,-12,-15,24,21,'#65796c');rect(c,-11,-14,7,19,'#a0a68a');rect(c,5,-13,7,18,'#405d54');rect(c,-13,3,27,5,'#b49b66');
+      rect(c,-11,-33,22,21,'#1c3330');rect(c,-10,-32,20,18,'#a4aa8b');rect(c,-9,-31,5,16,'#bec29a');rect(c,4,-30,5,16,'#6e8770');rect(c,-9,-24,18,5,'#293f37');rect(c,-6,-23,4,2,'#e7c584');rect(c,3,-23,4,2,'#e7c584');rect(c,-13,-33,26,5,'#687f62');rect(c,-3,-37,6,5,'#c5b078');
+      c.save();c.rotate(num(e.facing)+(e.shieldOpen>0||e.stun>0?-.5:0));rect(c,14,-18,9,36,'#142e2a');rect(c,15,-17,8,34,e.shieldOpen>0||e.stun>0?'#748975':'#b3a56c');rect(c,14,-13,8,26,'#6e8163');rect(c,20,-11,4,22,e.shieldOpen>0||e.stun>0?'#91a080':'#d4c18a');rect(c,17,-5,8,10,'#b8aa75');rect(c,18,-2,6,4,'#e1ce97');c.restore();
+    } else if (kind === 'charger') {
+      rect(c,-12,2+step,8,12,'#263b31');rect(c,5,2-step,8,12,'#263b31');rect(c,-11,4+step,7,7,'#9d7d5e');rect(c,5,4-step,7,7,'#9d7d5e');
+      rect(c,-15,-14,30,23,'#20382d');rect(c,-13,-13,26,20,'#a87e58');rect(c,-12,-12,7,18,'#d1a06d');rect(c,6,-11,7,17,'#785c47');rect(c,-14,3,29,5,'#6d6549');
+      rect(c,-12,-30,24,19,'#263a30');rect(c,-10,-29,20,19,'#b69b70');rect(c,-9,-28,6,16,'#d6bf87');rect(c,-7,-22,4,4,e.windup>0?'#f3b071':'#493c31');rect(c,4,-22,4,4,e.windup>0?'#f3b071':'#493c31');rect(c,-5,-14,10,4,'#69593d');
+      rect(c,-17,-28,7,5,'#bbab7f');rect(c,-20,-33,5,9,'#dec996');rect(c,10,-28,7,5,'#aa9b74');rect(c,15,-33,5,9,'#d9c38e');rect(c,-5,-33,10,6,'#8a674a');rect(c,-2,-37,4,7,'#ca8858');
+      if(e.windup>0){rect(c,-2,-52,5,9,'#efb281');rect(c,-2,-40,5,3,'#efb281');}
     } else if (kind === 'shooter' || kind === 'ranged') {
       rect(c, -8, 4 + step, 6, 10, '#172b29'); rect(c, 3, 4 - step, 6, 10, '#172b29'); rect(c, -8, 5 + step, 5, 6, '#6f6456'); rect(c, 3, 5 - step, 5, 6, '#6f6456');
       rect(c, -12, -13, 24, 21, '#142a2a'); rect(c, -10, -12, 20, 18, '#746a65'); rect(c, -9, -12, 5, 16, '#968979'); rect(c, 4, -9, 6, 15, '#514f50'); rect(c, -10, 4, 21, 4, '#a7895b');
@@ -283,6 +350,7 @@
     }
     if (e.hitFlash > 0 || e.flash > 0) { c.globalCompositeOperation = 'screen'; rect(c, boss ? -21 : -10, boss ? -43 : -24, boss ? 42 : 20, boss ? 55 : 31, '#d9d69c60'); }
     c.restore();
+    if (kind === 'shield') { if(e.shieldOpen>0||e.stun>0)label(c,'破绽',x,y-46,'#eac891',8);else{c.strokeStyle='#d3c38b88';c.lineWidth=2;c.beginPath();c.arc(x,y,num(e.r,18)+10,num(e.facing)-Math.PI/3,num(e.facing)+Math.PI/3);c.stroke();} }
     if (e.hp < e.maxHp || boss) bar(c, x, y - (boss ? 60 : 36), boss ? 64 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss ? '#d5b46d' : '#d08d6f', boss ? 4 : 3);
     if (boss) label(c, '炉心守卫', x, y - 72, '#ddca97', 9);
   }
@@ -343,6 +411,7 @@
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
+      ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time) })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
@@ -354,7 +423,7 @@
     c.restore();
   }
 
-  function preview(c) {
+  function preview(c, profile = {}) {
     if (!c) return;
     const time = performance.now(); c.save(); c.imageSmoothingEnabled = false;
     if (!floorCache.has('camp-preview')) floorCache.set('camp-preview', makeFloor('camp-preview', 'camp'));
@@ -386,6 +455,16 @@
     // Broken column in the foreground, with a scattering of young plants.
     wall(c, { x: 551, y: 481, w: 53, h: 40 }); rect(c, 546, 477, 63, 9, '#78906b'); rect(c, 552, 474, 48, 4, '#9caa7b'); grass(c, 558, 476, '#a1af74');
     for (const [x,y,s] of [[629,491,1.4],[907,510,1.3],[892,241,1],[587,154,1],[803,527,1]]) grass(c,x,y,'#6f8c50',s);
+    // These three repaired lamps are the expedition campaign's visible goal.
+    const lit = Math.max(0, Math.min(3, Math.floor(num(profile.lit))));
+    for (let i = 0; i < 3; i++) {
+      const x = 665 + i * 73, y = 511;
+      shadow(c,x,y,19,.25);rect(c,x-16,y-4,32,11,'#334f42');rect(c,x-18,y-8,36,6,'#6c8160');rect(c,x-13,y-11,26,4,'#92a078');rect(c,x-2,y-21,4,12,'#6d7d55');
+      if (i < lit) lantern(c,x,y-33,time,.9);
+      else { rect(c,x-7,y-44,14,18,'#263d34');rect(c,x-5,y-42,10,13,'#405846');rect(c,x-3,y-40,6,10,'#2a4136');rect(c,x-8,y-45,16,3,'#7b8b65');rect(c,x-8,y-28,16,3,'#6a7d59');rect(c,x-2,y-48,4,3,'#70845d'); }
+      label(c,['炉心','物资','守夜'][i],x,y+15,i<lit?'#d8c58b':'#809676',8);
+    }
+    label(c,`归途灯 · ${lit} / 3`,739,553,'#bdc499',9);
     lantern(c, 904, 529, time, .85);
     ambient(c, {}, time); c.restore();
   }

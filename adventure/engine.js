@@ -7,6 +7,16 @@
   // A deterministic, JSON-safe simulation. Positions and aim points are world pixels;
   // step's dt is seconds. Shoot is held; dash and interact are rising-edge actions.
   var W = 960, H = 600, TAU = Math.PI * 2;
+  var MISSIONS = {
+    ember: { id: 'ember', name: '熄灭炉心', goal: '穿过遗迹，击败炉心守卫，带回营地灯芯', total: 1, coins: 40 },
+    salvage: { id: 'salvage', name: '物资回收', goal: '搜集 3 箱补给，再到水闸撤离点按 E 撤离', total: 3, coins: 30 },
+    holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 }
+  };
+  var BUFFS = {
+    pierce: { label: '穿透棱镜', description: '全队子弹可穿透 2 个敌人，适合把敌人引成一线' },
+    swift: { label: '疾风羽饰', description: '全队移动速度 +15%，闪避冷却缩短至 0.75 秒' },
+    vigor: { label: '生命苔石', description: '全队生命上限 +1，并恢复 2 点生命；本局最多 7 点生命' }
+  };
   var ROOM_DEFS = [
     { id: 'camp', name: '苔灯营地', kind: 'camp', next: 1 },
     { id: 'courtyard', name: '回声庭院', kind: 'battle', next: 2 },
@@ -91,6 +101,7 @@
     if (Object.keys(s.players).length >= 2) return null;
     var index = Object.keys(s.players).length;
     var p = player(key, index, s.loadout);
+    if (s.runBuffs && s.runBuffs.indexOf('vigor') >= 0) p.hp = p.maxHp = 7;
     var anchor = alivePlayers(s)[0];
     if (anchor) { p.x = anchor.x; p.y = clamp(anchor.y + 40, 50, H - 50); }
     s.players[key] = p;
@@ -111,8 +122,14 @@
   function create(options) {
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
+    var missionId = MISSIONS[options.mission] ? options.mission : 'ember';
+    var missionDef = MISSIONS[missionId];
     var s = { version: 1, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.loadout === 'scatter' ? 'scatter' : 'pistol',
+      difficulty: Number(options.difficulty) === 2 ? 2 : 1,
+      mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
+        total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
+      runBuffs: [], relicRooms: [], interactables: [],
       unlocks: clone(options.unlocks || {}), playerCount: 0, players: {}, enemies: [], bullets: [], props: [],
       particles: [], events: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
       room: null, roomData: {}, rooms: ROOM_DEFS.map(function (r, i) {
@@ -121,6 +138,8 @@
       }), travelCd: 0, secretOpened: false, secretCleared: false, reward: null, rewardGranted: false,
       stats: { kills: 0, damage: 0, revives: 0, barrels: 0, fires: 0, rooms: 0 },
       hint: '', objective: '', message: '', messageTime: 0 };
+    if (missionId === 'salvage') { s.rooms[4].name = '水闸撤离点'; s.rooms[4].kind = 'extraction'; }
+    if (missionId === 'holdout') { s.rooms[1].name = '长夜信标庭院'; s.rooms[1].kind = 'holdout'; }
     addPlayer(s, 'p1');
     if (options.players === 2) addPlayer(s, 'p2');
     enterRoom(s, 0, true);
@@ -134,17 +153,19 @@
       charges: kind === 'water' ? 3 : 0, destroyed: false };
   }
   function enemy(s, kind, x, y) {
-    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'shooter' ? 3 : 3;
-    return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : 16,
-      hp: hp, maxHp: hp, speed: kind === 'boss' ? 43 : kind === 'chaser' ? 78 : 40,
+    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'shield' || kind === 'charger' ? 4 : 3;
+    if (s.difficulty === 2) hp += kind === 'boss' ? 10 : 1;
+    return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'charger' ? 19 : 16,
+      hp: hp, maxHp: hp, speed: (kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
-      aimX: 0, aimY: 0, phase: 0, flash: 0, stun: 0, navTime: 0, navX: x, navY: y };
+      aimX: 0, aimY: 0, phase: 0, flash: 0, stun: 0, navTime: 0, navX: x, navY: y,
+      chargeTime: 0, chargeX: 0, chargeY: 0, shieldOpen: 0 };
   }
   function roomContent(s, index) {
     var data = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28),
       rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
       doors: [{ id: 'east-door', x: 916, y: 256, w: 16, h: 88, locked: false, label: '出口' }],
-      portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [], fountains: [] };
+      portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
     var defs = ROOM_DEFS[index];
     function addProp(kind, x, y) {
       data.props.push(prop(s, kind, x, y));
@@ -163,7 +184,7 @@
     } else if (index === 2) {
       data.walls.push(rect(360, 120, 66, 122), rect(360, 360, 66, 122), rect(635, 260, 75, 60));
       addProp('crate', 265, 220); addProp('barrel', 500, 175); addProp('barrel', 590, 420);
-      addProp('water', 235, 400); addFire(490, 305, 35); addFire(730, 165, 29);
+      addProp('water', 235, 400); addFire(530, 305, 28); addFire(730, 165, 29);
       addEnemy('chaser', 525, 100); addEnemy('chaser', 745, 455);
       addEnemy('shooter', 770, 200); addEnemy('shooter', 790, 385);
     } else if (index === 3) {
@@ -192,16 +213,48 @@
       addProp('crate', 235, 300); addProp('barrel', 505, 150); addProp('barrel', 505, 450);
       addEnemy('boss', 740, 300);
     }
-    if (defs.next !== null) data.portals.push({ id: 'next-portal', x: 884, y: 300,
+    if (index === 2) data.enemies[2] = enemy(s, 'shield', 770, 200);
+    if (index === 3) data.enemies[1] = enemy(s, 'charger', 790, 450);
+    // Reflect complete, tested layouts rather than sprinkling obstacles into paths.
+    // Their gates and spawn area stay fixed and every variant remains connected.
+    if (index >= 1 && index <= 3) {
+      var variant = Math.floor(random(s) * 3);
+      data.variant = variant;
+      if (variant === 1 && index > 1) {
+        data.walls.slice(4).forEach(function (w) { w.y = H - w.y - w.h; });
+        ['props', 'enemies', 'fires', 'fountains'].forEach(function (key) {
+          data[key].forEach(function (entity) { entity.y = H - entity.y; if (entity.navY !== undefined) entity.navY = entity.y; });
+        });
+      } else if (variant === 2 && index > 1) {
+        data.enemies.forEach(function (e, i) {
+          if (e.kind === 'chaser' && i === 0) { e.kind = 'charger'; e.r = 19; e.hp = e.maxHp = s.difficulty === 2 ? 5 : 4; e.speed = 64; }
+        });
+      }
+    }
+    if (s.mission.id === 'salvage' && index >= 1 && index <= 3) {
+      data.interactables.push({ id: 'cache-' + index, kind: 'cache', x: 800, y: 300, r: 22,
+        label: '营地补给箱', description: '清理守卫后按 E 搜索补给', used: false, active: false });
+    }
+    if (s.mission.id === 'salvage' && index === 4) {
+      data.walls = data.walls.slice(0, 4); data.fires = []; data.switches = []; data.doors = data.doors.slice(0, 1);
+      data.portals = []; data.interactables.push({ id: 'salvage-exit', kind: 'extraction', x: 800, y: 300,
+        r: 30, label: '补给撤离点', description: '带齐 3 箱补给，按 E 返回营地', used: false, active: false });
+    }
+    if (s.mission.id === 'holdout' && index === 1) {
+      data.enemies = []; data.interactables.push({ id: 'night-beacon', kind: 'beacon', x: 480, y: 300,
+        r: 28, label: '长夜信标', description: '按 E 启动第 1 波；波间可提前开始下一波', used: false, active: true });
+    }
+    if (defs.next !== null && !(s.mission.id === 'salvage' && index === 4) &&
+        !(s.mission.id === 'holdout' && index === 1)) data.portals.push({ id: 'next-portal', x: 884, y: 300,
       r: 26, target: defs.next, active: index === 0, label: index === 0 ? '开始探险' : '下一房间' });
-    if (index > 0) data.portals.push({ id: 'back-portal', x: 70, y: 300, r: 22,
+    if (index > 0 && !(s.mission.id === 'holdout' && index === 1)) data.portals.push({ id: 'back-portal', x: 70, y: 300, r: 22,
       target: index === 5 || index === 6 ? 4 : index - 1, active: false, back: true, label: '返回' });
     return data;
   }
   function saveRoom(s) {
     if (!s.room) return;
     var data = {};
-    ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains'].forEach(function (key) {
+    ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       data[key] = clone(s[key]);
     });
     // Carried objects travel with their owner; don't duplicate them on revisits.
@@ -214,8 +267,8 @@
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : roomContent(s, index);
-    ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains'].forEach(function (key) {
-      s[key] = data[key];
+    ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
+      s[key] = data[key] || [];
     });
     carried.forEach(function (p) { if (!s.props.some(function (q) { return q.id === p.id; })) s.props.push(p); });
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
@@ -231,7 +284,37 @@
     return true;
   }
   function setHint(s) {
+    if (s.status !== 'playing') return;
     var i = s.room.index;
+    if (s.mission.id === 'holdout' && i === 1) {
+      if (s.mission.phase === 'ready') {
+        s.objective = '靠近庭院中央信标，按 E 开始 3 波守卫战';
+        s.hint = '先布置箱子和炸药桶，再启动信标；每波结束能选遗物、拾取补给';
+      } else if (s.mission.phase === 'prep') {
+        s.objective = '已守住 ' + s.mission.progress + ' / 3 波 · ' + Math.ceil(s.mission.prep) + ' 秒后下一波';
+        s.hint = '选一件遗物、拾取绿心补给；按 E 操作信标可提前开始下一波';
+      } else if (s.mission.phase === 'extract') {
+        s.objective = '3 波已全部守住，靠近信标按 E 撤离';
+        s.hint = '这次任务需要主动撤离：在中央绿色撤离信标按 E';
+      } else {
+        s.objective = '守住第 ' + s.mission.wave + ' / 3 波 · 剩余守卫 ' + s.enemies.length;
+        s.hint = '红线预警后冲锋；绕到盾卫身后射击，或用炸药桶击破阵形';
+      }
+      return;
+    }
+    if (s.mission.id === 'salvage' && i > 0) {
+      var cache = s.interactables.find(function (q) { return q.kind === 'cache'; });
+      if (i === 4) {
+        s.objective = s.mission.progress >= 3 ? '补给 3 / 3 · 靠近绿色撤离点按 E 撤离' :
+          '补给 ' + s.mission.progress + ' / 3 · 沿西侧光门返回，搜查遗漏的补给箱';
+        s.hint = '每个战斗房有 1 个补给箱，清理守卫后靠近按 E 搜索';
+      } else {
+        s.objective = '补给 ' + s.mission.progress + ' / 3 · ' + (!s.room.cleared ? '清理守卫' : cache && !cache.used ? '靠近蓝色补给箱按 E 搜索' : '继续前往下一房间');
+        s.hint = s.room.cleared ? '蓝箱需按 E 搜索；发光遗物为全队 2 选 1，本局有效' :
+          '先清理房间；护盾正面挡弹，绕侧面或利用炸药桶';
+      }
+      return;
+    }
     if (i === 0) {
       s.objective = '穿过东侧光门，开始一次短途探险';
       s.hint = 'WASD 移动 · 鼠标瞄准 / 按住射击 · 空格闪避 · E 搬运与使用';
@@ -239,7 +322,7 @@
       s.objective = s.room.cleared ? '进入炉心；木箱压住星纹开关可打开隐藏室' : '拿起蓝色水桶，靠近火焰按 E 浇水，开启水闸';
       s.hint = s.secretOpened ? '星纹暗门已开启：北侧光门通往隐藏星藏室' : '水桶朝瞄准方向浇水，回蓝色泉眼按 E 补满；木箱能压住金色开关';
     } else if (i === 6) {
-      s.objective = '击败炉心守卫，带回星屑';
+      s.objective = '击败炉心守卫，把灯芯带回营地';
       s.hint = '红色瞄线与光圈是攻击预警；木箱挡弹，炸药桶可重创守卫';
     } else if (s.room.cleared) {
       s.objective = i === 5 ? '星藏已找到：补给与额外星屑已收集，继续前往炉心' : '房间已清理，穿过东侧光门继续';
@@ -250,8 +333,102 @@
         '翻滚穿过弹幕；投掷炸药桶可引发范围爆炸。靠近倒地搭档按 E 救援';
     }
   }
+  function offerRelics(s, group) {
+    if (s.relicRooms.indexOf(group) >= 0) return;
+    s.relicRooms.push(group);
+    var available = Object.keys(BUFFS).filter(function (key) { return s.runBuffs.indexOf(key) < 0; });
+    for (var i = available.length - 1; i > 0; i -= 1) {
+      var j = Math.floor(random(s) * (i + 1)), swap = available[i]; available[i] = available[j]; available[j] = swap;
+    }
+    available.slice(0, 2).forEach(function (key, index) {
+      var def = BUFFS[key];
+      s.interactables.push({ id: id(s, 'relic-'), kind: 'relic', buff: key, group: group,
+        x: 740, y: index ? 370 : 230, r: 18, label: def.label, description: def.description,
+        active: true, used: false });
+    });
+    if (available.length) event(s, 'relic-offer', { group: group });
+  }
+  function takeRelic(s, item) {
+    if (!item.active || item.used || !BUFFS[item.buff] || s.runBuffs.indexOf(item.buff) >= 0) return false;
+    s.runBuffs.push(item.buff);
+    s.interactables.forEach(function (q) {
+      if (q.kind === 'relic' && (q.group === item.group || q.buff === item.buff)) {
+        q.used = true; q.active = false; q.selected = q.id === item.id;
+      }
+    });
+    if (item.buff === 'vigor') Object.keys(s.players).forEach(function (key) {
+      var p = s.players[key]; p.maxHp = Math.min(7, p.maxHp + 1);
+      if (!p.downed) p.hp = Math.min(p.maxHp, p.hp + 2);
+    });
+    s.message = '全队获得：' + item.label; s.messageTime = 3;
+    event(s, 'relic-selected', { buff: item.buff, label: item.label });
+    particle(s, 'text', item.x, item.y - 25, { text: item.label, ttl: 1.6, life: 1.6, color: '#d8bcff' });
+    return true;
+  }
+  function syncMission(s) {
+    var m = s.mission;
+    if (s.status !== 'playing') return;
+    // A skipped offer can be revisited after finding the same relic elsewhere.
+    // Disable only that already-owned option instead of offering an inert choice.
+    s.interactables.forEach(function (q) {
+      if (q.kind === 'relic' && s.runBuffs.indexOf(q.buff) >= 0) { q.used = true; q.active = false; }
+    });
+    if (m.id === 'salvage') {
+      m.progress = m.caches.length;
+      m.phase = m.progress >= 3 ? 'extract' : s.room.index ? 'search' : 'travel';
+      s.interactables.forEach(function (q) {
+        if (q.kind === 'cache') q.active = s.room.cleared && !q.used;
+        if (q.kind === 'extraction') q.active = m.progress >= 3 && !q.used;
+      });
+    } else if (m.id === 'holdout') {
+      if (s.room.index === 1 && !m.started) m.phase = 'ready';
+      s.interactables.forEach(function (q) {
+        if (q.id === 'night-beacon') {
+          q.kind = m.phase === 'extract' ? 'extraction' : 'beacon';
+          q.active = m.phase === 'ready' || m.phase === 'prep' || m.phase === 'extract';
+          q.label = m.phase === 'extract' ? '信标撤离点' : m.phase === 'prep' ? '提前开始下一波' : '启动长夜信标';
+        }
+      });
+    } else m.phase = s.room.index === 6 ? 'defend' : 'travel';
+  }
+  function startWave(s) {
+    var m = s.mission;
+    if (m.id !== 'holdout' || s.room.index !== 1 || (m.phase !== 'ready' && m.phase !== 'prep')) return false;
+    m.started = true; m.wave += 1; m.phase = 'defend'; m.prep = 0;
+    var waves = [['chaser', 'chaser', 'shooter'], ['shield', 'charger', 'shooter', 'chaser'],
+      ['charger', 'shield', 'shooter', 'charger', 'chaser']];
+    var kinds = waves[m.wave - 1].slice();
+    if (s.playerCount > 1) kinds.push(m.wave > 1 ? 'shield' : 'chaser');
+    if (s.difficulty === 2) kinds.push('shooter');
+    var spots = [[750, 140], [810, 300], [740, 480], [500, 100], [500, 500], [265, 470], [810, 445]];
+    s.enemies = kinds.map(function (kind, index) { return enemy(s, kind, spots[index][0], spots[index][1]); });
+    s.bullets = [];
+    alivePlayers(s).forEach(function (p) { p.invuln = Math.max(p.invuln, 1); });
+    s.message = '第 ' + m.wave + ' / 3 波来袭！'; s.messageTime = 2.4;
+    event(s, 'wave-start', { wave: m.wave }); syncMission(s); setHint(s);
+    return true;
+  }
+  function updateHoldout(s, dt) {
+    var m = s.mission;
+    if (m.id !== 'holdout' || s.room.index !== 1 || s.status !== 'playing') return;
+    if (m.phase === 'prep') {
+      m.prep = Math.max(0, m.prep - dt);
+      if (m.prep <= 0) startWave(s);
+    } else if (m.phase === 'defend' && s.enemies.length === 0) {
+      m.progress = m.wave;
+      offerRelics(s, 'wave-' + m.wave);
+      s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 420, y: 320, r: 14, amount: 2 });
+      event(s, 'wave-clear', { wave: m.wave });
+      if (m.wave >= m.waves) {
+        m.phase = 'extract'; s.rooms[1].cleared = true; s.room.cleared = true; s.stats.rooms += 1;
+        event(s, 'room-clear', { room: 1 });
+        s.message = '信标点亮 · 靠近信标按 E 撤离';
+      } else { m.phase = 'prep'; m.prep = 8; s.message = '守住这一波！补给并选择一件遗物'; }
+      s.messageTime = 3; syncMission(s);
+    }
+  }
   function refreshProgress(s) {
-    var clear = s.room.kind === 'camp' ||
+    var clear = s.room.kind === 'holdout' ? s.mission.phase === 'extract' : s.room.kind === 'camp' ||
       (s.room.kind === 'puzzle' ? s.fires.every(function (f) { return !f.active; }) : s.enemies.length === 0);
     if (clear && !s.rooms[s.room.index].cleared) {
       s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
@@ -260,16 +437,18 @@
       if (s.room.kind === 'secret') {
         s.secretCleared = true;
         alivePlayers(s).forEach(function (p) { p.hp = p.maxHp; });
-        event(s, 'secret-clear', { coins: 8 });
-        particle(s, 'text', 480, 285, { text: '星藏补给 +8 星屑', r: 30, ttl: 2, life: 2, color: '#e4c77e' });
+        event(s, 'secret-clear', { coins: 12 });
+        particle(s, 'text', 480, 285, { text: '星藏补给 +12 星屑', r: 30, ttl: 2, life: 2, color: '#e4c77e' });
       } else if (s.room.kind !== 'boss' && s.room.kind !== 'puzzle') {
         s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 790, y: 300, r: 14, amount: 2 });
       }
+      if (s.room.kind === 'battle' || s.room.kind === 'secret') offerRelics(s, 'room-' + s.room.index);
     }
     s.room.cleared = s.rooms[s.room.index].cleared;
     s.portals.forEach(function (p) { if (!p.secret) p.active = s.room.cleared; });
     s.doors.forEach(function (d) { if (!d.secret) d.locked = !s.room.cleared; });
-    if (s.room.kind === 'boss' && clear && s.status === 'playing') finish(s, 'won');
+    if (s.mission.id === 'ember' && s.room.kind === 'boss' && clear && s.status === 'playing') finish(s, 'won');
+    syncMission(s);
     setHint(s);
   }
   function finish(s, status) {
@@ -278,11 +457,14 @@
     s.bullets = [];
     if (status === 'won' && !s.rewardGranted) {
       s.rewardGranted = true;
-      s.reward = { coins: 40 + (s.secretCleared ? 12 : 0),
+      s.mission.phase = 'complete'; s.mission.progress = s.mission.total;
+      s.reward = { coins: MISSIONS[s.mission.id].coins + (s.secretCleared ? 12 : 0) + (s.difficulty === 2 ? 20 : 0),
+        missionId: s.mission.id, difficulty: s.difficulty,
         secret: s.secretCleared, elapsed: Math.round(s.elapsed), kills: s.stats.kills };
       event(s, 'reward', clone(s.reward));
-      s.message = '炉心已熄，探险成功！'; s.objective = '带着星屑返回营地，解锁散弹起始武器';
+      s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
     } else if (status === 'lost') {
+      s.mission.phase = 'failed';
       event(s, 'defeat'); s.message = '探险队倒下了'; s.objective = '重整装备，再试一次';
     }
     s.messageTime = 999;
@@ -353,6 +535,27 @@
       refreshProgress(s);
       return true;
     }
+    var target = s.interactables.filter(function (q) { return !q.used && dist(p, q) < 76; })
+      .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
+    if (target) {
+      if (!target.active) {
+        s.message = target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
+          target.kind === 'extraction' ? '还缺补给：沿西侧光门返回搜索遗漏的蓝箱' : '先守住这一波，再操作信标';
+        s.messageTime = 2;
+        return false;
+      }
+      if (target.kind === 'relic') return takeRelic(s, target);
+      if (target.kind === 'cache') {
+        if (s.mission.caches.indexOf(target.id) < 0) s.mission.caches.push(target.id);
+        target.used = true; target.active = false;
+        event(s, 'cache-searched', { cacheId: target.id, progress: s.mission.caches.length });
+        s.message = '找回营地补给 ' + s.mission.caches.length + ' / 3'; s.messageTime = 2.5;
+        burst(s, 'heal', target.x, target.y, '#89e1f3', 9);
+        syncMission(s); setHint(s); return true;
+      }
+      if (target.kind === 'beacon') return startWave(s);
+      if (target.kind === 'extraction') { target.used = true; target.active = false; finish(s, 'won'); return true; }
+    }
     var nearest = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown &&
       dist(p, q) < 74; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
@@ -422,12 +625,14 @@
         y: p.y + Math.sin(a) * 23, r: scatter ? 4 : 4.5,
         vx: Math.cos(a) * (scatter ? 550 : 650), vy: Math.sin(a) * (scatter ? 550 : 650),
         friendly: true, owner: p.id, damage: 1, ttl: scatter ? 0.65 : 1.3,
-        color: scatter ? '#ffe6a0' : '#c4fff0', dead: false });
+        color: s.runBuffs.indexOf('pierce') >= 0 ? '#d8bcff' : scatter ? '#ffe6a0' : '#c4fff0',
+        hitsLeft: s.runBuffs.indexOf('pierce') >= 0 ? 2 : 1, hitIds: [], dead: false });
     }
     p.fireCd = scatter ? 0.54 : 0.205;
     event(s, 'shoot', { playerId: p.id, weapon: p.weapon, x: p.x, y: p.y });
   }
   function hostileBullet(s, e, a, speed, radius) {
+    speed *= s.difficulty === 2 ? 1.1 : 1;
     s.bullets.push({ id: id(s, 'bullet-'), x: e.x + Math.cos(a) * (e.r + 9),
       y: e.y + Math.sin(a) * (e.r + 9), r: radius || 6,
       vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
@@ -472,9 +677,34 @@
     s.enemies.forEach(function (e) {
       if (e.hp <= 0) return;
       e.flash = Math.max(0, e.flash - dt); e.stun = Math.max(0, e.stun - dt);
+      e.shieldOpen = Math.max(0, e.shieldOpen - dt);
       if (e.stun > 0) return;
       var p = targets.slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
+      if (e.kind === 'charger' && e.chargeTime > 0) {
+        var oldX = e.x, oldY = e.y;
+        e.chargeTime = Math.max(0, e.chargeTime - dt);
+        move(s, e, e.chargeX * 410 * dt, e.chargeY * 410 * dt, false);
+        var hit = targets.find(function (q) { return dist(e, q) < e.r + q.r + 6; });
+        if (hit) { damagePlayer(s, hit, 1, 'charge'); e.chargeTime = 0; }
+        var block = s.props.find(function (q) { return solidProp(q) && dist(e, q) < e.r + q.r + 10; });
+        if (block) {
+          if (block.kind === 'barrel') explode(s, block, 'p1');
+          else {
+            block.hp -= 3;
+            if (block.hp <= 0) {
+              block.destroyed = true;
+              if (block.carriedBy && s.players[block.carriedBy]) s.players[block.carriedBy].carry = null;
+              block.carriedBy = null;
+            }
+          }
+          e.chargeTime = 0;
+        }
+        if (len(e.x - oldX, e.y - oldY) < 410 * dt * 0.4) e.chargeTime = 0;
+        if (e.chargeTime <= 0) { e.stun = 0.8; e.attackCd = 1.7; }
+        particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#f39366' });
+        return;
+      }
       if (e.windup > 0) {
         e.windup -= dt;
         if (e.windup <= 0) {
@@ -484,8 +714,13 @@
             particle(s, 'slash', e.x + Math.cos(angle) * 24, e.y + Math.sin(angle) * 24,
               { r: 40, ttl: 0.2, life: 0.2, color: '#ffb095' });
             e.attackCd = 0.9;
-          } else if (e.kind === 'shooter') {
-            hostileBullet(s, e, angle, 205); e.attackCd = 1.3;
+          } else if (e.kind === 'shooter' || e.kind === 'shield') {
+            hostileBullet(s, e, angle, e.kind === 'shield' ? 185 : 205); e.attackCd = e.kind === 'shield' ? 1.65 : 1.3;
+            if (e.kind === 'shield') e.shieldOpen = 0.6;
+          } else if (e.kind === 'charger') {
+            e.chargeX = Math.cos(angle); e.chargeY = Math.sin(angle); e.chargeTime = 0.65;
+            e.facing = angle; e.attackCd = 1.7;
+            event(s, 'charger-charge', { enemyId: e.id });
           } else {
             if (e.attack === 'ring') {
               var count = e.hp < e.maxHp * 0.5 ? 12 : 10;
@@ -500,15 +735,18 @@
         return;
       }
       e.attackCd -= dt;
-      var inRange = e.kind === 'chaser' ? d < 64 : e.kind === 'boss' ? d < 900 : d < 460 && lineClear(s, e, p, 5);
+      var inRange = e.kind === 'chaser' ? d < 64 : e.kind === 'charger' ? d < 520 && lineClear(s, e, p, e.r) :
+        e.kind === 'boss' ? d < 900 : d < 460 && lineClear(s, e, p, 5);
       if (e.attackCd <= 0 && inRange) {
-        e.windup = e.kind === 'chaser' ? 0.36 : e.kind === 'shooter' ? 0.6 : 0.78;
-        e.aimX = p.x; e.aimY = p.y; e.facing = Math.atan2(dy, dx);
-        e.attack = e.kind === 'boss' && e.phase % 2 === 0 ? 'ring' : 'aim';
+        e.windup = e.kind === 'chaser' ? 0.36 : e.kind === 'shooter' ? 0.6 : e.kind === 'shield' ? 0.85 : e.kind === 'charger' ? 0.85 : 0.78;
+        e.aimX = p.x; e.aimY = p.y;
+        if (e.kind !== 'shield') e.facing = Math.atan2(dy, dx);
+        e.attack = e.kind === 'charger' ? 'charge' : e.kind === 'boss' && e.phase % 2 === 0 ? 'ring' : 'aim';
         event(s, 'enemy-windup', { enemyId: e.id, kind: e.kind, attack: e.attack });
         return;
       }
-      var wantsMove = e.kind === 'chaser' ? d > 45 : e.kind === 'boss' ? d > 275 : d > 275 || !lineClear(s, e, p, 5);
+      var wantsMove = e.kind === 'chaser' ? d > 45 : e.kind === 'charger' ? d > 220 || !lineClear(s, e, p, e.r) :
+        e.kind === 'boss' ? d > 275 : d > 275 || !lineClear(s, e, p, 5);
       if (wantsMove) {
         e.navTime -= dt;
         if (e.navTime <= 0) {
@@ -516,8 +754,14 @@
         }
         dx = e.navX - e.x; dy = e.navY - e.y;
         var l = len(dx, dy) || 1;
-        e.facing = Math.atan2(dy, dx); move(s, e, dx / l * e.speed * dt, dy / l * e.speed * dt, false);
-      } else e.facing = Math.atan2(dy, dx);
+        if (e.kind !== 'shield') e.facing = Math.atan2(dy, dx);
+        move(s, e, dx / l * e.speed * dt, dy / l * e.speed * dt, false);
+      } else if (e.kind !== 'shield') e.facing = Math.atan2(dy, dx);
+      if (e.kind === 'shield') {
+        var delta = Math.atan2(Math.sin(Math.atan2(p.y - e.y, p.x - e.x) - e.facing),
+          Math.cos(Math.atan2(p.y - e.y, p.x - e.x) - e.facing));
+        e.facing += clamp(delta, -1.15 * dt, 1.15 * dt);
+      }
     });
   }
   function updateBullets(s, dt) {
@@ -549,8 +793,17 @@
           break;
         }
         if (b.friendly) {
-          var foe = s.enemies.find(function (e) { return e.hp > 0 && dist(e, b) < e.r + b.r; });
-          if (foe) { damageEnemy(s, foe, b.damage, b.owner); b.dead = true; }
+          var foe = s.enemies.find(function (e) { return e.hp > 0 && (!b.hitIds || b.hitIds.indexOf(e.id) < 0) && dist(e, b) < e.r + b.r; });
+          if (foe) {
+            var front = foe.kind === 'shield' && foe.stun <= 0 && foe.shieldOpen <= 0 &&
+              Math.cos(Math.atan2(b.y - foe.y, b.x - foe.x) - foe.facing) > 0.5;
+            if (front) { b.dead = true; burst(s, 'spark', b.x, b.y, '#a9d7ff', 3); }
+            else {
+              damageEnemy(s, foe, b.damage, b.owner);
+              b.hitIds = b.hitIds || []; b.hitIds.push(foe.id);
+              b.hitsLeft = (b.hitsLeft || 1) - 1; b.dead = b.hitsLeft <= 0;
+            }
+          }
         } else {
           var target = alivePlayers(s).find(function (p) { return dist(p, b) < p.r + b.r; });
           if (target) { damagePlayer(s, target, b.damage, 'bullet'); b.dead = true; }
@@ -559,7 +812,7 @@
       if (b.ttl <= 0) b.dead = true;
     });
     s.bullets = s.bullets.filter(function (b) { return !b.dead; });
-    if (s.bullets.length > 260) s.bullets.splice(0, s.bullets.length - 260);
+    if (s.bullets.length > 160) s.bullets.splice(0, s.bullets.length - 160);
     s.enemies = s.enemies.filter(function (e) { return e.hp > 0; });
   }
   function updateProps(s, dt) {
@@ -617,6 +870,13 @@
         s.fountains.some(function (f) { return dist(p, f) < 78; })) return 'E · 在泉眼补满水桶';
     if (held) return held.kind === 'water' ? (held.charges ? 'E · 朝瞄准方向浇水并放下' : '空桶：带回蓝色泉眼按 E 补水') :
       held.kind === 'barrel' ? 'E · 投掷炸药桶' : 'E · 放下木箱';
+    var special = s.interactables.filter(function (q) { return !q.used && dist(p, q) < 76; })
+      .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
+    if (special) {
+      if (!special.active) return special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
+        special.kind === 'extraction' ? '补给尚未齐全：返回前 3 间房搜索蓝箱' : '守住当前波次后可操作信标';
+      return 'E · ' + special.label + (special.kind === 'relic' ? '（同组只能选一件）' : '');
+    }
     var near = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown &&
       dist(p, q) < 74; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
@@ -649,7 +909,7 @@
       if (dashEdge && p.dashCd <= 0) {
         p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(p.facing);
         p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(p.facing);
-        p.dashTime = 0.17; p.dashCd = 1.15; p.invuln = Math.max(p.invuln, 0.25);
+        p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.25);
         event(s, 'dash', { playerId: key, x: p.x, y: p.y });
       }
       if (p.dashTime > 0) {
@@ -659,6 +919,7 @@
       } else {
         var held = s.props.find(function (q) { return q.id === p.carry; });
         var speed = held ? held.kind === 'crate' ? 128 : 155 : 195;
+        if (s.runBuffs.indexOf('swift') >= 0) speed *= 1.15;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
       if (input.shoot && p.fireCd <= 0) shoot(s, p);
@@ -672,7 +933,7 @@
     alivePlayers(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');
     });
-    collectPickups(s); refreshProgress(s);
+    collectPickups(s); updateHoldout(s, dt); refreshProgress(s);
     s.particles = s.particles.filter(function (fx) {
       fx.ttl -= dt; fx.x += fx.vx * dt; fx.y += fx.vy * dt; return fx.ttl > 0;
     });
@@ -684,9 +945,19 @@
     }
     return s;
   }
-  function snapshot(s) { return clone(s); }
+  function snapshot(s, compact) {
+    var result = clone(s);
+    if (compact) {
+      result.roomData = {};
+      result.particles = result.particles.slice(-24);
+      result.events = result.events.slice(-12);
+      // Cached navigation is host-only; guests only draw current positions.
+      result.enemies.forEach(function (e) { delete e.navX; delete e.navY; delete e.navTime; });
+    }
+    return result;
+  }
 
-  return { W: W, H: H, VERSION: 1, create: create, addPlayer: addPlayer,
+  return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), BUFFS: clone(BUFFS), create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
     snapshot: snapshot, getHint: getHint };
 });
