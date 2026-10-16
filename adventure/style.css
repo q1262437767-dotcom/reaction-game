@@ -115,3 +115,71 @@
   .mission-card h2{font-size:13px}.mission-card p,.mission-card p.mission-goal{font-size:9px;line-height:1.65}.mission-card-foot{font-size:7px;padding-top:6px;margin-top:6px}
   .start-copy .start-buttons .button{height:33px;font-size:10px}.start-copy .loadout-row{margin-top:9px}.start-copy .campaign-status{font-size:7px;line-height:1.6}
 }
+
+/* Account access stays close to the camp, with the same quiet field-kit styling. */
+.account-button{white-space:nowrap;flex-shrink:0}
+.account-status{font-size:9px;line-height:1.7;color:#9cad91;margin:5px 0 0;max-width:470px;overflow-wrap:anywhere}
+.account-status[data-state="error"],.account-status[data-state="offline"]{color:#dfb28a}
+.account-modal{max-width:510px;overscroll-behavior:contain;scroll-padding-block:24px}
+.account-modal h2{margin-top:12px;margin-bottom:9px}
+.account-emblem{display:grid;place-items:center;width:43px;height:43px;margin-top:22px;border:1px solid #d7ba7440;border-radius:10px;background:#d1b1680b;color:var(--gold);font-size:25px;box-shadow:0 0 25px #d1b1680b}
+.account-modal .dialog-intro{margin-bottom:19px;max-width:400px;font-size:12px}
+.account-message{margin:0 0 17px;padding:10px 12px;border:1px solid #adc68d35;border-radius:6px;color:#d1dcb7;background:#9ebc830b;font-size:11px;line-height:1.8;overflow-wrap:anywhere}
+.account-message:empty{display:none}
+.account-message[data-state="error"],.account-message.error{border-color:#d49c7355;color:#edc1a0;background:#c8805a0a}
+.account-notice{margin-bottom:15px;padding:12px 14px;background:#d8b26a0b;color:#d9c593;border:1px solid #c7a66836;border-radius:6px;font-size:11px;line-height:1.9;overflow-wrap:anywhere}
+.account-login-panel{display:grid;gap:20px}
+.account-field{min-width:0}
+.account-field>label{display:block;color:#c2d0b2;font-size:11px;margin-bottom:8px;font-weight:600}
+.account-input-row{display:flex;gap:9px;align-items:stretch;min-width:0}
+.account-input-row input{min-width:0;flex:1;width:0;min-height:43px;padding:0 12px;border:1px solid #7b96684d;border-radius:5px;color:#f0e9c7;background:#0d202480;font-size:13px}
+.account-input-row input::placeholder{color:#7e9580;font-size:11px;letter-spacing:0}
+.account-input-row input:disabled{opacity:.55;cursor:default}
+.account-input-row .button{height:auto;min-height:43px;min-width:111px;padding:10px 14px;font-size:11px;letter-spacing:0;flex-shrink:0}
+.account-input-row .account-code-input{letter-spacing:3px;font-family:ui-monospace,Consolas,monospace;font-size:16px}
+.account-field-note{margin:8px 0 0;color:#839d86;font-size:10px;line-height:1.8}
+.account-identity{display:flex;gap:12px;align-items:center;padding:16px;background:#10272588;border:1px solid #9ebc8329;border-radius:7px;min-width:0}
+.account-identity-mark{width:36px;height:36px;display:grid;place-items:center;flex-shrink:0;border-radius:50%;color:var(--gold);font-size:23px;background:#9ebc8310;border:1px solid #9ebc8330}
+.account-identity>div{min-width:0}
+.account-identity strong{display:block;font-size:12px;line-height:1.7;margin-top:4px;color:#d9e0c1;font-weight:500;overflow-wrap:anywhere}
+.cloud-save-status{margin-top:17px;padding-left:2px}
+.cloud-save-status p{margin:6px 0 0;font-size:12px;color:#b2c3a4;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere}
+.account-user-actions{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:18px}
+.account-user-actions .button{height:41px;font-size:11px;min-width:145px}
+.cloud-choice-panel{margin-top:20px;padding:18px;background:#bd9a5210;border:1px solid #d1b16855;border-radius:7px}
+.cloud-choice-panel h3{font-size:15px;margin:8px 0;color:#e9d7a6;line-height:1.6}
+.cloud-choice-panel p{font-size:11px;color:#c0c6a7;line-height:1.9;margin:0 0 15px;white-space:pre-line;overflow-wrap:anywhere}
+.cloud-choice-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.cloud-choice-actions .button{min-width:0;height:auto;min-height:41px;padding:10px 11px;font-size:11px;letter-spacing:0;white-space:normal;line-height:1.5}
+.cloud-choice-actions>.text-button{grid-column:1/-1;justify-self:center;padding:6px 12px}
+.save-backup{border-top:1px solid #91ad7d25;margin-top:24px;padding-top:15px;font-size:11px;color:#a1b494}
+.save-backup summary{cursor:pointer;padding:3px 0;color:#b7c7a6;line-height:1.8}
+.save-backup summary:focus-visible{outline:2px solid var(--gold);outline-offset:4px;border-radius:2px}
+.save-backup>p{font-size:10px;line-height:1.8;color:#8aa18a;margin:12px 0}
+.backup-actions{display:flex;gap:10px;align-items:center}
+.backup-actions .button{height:37px;font-size:10px;padding:0 15px;letter-spacing:0}
+.backup-import{position:relative;overflow:hidden;cursor:pointer}
+.backup-import input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.backup-import:focus-within{outline:2px solid var(--gold);outline-offset:4px}
+.backup-import:has(input:disabled){opacity:.42;cursor:default}
+.backup-import input:disabled{cursor:default}
+.account-modal .backup-note{font-size:9px;margin-bottom:0;color:#83947c}
+.account-footnote{margin-top:20px;color:#81977f}
+@media(max-width:650px){
+  .site-header{height:auto;min-height:68px;flex-wrap:wrap;padding-block:14px;row-gap:12px}
+  .header-actions{margin-left:auto;max-width:100%}
+  .account-status{font-size:8px;line-height:1.8;margin-top:4px}
+  .account-modal{padding:24px 21px;max-height:calc(100dvh - 24px)}
+  .account-modal h2{font-size:21px}
+  .account-modal .dialog-intro{font-size:11px;margin-bottom:17px}
+  .account-emblem{width:37px;height:37px;font-size:23px;margin-top:18px}
+  .account-input-row{gap:7px}
+  .account-input-row input{padding:0 10px;font-size:12px}
+  .account-input-row .button{min-width:98px;padding:10px;font-size:10px}
+  .account-login-panel{gap:18px}
+  .cloud-choice-panel{padding:14px}
+  .cloud-choice-actions{gap:7px}
+  .cloud-choice-actions .button{font-size:10px;padding-inline:8px}
+}
+@media(max-height:650px) and (min-width:700px){.account-status{font-size:8px;margin-top:2px}}
+@media(pointer:coarse) and (orientation:landscape) and (max-height:500px){.site-header{flex-wrap:nowrap;height:48px;min-height:0;padding-block:0}.account-status{font-size:7px;margin-top:2px}.account-modal{max-height:calc(100dvh - 16px)}}

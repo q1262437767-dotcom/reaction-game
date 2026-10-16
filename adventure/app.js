@@ -5,6 +5,7 @@
   const canvas = $('game'), ctx = canvas.getContext('2d');
   const STORE = 'ruins-squad-camp-v2', LEGACY_STORE = 'ruins-squad-camp-v1';
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
+  let account = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol';
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
@@ -14,12 +15,14 @@
   let dashPulse = false, interactPulse = false;
   const blank = () => C.normalize(null);
   function readCamp() {
+    if (account) return account.readLocal();
     try {
       const raw = JSON.parse(localStorage.getItem(STORE) || localStorage.getItem(LEGACY_STORE) || 'null');
       return C.normalize(raw);
     } catch (_) { storageOK = false; return camp || blank(); }
   }
   function writeCamp() {
+    if (account) { account.writeLocal(camp); updateCamp(); return; }
     try { localStorage.setItem(STORE, JSON.stringify(camp)); }
     catch (_) { storageOK = false; toast('浏览器未允许保存，营地进度暂存在本次页面中。'); }
     updateCamp();
@@ -27,7 +30,7 @@
   camp = readCamp();
   const localId = () => mode === 'guest' ? 'p2' : 'p1';
   const playing = () => !!state && state.status === 'playing';
-  const hasDialog = () => ['help-dialog', 'camp-dialog', 'coop-dialog'].some(id => $(id).open);
+  const hasDialog = () => ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog'].some(id => $(id).open);
   function toast(message) {
     $('toast').textContent = message; $('toast').hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3800);
@@ -87,7 +90,7 @@
     const progress = C.progress(camp);
     $('campaign-status').textContent = `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
     $('mission-progress').textContent = `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
-    $('camp-copy').textContent = `营地三盏灯已点亮 ${progress.lit} 盏。${progress.allCleared ? '所有任务已完成，可挑战险境和收集遗物。' : '完成三个不同的任务，让营地重新亮起来。'}现有 ${camp.coins} 星屑。${storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
+    $('camp-copy').textContent = `营地三盏灯已点亮 ${progress.lit} 盏。${progress.allCleared ? '所有任务已完成，可挑战险境和收集遗物。' : '完成三个不同的任务，让营地重新亮起来。'}现有 ${camp.coins} 星屑。${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
     $('camp-objectives').innerHTML = C.MISSIONS.map((mission, i) => {
       const complete = camp.missions[mission.id].clears > 0;
       return `<div class="camp-lamp${complete ? ' lit' : ''}" data-complete="${complete}"><i aria-hidden="true"></i><strong>第 ${i + 1} 盏营灯</strong><span>${escapeHTML(mission.name)} · ${complete ? '已点亮' : '等待修复'}</span></div>`;
@@ -111,7 +114,7 @@
     showMission();
   }
   function closeDialogs() {
-    ['help-dialog', 'camp-dialog', 'coop-dialog'].forEach(id => { if ($(id).open) $(id).close(); });
+    ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog'].forEach(id => { if ($(id).open) $(id).close(); });
   }
   function displayPause() {
     $('pause-screen').hidden = !paused || !playing();
@@ -130,7 +133,7 @@
     if (dialogPaused) pause(true);
     if (!$(id).open) $(id).showModal();
   }
-  ['help-dialog', 'camp-dialog'].forEach(id => {
+  ['help-dialog', 'camp-dialog', 'account-dialog'].forEach(id => {
     $(id).addEventListener('close', () => { if (dialogPaused && !hasDialog()) { dialogPaused = false; pause(false); } });
   });
   function shutdownNet() {
@@ -149,6 +152,7 @@
     return window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   }
   function begin(isCoop) {
+    if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
     if (isCoop && (!net || !net.connected || net.role !== 'host')) return;
     if (!isCoop) shutdownNet();
     mode = isCoop ? 'host' : 'solo';
@@ -390,6 +394,26 @@
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);
   }
-  window.addEventListener('storage', event => { if (event.key === STORE) { camp = readCamp(); updateCamp(); } });
+  window.addEventListener('storage', event => { if (!account && event.key === STORE) { camp = readCamp(); updateCamp(); } });
+  if (window.AdventureAccount && window.AdventureCloud) {
+    const config = window.AdventureCloudConfig || {};
+    const cloud = window.AdventureCloud.create(config, {
+      onAuthChange(user) { if (account) return account.handleAuth(user); }
+    });
+    account = window.AdventureAccount.create({
+      campaign: C, cloud, projectUrl: config.url || '', initialProfile: camp,
+      setProfile(profile) { camp = C.normalize(profile); updateCamp(); },
+      openDialog() { openDialog('account-dialog'); },
+      isBusy() { return playing() || !!(net && net.connected); },
+      onIdentityChange() {
+        if (state || net) { home(); toast('账号已切换，已返回营地。正在进行的探险不结算奖励。'); }
+      },
+      onStatus() { if (account) updateCamp(); }
+    });
+    account.init().catch(() => { toast('暂时连不上账号服务，本机存档仍保留。'); });
+  } else {
+    $('open-account').onclick = () => { $('account-message').textContent = '账号服务未加载，请刷新后再试。'; openDialog('account-dialog'); };
+    $('close-account').onclick = () => $('account-dialog').close();
+  }
   updateCamp(); hud(); requestAnimationFrame(frame);
 })();
