@@ -155,7 +155,7 @@ begin
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   if jsonb_array_length(p_profile->'badges') > 5
-      or jsonb_array_length(p_profile->'relics') > 3 then
+      or jsonb_array_length(p_profile->'relics') > 6 then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   for v_item in select value from jsonb_array_elements(p_profile->'badges') loop
@@ -166,7 +166,7 @@ begin
   end loop;
   for v_item in select value from jsonb_array_elements(p_profile->'relics') loop
     if jsonb_typeof(v_item) is distinct from 'string'
-        or (v_item #>> '{}') not in ('pierce','swift','vigor') then
+        or (v_item #>> '{}') not in ('pierce','swift','vigor','resonance','riposte','decoy') then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
   end loop;

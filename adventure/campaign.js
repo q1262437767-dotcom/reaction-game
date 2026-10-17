@@ -18,10 +18,10 @@
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
     Object.freeze({ id: 'explorer', name: '秘径寻光', description: '完成一次隐藏房间的探索。' }),
     Object.freeze({ id: 'lamplighter', name: '三灯重明', description: '完成三个不同的任务，点亮营地三盏灯。' }),
-    Object.freeze({ id: 'collector', name: '遗物收藏家', description: '在探险中发现穿透棱镜、疾风羽饰和生命苔石。' }),
+    Object.freeze({ id: 'collector', name: '遗物收藏家', description: '在探险中发现全部六件遗物。' }),
     Object.freeze({ id: 'veteran', name: '险境踏破', description: '在险境难度完成全部三个任务。' })
   ]);
-  var RELICS = Object.freeze(['pierce', 'swift', 'vigor']);
+  var RELICS = Object.freeze(['pierce', 'swift', 'vigor', 'resonance', 'riposte', 'decoy']);
   var LIMIT = 1000000;
   var object = function (value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; };
   var count = function (value) {
@@ -85,6 +85,8 @@
     var p = normalize(profile), before = progress(p), unlocks = [], newBadges = [];
     var result = { profile: p, reward: 0, unlocks: unlocks, newBadges: newBadges, duplicate: false };
     state = object(state);
+    // The practice arena never records rewards, discoveries or expedition history.
+    if (state.practice === true) return result;
     if (typeof runId !== 'string' || !runId.trim() || runId.length > 160 || !['won', 'lost'].includes(state.status)) return result;
     if (p.clearedRuns.includes(runId)) { result.duplicate = true; return result; }
     var missionId = object(state.mission).id || 'ember';

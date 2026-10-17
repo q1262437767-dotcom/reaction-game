@@ -5,18 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#101c23">
   <title>遗迹小队 · 随机探险</title>
-  <meta name="description" content="每次出发，遗迹都有新的岔路。自由穿过房间，挑战精英收集遗物，唤醒藏在迷雾深处的守卫。独自探索，也能邀请朋友同行。">
-  <link rel="stylesheet" href="style.css?v=7">
-  <script defer src="engine.js?v=7"></script>
-  <script defer src="renderer.js?v=7"></script>
-  <script defer src="vendor/peerjs.min.js?v=7"></script>
-  <script defer src="net.js?v=7"></script>
-  <script defer src="campaign.js?v=7"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=7"></script>
-  <script defer src="cloud-config.js?v=7"></script>
-  <script defer src="cloud.js?v=7"></script>
-  <script defer src="account.js?v=7"></script>
-  <script defer src="app.js?v=7"></script>
+  <meta name="description" content="深入苔火遗迹，挑战三种精英、运转古老机关、收集六件遗物。自由探索，唤醒炉心，与朋友一起反击。">
+  <link rel="stylesheet" href="style.css?v=8">
+  <script defer src="engine.js?v=8"></script>
+  <script defer src="renderer.js?v=8"></script>
+  <script defer src="vendor/peerjs.min.js?v=8"></script>
+  <script defer src="net.js?v=8"></script>
+  <script defer src="campaign.js?v=8"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=8"></script>
+  <script defer src="cloud-config.js?v=8"></script>
+  <script defer src="cloud.js?v=8"></script>
+  <script defer src="account.js?v=8"></script>
+  <script defer src="app.js?v=8"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -78,11 +78,11 @@
     <div class="page-caption"><span>一个可以和朋友分享的小小冒险</span><span>耳机就绪，勇气装满。<span class="tiny-star" aria-hidden="true">✦</span></span></div>
   </main>
 
-  <dialog id="help-dialog" class="modal" aria-labelledby="help-title"><div class="dialog-heading"><span class="dialog-kicker">FIELD NOTES</span><button id="close-help" class="icon-button close-dialog" aria-label="关闭指南">×</button></div><h2 id="help-title">探险家的口袋手册</h2><p class="dialog-intro">自己选择路线，也自己决定什么时候迎战守卫。</p><div class="help-grid"><div><span class="help-key">W A S D</span><strong>自由移动</strong><p>也可以使用方向键。房间无需清场，靠近门口按 E 就能穿行。</p></div><div><span class="help-key">J / 左键</span><strong>攻击与反击</strong><p>短刃近身挥砍；成功化解关键招式后，攻击可打出反击。手枪、散射枪仍可选择。</p></div><div><span class="help-key">K / 右键</span><strong>防守与精准招架</strong><p>看到两圈快合拢或听到清脆提示时按 K / 右键，触发精准招架。防守自动面向来招，无需鼠标对准；按住可挡普通斩击。</p></div><div><span class="help-key">SPACE</span><strong>闪避与迎刺</strong><p>突刺时迎着敌人闪进可截住攻势；横扫与震地要在落点前闪避。听声音、看蓄势，抓住那一拍。</p></div><div><span class="help-key">E</span><strong>与身边互动</strong><p>搬起或投掷道具、拿取遗物、救起队友。</p></div></div><div class="field-tip"><span aria-hidden="true">◇</span><p>随机探索中，击杀达到本局门槛后守卫苏醒。金色精英掉落遗物，全队选择后在本局生效。右上角地图会随探索揭开；守卫位置始终可见。</p></div><div class="field-tip help-environment"><span aria-hidden="true">✦</span><p>首页可进入招架试炼，先练连斩，熟悉后再加入突刺和横扫。结算可查看本轮招架次数，随时重试，不结算营地成长。精英与 Boss 也会使用节奏招式。木箱挡弹，炸药桶清场，水桶灭火。</p></div><div class="help-bottom"><span><kbd>ESC</kbd> 暂停 / 继续</span><span>手机端使用屏幕摇杆与按钮</span></div></dialog>
+  <dialog id="help-dialog" class="modal" aria-labelledby="help-title"><div class="dialog-heading"><span class="dialog-kicker">FIELD NOTES</span><button id="close-help" class="icon-button close-dialog" aria-label="关闭指南">×</button></div><h2 id="help-title">探险家的口袋手册</h2><p class="dialog-intro">自己选择路线，也自己决定什么时候迎战守卫。</p><div class="help-grid"><div><span class="help-key">W A S D</span><strong>自由移动</strong><p>也可以使用方向键。房间无需清场，靠近门口按 E 就能穿行。</p></div><div><span class="help-key">J / 左键</span><strong>攻击与反击</strong><p>短刃近身挥砍；成功化解关键招式后，攻击可打出反击。手枪、散射枪仍可选择。</p></div><div><span class="help-key">K / 右键</span><strong>防守与精准招架</strong><p>看到两圈快合拢或听到清脆提示时按 K / 右键，触发精准招架。防守自动面向来招，无需鼠标对准；按住可挡普通斩击。</p></div><div><span class="help-key">SPACE</span><strong>闪避与迎刺</strong><p>突刺时迎着敌人闪进可截住攻势；横扫与震地要在落点前闪避。听声音、看蓄势，抓住那一拍。</p></div><div><span class="help-key">E</span><strong>与身边互动</strong><p>搬起或投掷道具、拿取遗物、救起队友。</p></div></div><div class="field-tip"><span aria-hidden="true">◇</span><p>随机探索中，击杀达到本局门槛后守卫苏醒。三种金色精英掉落二选一遗物，全队共享，本局生效。右上角地图会随探索揭开；守卫位置始终可见。</p></div><div class="field-tip help-environment"><span aria-hidden="true">✦</span><p>首页可进入招架试炼，先练连斩，熟悉后再加入突刺和横扫。结算可查看本轮招架次数，随时重试，不结算营地成长。精英与 Boss 也会使用节奏招式。木箱挡弹，炸药桶清场，水桶灭火。</p></div><div class="help-bottom"><span><kbd>ESC</kbd> 暂停 / 继续</span><span>手机端使用屏幕摇杆与按钮</span></div></dialog>
 
   <dialog id="coop-dialog" class="modal coop-modal"><div class="dialog-heading"><span class="dialog-kicker">BETTER TOGETHER</span><button id="close-coop" class="icon-button close-dialog" aria-label="关闭联机面板">×</button></div><h2>给朋友留一个位置</h2><p class="dialog-intro">创建一间营地，分享房间码，就能一起出发。</p><button id="host-room" class="button button-primary full-width">创建双人房间 <span aria-hidden="true">＋</span></button><div class="or-divider"><span>或加入朋友的房间</span></div><div class="join-form"><label class="sr-only" for="room-code">房间码</label><input id="room-code" type="text" maxlength="12" placeholder="输入房间码" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="join-room" class="button button-secondary">加入</button></div><div class="room-ticket"><span class="eyebrow">你的房间码</span><div class="room-code-row"><strong id="room-id">— — — — — —</strong><button id="copy-room" class="text-button">复制</button></div><p id="room-message" role="status">两个人，一起把故事带回来。</p></div><div class="room-bottom"><button id="leave-room" class="text-button">离开房间</button><button id="start-room" class="button button-primary" disabled>等待伙伴 <span aria-hidden="true">→</span></button></div><p class="quiet-note">房主选择任务和难度；双方刷新到最新页面后再联机。</p></dialog>
 
-  <dialog id="camp-dialog" class="modal camp-modal"><div class="dialog-heading"><span class="dialog-kicker">BACK AT THE CAMP</span><button id="camp-close" class="icon-button close-dialog" aria-label="关闭营地">×</button></div><h2>点亮三盏归途灯</h2><p id="camp-copy" class="dialog-intro">完成三项任务，为营地带回火种、物资与安全的航标。</p><div id="camp-objectives" class="camp-objectives" aria-live="polite"><div class="camp-lamp" data-mission="ember"><i aria-hidden="true"></i><strong>炉心之火</strong><span>完成熄灭炉心</span></div><div class="camp-lamp" data-mission="salvage"><i aria-hidden="true"></i><strong>归营之粮</strong><span>完成物资回收</span></div><div class="camp-lamp" data-mission="holdout"><i aria-hidden="true"></i><strong>夜航之光</strong><span>完成信标守夜</span></div></div><div class="equipment-card"><div class="equipment-art" aria-hidden="true"><i class="pixel-gun"></i><span>Ⅱ</span></div><div class="equipment-copy"><span class="eyebrow">营地工坊</span><h3>散射枪</h3><p>一次射出多枚弹丸，适合近距离突破包围。</p><button id="unlock-scatter" class="button button-primary">解锁散射枪 <span aria-hidden="true">◆</span></button></div></div><div class="journal-heading"><span class="eyebrow">探险徽章</span><span>额外的挑战，留给更熟练的你</span></div><div id="journal-list" class="journal-list"></div><p class="quiet-note">游客进度保存在这台设备，登录后可同步云存档。完成全部普通任务，解锁险境难度。</p></dialog>
+  <dialog id="camp-dialog" class="modal camp-modal"><div class="dialog-heading"><span class="dialog-kicker">BACK AT THE CAMP</span><button id="camp-close" class="icon-button close-dialog" aria-label="关闭营地">×</button></div><h2>点亮三盏归途灯</h2><p id="camp-copy" class="dialog-intro">完成三项任务，为营地带回火种、物资与安全的航标。</p><div id="camp-objectives" class="camp-objectives" aria-live="polite"><div class="camp-lamp" data-mission="ember"><i aria-hidden="true"></i><strong>炉心之火</strong><span>完成熄灭炉心</span></div><div class="camp-lamp" data-mission="salvage"><i aria-hidden="true"></i><strong>归营之粮</strong><span>完成物资回收</span></div><div class="camp-lamp" data-mission="holdout"><i aria-hidden="true"></i><strong>夜航之光</strong><span>完成信标守夜</span></div></div><div class="equipment-card"><div class="equipment-art" aria-hidden="true"><i class="pixel-gun"></i><span>Ⅱ</span></div><div class="equipment-copy"><span class="eyebrow">营地工坊</span><h3>散射枪</h3><p>一次射出多枚弹丸，适合近距离突破包围。</p><button id="unlock-scatter" class="button button-primary">解锁散射枪 <span aria-hidden="true">◆</span></button></div></div><div class="journal-heading"><span class="eyebrow">探险徽章</span><span>额外的挑战，留给更熟练的你</span></div><div id="journal-list" class="journal-list"></div><div class="journal-heading"><span class="eyebrow">遗物图鉴</span><span>发现六种不同的战斗方式</span></div><div id="relic-journal" class="journal-list"></div><p class="quiet-note">游客进度保存在这台设备，登录后可同步云存档。完成全部普通任务，解锁险境难度。</p></dialog>
 
   <dialog id="account-dialog" class="modal account-modal" aria-labelledby="account-title" aria-describedby="account-intro">
     <div class="dialog-heading"><span class="dialog-kicker">YOUR CAMP, ANYWHERE</span><button id="close-account" class="icon-button close-dialog" type="button" aria-label="关闭账号与云存档">×</button></div>

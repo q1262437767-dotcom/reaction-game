@@ -46,6 +46,14 @@ Supabase 默认 SMTP 只允许向项目组织团队预授权邮箱发送，官�
 
 RPC 必须使用已登录玩家自己的会话调用。公开入口 `public.save_ruins_profile` 为 `SECURITY INVOKER`；具有写入权限的实现位于不暴露给 REST API 的 `ruins_private` schema，使用空 `search_path`、限定表名、`auth.uid()` 身份检查，并撤销 `PUBLIC`、`anon` 执行权限，仅向 `authenticated` 授权。[RLS 官方说明](https://supabase.com/docs/guides/database/postgres/row-level-security)、[数据库函数与权限](https://supabase.com/docs/guides/database/functions)
 
+### 已有项目升级到六种遗物
+
+已有云存档项目在发布第 8 版网页前，由原函数所有者运行同目录的 **upgrade-six-relics.sql**。这份普通部署 SQL 只替换 `ruins_private.save_ruins_profile_impl` 的函数体，将遗物数量上限从 3 扩展到 6，并允许 `pierce`、`swift`、`vigor`、`resonance`、`riposte`、`decoy`。它可重复执行，保留原函数所有者、执行权限、公开 RPC、RLS、CAS 规则以及所有现有档案行。新项目仍安装完整的 **schema.sql**，两份文件中的私有函数体保持一致。
+
+档案继续使用 **v2 和原来的九个字段**，不增加货币、表或字段。旧档案无需回填或重置；已有三种遗物和已获得的“遗物收藏家”徽章继续保留。升级后首次获得这枚徽章需要发现全部六种遗物。招架试炼不写入探险次数、奖励、遗物发现或徽章。
+
+部署前导出数据库备份，部署后先验证旧账号档案仍在，以及六种遗物可以保存、读回。若需要回退网页，可暂时保留这个兼容的数据库校验函数；不要通过删除新增遗物或重写旧档案来回退。旧版网页只认识三种遗物，应避免用旧页面保存覆盖已经包含六种遗物的新档案。
+
 ## 4. 填写公开配置并发布
 
 从项目 Connect / API Keys 中取得 **Project URL** 和 **publishable key**，填写 `coop-adventure/cloud-config.js`：
@@ -95,7 +103,7 @@ where schemaname='public' and tablename='ruins_saves';
 4. 断网或服务错误时应提示“未同步”，本地修改仍能保留；恢复后再次同步。离线草稿不等于已经上传。
 5. Supabase Security Advisor 无新增 RLS / public function 权限告警；邮箱验证码真实送达测试通过。
 
-本仓库本地测试 `work/adventure-cloud-schema-check.cjs` 使用实际 Postgres WASM（PGlite 0.5.10）验证了账号隔离、拒绝直接写入、档案范围、CAS 和重复安装保留数据。它不会连接线上数据库，不能替代真实邮件送达与多浏览器测试。
+本仓库本地测试 `work/adventure-cloud-schema-check.cjs` 使用实际 Postgres WASM（PGlite 0.5.10）保留原有 77 条断言，并验证六种遗物读写、拒绝重复/未知/超量遗物、旧档案逐项不变、升级可重复执行，以及函数所有者、授权、RLS、公开入口和 CAS 均不变。它不会连接线上数据库，不能替代真实邮件送达与多浏览器测试。
 
 测试依赖为官方 npm 包 `@electric-sql/pglite@0.5.10`，放在 `work/pglite-0.5.10/package`；其 tarball 完整性为 `sha512-tXc/25U3ulOkiRQuTFdwIv+JhBqtMdAF7Gvo6CfZZWtSB4+hgC4Wr2vwK5ngvvN5PJfAAEGIsfyCVy1JhCOBYw==`。在工作区用 Node 执行 `work/adventure-cloud-schema-check.cjs`。测试库和 work 目录不需要发布。
 

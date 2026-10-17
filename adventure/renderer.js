@@ -3,6 +3,7 @@
   'use strict';
   const W = 960, H = 600, TILE = 32;
   const palette = { ink: '#142326', outline: '#0f2024', stone: '#4e6555', moss: '#6a8250', gold: '#e4b96b', mint: '#abc592' };
+  const relicColors = { pierce: '#a0c8df', swift: '#b9d698', vigor: '#e3a38a', resonance: '#e5c88a', riposte: '#edb6a0', decoy: '#a8d6cc' };
   const floorCache = new Map();
   const font = '"Microsoft YaHei", "Noto Sans SC", sans-serif';
   const num = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -166,23 +167,53 @@
     for(let i=0;i<4;i++){const a=i*Math.PI/2+.5;rect(c,x+Math.cos(a)*r-3,y+Math.sin(a)*r*.5-4,6,4,'#8d9b7a');}
     label(c,'补水泉',x,y+r*.6+12,'#a6c5ad',8);
   }
+  function eventMachine(c, item, time, state) {
+    const current = state.roomEvent || {}, stage = current.kind === item.kind ? current.stage : item.used ? 'complete' : 'ready';
+    const complete = stage === 'complete', running = stage === 'active', flowing = running || complete;
+    if (item.kind === 'sluice') {
+      // The dry channels become a visible water route after turning the wheel.
+      for (let i = 0; i < 3; i++) {
+        rect(c,-31+i*21,10,12,40,'#153738');rect(c,-29+i*21,12,8,36,flowing ? '#4d9290' : '#254e4a');
+        if (flowing) for (let j = 0; j < 3; j++) rect(c,-28+i*21,14+(j*13+time*.017)%33,6,2,'#b4d6be');
+      }
+      rect(c,-29,-9,58,24,'#183631');rect(c,-25,-11,50,22,'#597568');rect(c,-25,-11,50,4,'#9ba88a');
+      rect(c,-4,-45,8,39,'#284b43');rect(c,-2,-45,3,37,'#99a77b');
+      c.save();c.translate(0,-31);c.rotate(flowing ? Math.PI/4 : 0);
+      c.strokeStyle=complete?'#a9d2be':'#d5b479';c.lineWidth=4;c.beginPath();c.arc(0,0,16,0,Math.PI*2);c.stroke();
+      for(let i=0;i<4;i++){const a=i*Math.PI/2;path(c,[[Math.cos(a)*4,Math.sin(a)*4],[Math.cos(a)*14,Math.sin(a)*14]],complete?'#a9d2be':'#d5b479',3);}
+      rect(c,-4,-4,8,8,'#e7d7a1');c.restore();
+      if (complete) { path(c,[[-9,-57],[-2,-50],[11,-64]],'#bfe3bb',3); }
+    } else if (item.kind === 'lift') {
+      ellipse(c,0,13,42,22,'#102c2b');ellipse(c,0,8,40,22,'#7d8265');ellipse(c,0,5,35,18,'#2b4740');
+      for(let i=0;i<5;i++){rect(c,-29+i*13,-7,7,25,complete?'#9b9b75':'#697459');rect(c,-28+i*13,-6,2,23,'#a6aa81');}
+      for(const side of [-1,1]){rect(c,side*39-4,-48,8,58,'#1d3b34');rect(c,side*39-3,-46,3,55,'#7c8d70');
+        for(let j=0;j<4;j++){rect(c,side*39-2,-40+j*12,4,3,'#a2ab80');}}
+      rect(c,-43,-51,86,7,'#7c8c69');rect(c,-40,-51,80,2,'#adb38b');
+      if (running) { const offset=(time*.018)%20;path(c,[[-22,offset-38],[-15,offset-46],[-8,offset-38]],'#f0d293',3);path(c,[[8,offset-38],[15,offset-46],[22,offset-38]],'#f0d293',3); }
+      else if (complete) { path(c,[[-9,-30],[-2,-23],[11,-37]],'#bfe3bb',3); }
+      else crystal(c,0,-26,.7,'#ddc27d');
+    }
+  }
   function interactable(c, item, time, state, localId) {
     if (!item || (item.kind === 'relic' && item.used)) return;
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
-    const color = kind === 'cache' ? '#9ac9c3' : kind === 'relic' ? item.buff === 'vigor' ? '#e3a38a' : item.buff === 'swift' ? '#b9d698' : '#a0c8df' : kind === 'extraction' ? '#bed6a3' : '#e9c780';
+    const color = kind === 'cache' || kind === 'supply-cache' ? '#9ac9c3' : kind === 'relic' ? relicColors[item.buff] || relicColors.pierce : kind === 'extraction' ? '#bed6a3' : '#e9c780';
     shadow(c, x, y, kind === 'beacon' ? 28 : 19, .3);
     if (active) {
       glow(c, x, y - 8, nearby ? 66 : 44, kind === 'cache' ? '#a6d8cc1c' : '#d3d8a51c');
       c.strokeStyle = color + (nearby ? 'a0' : '48'); c.lineWidth = nearby ? 2 : 1; c.setLineDash([4,5]); c.beginPath(); c.ellipse(x, y + 7, 25 + Math.sin(time * .003) * 2, 11, 0, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
     }
     c.save(); c.translate(Math.round(x), Math.round(y));
-    if (kind === 'cache') {
+    if (kind === 'sluice' || kind === 'lift') {
+      eventMachine(c, item, time, state);
+    } else if (kind === 'cache' || kind === 'supply-cache') {
       rect(c, -20, -11, 40, 26, '#112c2c'); rect(c, -18, -11, 36, 23, '#405d58'); rect(c, -16, -9, 32, 18, '#5a7970'); rect(c, -16, -9, 5, 18, '#829982'); rect(c, 11, -9, 5, 18, '#345650');
       rect(c, -19, item.used ? -21 : -16, 38, 7, item.used ? '#849f87' : '#7d9e8b'); rect(c, -16, item.used ? -22 : -17, 32, 3, '#a7bca0');
       if (item.used) { rect(c, -14, -11, 28, 6, '#203f39'); rect(c, -9, -6, 18, 3, '#b6b389'); }
       else { rect(c, -4, -11, 8, 16, active ? '#b9d9c3' : '#857e60'); rect(c, -8, -7, 16, 7, active ? '#9fc9b6' : '#857e60'); rect(c, -2, -6, 4, 5, active ? '#edf2c7' : '#263e36'); }
       rect(c, -18, 10, 36, 4, '#294b40');
+      if(kind==='supply-cache'&&!item.used){rect(c,-3,-11,6,15,'#d5e3b5');rect(c,-8,-6,16,5,'#d5e3b5');rect(c,-1,-9,2,11,'#f8f2cd');}
     } else if (kind === 'beacon') {
       const mission = state.mission || {}, running = mission.phase === 'defend', lit = mission.started || mission.phase === 'extract';
       ellipse(c, 0, 11, 29, 12, '#152e2c'); ellipse(c, 0, 7, 25, 11, '#5d7258'); ellipse(c, 0, 3, 21, 9, '#81916a'); ellipse(c, 0, 1, 15, 6, '#3e5948');
@@ -207,19 +238,31 @@
       if (active) { glow(c, 1, -35, 55, '#a9d59220'); path(c, [[-13,-12],[-6,-19],[1,-12]], '#c4ddac', 3); path(c, [[-13,-20],[-6,-27],[1,-20]], '#c4ddac88', 2); }
     } else if (kind === 'relic') {
       ellipse(c, 0, 6, 19, 8, '#213e36'); rect(c, -14, -3, 28, 9, '#4d6753'); rect(c, -12, -6, 24, 5, '#879a72');
-      const bob = Math.sin(time * .003 + x) * 3; c.translate(0, bob - 22); glow(c, 0, 0, 37, item.buff === 'vigor' ? '#e3a38a22' : item.buff === 'swift' ? '#b9d69822' : '#a0c8df22');
+      const bob = Math.sin(time * .003 + x) * 3; c.translate(0, bob - 22); glow(c, 0, 0, 37, color+'22');
       if (item.buff === 'swift') {
         c.save(); c.rotate(.45); rect(c,-3,-13,6,26,'#729675');rect(c,-1,-13,2,28,'#e1e6b6');for(let i=0;i<4;i++){rect(c,-9+i*2,-10+i*5,8-i,4,'#b8cf99');rect(c,2,-9+i*5,7-i,4,'#8eb789');}c.restore();
       } else if (item.buff === 'vigor') {
         rect(c,-10,-6,20,13,'#56774f');rect(c,-7,-10,14,20,'#8cab76');rect(c,-3,-8,6,16,'#e5bd92');rect(c,-8,-3,16,6,'#e5bd92');rect(c,-2,-7,3,14,'#f5d8aa');
+      } else if (item.buff === 'resonance') {
+        rect(c,-4,-11,8,23,'#a78956');rect(c,-2,-10,4,21,'#f2dca1');
+        for(const side of [-1,1])for(const radius of [10,17]){c.strokeStyle=radius===10?'#efd798':'#bca16c';c.lineWidth=2;c.beginPath();c.arc(0,0,radius,side>0?-.65:Math.PI-.65,side>0?.65:Math.PI+.65);c.stroke();}
+      } else if (item.buff === 'riposte') {
+        for(const angle of [-.7,.7]){c.save();c.rotate(angle);rect(c,-2,-16,4,29,'#a87561');rect(c,-1,-15,2,23,'#f4ddbf');rect(c,-6,6,12,3,'#d4a772');c.restore();}
+        crystal(c,0,2,.55,'#f1bca0');
+      } else if (item.buff === 'decoy') {
+        for(const side of [-1,1]){alpha(c,side===-1?.5:1,()=>{rect(c,side*6-5,-7,10,18,'#7fbbac');rect(c,side*6-4,-14,8,8,'#cbe6cb');rect(c,side*6-7,-8,14,3,'#e1ebbe');});}
+        path(c,[[-13,10],[0,15],[13,10]],'#b7e1d4',2);
       } else {
         c.save();c.rotate(Math.PI/4);rect(c,-10,-10,20,20,'#527c87');rect(c,-7,-7,14,14,'#9cc8ce');rect(c,-4,-4,8,8,'#e6eac2');c.restore();path(c,[[-17,1],[17,-2]],'#cfebe0',2);rect(c,12,-4,7,4,'#eff5c7');
       }
     }
     c.restore();
-    const name = item.used ? '已回收' : item.label || (kind === 'cache' ? '物资箱' : kind === 'extraction' ? '撤离点' : '遗物');
-    label(c, nearby && active ? 'E · ' + name : name, x, y + (kind === 'relic' ? 25 : 30), item.used ? '#758f7b' : active ? color : '#7e927b', kind === 'relic' ? 9 : 10);
-    if (nearby && item.description && !item.used) label(c, item.description, x, y + (kind === 'relic' ? 42 : 47), active ? '#c6d0aa' : '#94a58c', 8);
+    const machine = kind==='sluice'||kind==='lift', current = state.roomEvent || {};
+    const stageText = machine && current.kind===kind ? current.stage==='complete'?'已运转':current.stage==='active'?'运转中':'' : '';
+    const name = stageText || (item.used ? '已回收' : item.label || (kind === 'cache' ? '物资箱' : kind==='supply-cache'?'全队补给':kind==='sluice'?'水闸手轮':kind==='lift'?'废弃升降台':kind === 'extraction' ? '撤离点' : '遗物'));
+    const textY = y + (machine ? 62 : kind === 'relic' ? 25 : 30);
+    label(c, nearby && active ? 'E · ' + name : name, x, textY, item.used ? '#758f7b' : active ? color : '#7e927b', kind === 'relic' ? 9 : 10);
+    if (nearby && item.description && !item.used) label(c, item.description, x, textY+17, active ? '#c6d0aa' : '#94a58c', 8);
   }
   function fire(c, f, time) {
     const x = num(f.x), y = num(f.y), r = num(f.r, 20);
@@ -278,6 +321,16 @@
     rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
     c.restore();
   }
+  function decoy(c, d, time) {
+    if (!d || num(d.ttl) <= 0) return;
+    const x=num(d.x),y=num(d.y),opacity=Math.min(.42,num(d.ttl)*.6);
+    alpha(c,opacity,()=>{
+      ellipse(c,x,y+9,18,7,'#a8ded24d');
+      rect(c,x-10,y-13,20,23,'#a8ded2');rect(c,x-7,y-30,14,17,'#d2e6c6');rect(c,x-12,y-28,24,5,'#c5e1ba');
+      rect(c,x-6,y+7,4,9,'#b3d6c4');rect(c,x+3,y+7,4,9,'#b3d6c4');
+      const scan=(time*.015+hash(d.id))%37;path(c,[[x-11,y-29+scan],[x+11,y-29+scan]],'#edffe3',2);
+    });
+  }
   function player(c, p, time, localId, state) {
     if (!p || p.dead) return;
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
@@ -330,6 +383,12 @@
       c.strokeStyle = color; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 23, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, p.counterTime / 1.25)); c.stroke();
       // A short-lived actionable state, rather than a permanent control reminder.
       label(c, '反击', x, y + 34, color, 10);
+      const chain=Math.max(0,Math.min(4,Math.floor(num(p.parryChain))));
+      if(chain>=2)for(let i=0;i<chain;i++)rect(c,x-(chain*6-2)/2+i*6,y+44,4,2,'#f3d694');
+    }
+    if (p.ward > 0) {
+      c.strokeStyle='#d5ddab80';c.lineWidth=1;c.beginPath();c.arc(x,y-6,23,Math.PI*.12,Math.PI*.87);c.stroke();
+      c.save();c.translate(x+19,y-25);c.rotate(Math.PI/4);rect(c,-4,-4,8,8,'#dce8b2');rect(c,-2,-2,4,4,'#758e70');c.restore();
     }
     if (p.hp < p.maxHp) bar(c, x, y - 39, 28, p.hp / Math.max(1, p.maxHp), p.hp / p.maxHp < .3 ? '#df8e73' : '#adc98d');
     if (values(state.players).length > 1) label(c, second ? '伙伴' : isLocal ? '你' : '队长', x, y - 48, second ? '#e0ae93' : '#bdcf9f', 8);
@@ -358,10 +417,11 @@
         path(c, [[x,y],[tx,ty]], kind === 'charger' ? '#ef8d702b' : '#d0876a22', boss ? 18 : kind === 'charger' ? 29 : 9); c.setLineDash([7,5]); path(c, [[x,y],[tx,ty]], kind === 'charger' ? '#ffb692cc' : '#eea17b9c', 2); c.setLineDash([]);
       }
     }
-    if (kind === 'charger' && e.chargeTime > 0) { const a = Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', 18); }
+    if ((kind === 'charger' || kind==='brute') && (e.chargeTime > 0 || e.rhythm && e.rhythm.type==='rush' && e.rhythm.phase==='active')) { const a = e.rhythm ? num(e.rhythm.angle) : Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', kind==='brute'?28:18); }
     c.save(); c.translate(Math.round(x), Math.round(y));
     if (boss) {
-      glow(c, 0, -12, 56, '#cfa66217');
+      const awakened = e.stage >= 2;
+      glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
       rect(c, -21, 5 + step, 15, 16, '#192c2b'); rect(c, 8, 5 - step, 15, 16, '#192c2b'); rect(c, -20, 6 + step, 13, 12, '#62725c'); rect(c, 9, 6 - step, 13, 12, '#62725c');
       rect(c, -25, -24, 50, 34, '#142b29'); rect(c, -21, -23, 43, 31, '#71836a'); rect(c, -20, -21, 10, 28, '#8c9b7b'); rect(c, 10, -21, 11, 28, '#526a56'); rect(c, -16, -12, 33, 17, '#4e6552');
       rect(c, -31, -26 + step, 14, 27, '#7e8b6a'); rect(c, -34, -22 + step, 5, 21, '#475f4b'); rect(c, 19, -26 - step, 14, 27, '#718363'); rect(c, 30, -22 - step, 5, 21, '#405947');
@@ -369,6 +429,11 @@
       rect(c, -10, -35, 7, 4, '#e7b96d'); rect(c, 4, -35, 7, 4, '#e7b96d'); rect(c, -8, -26, 16, 3, '#334b3e');
       c.save(); c.rotate(Math.PI / 4); rect(c, -6, -7, 12, 12, '#c8ab63'); rect(c, -3, -4, 6, 6, '#eee0a0'); c.restore();
       grass(c, -12, -48, '#9cab6b'); grass(c, 12, -42, '#879f63');
+      if(awakened){
+        rect(c,-12,-18,24,22,'#302e25');rect(c,-9,-16,18,19,'#c3713f');rect(c,-5,-14,10,16,'#e8a355');rect(c,-2,-12,4,12,'#ffe3a1');
+        for(const side of [-1,1]){path(c,[[side*10,-17],[side*17,-12],[side*15,-3],[side*21,2]],'#f4bb6f',2);rect(c,side*7-3,-36,6,4,'#ffe0a0');}
+        for(let i=0;i<3;i++){const rise=(time*.024+i*13)%31;alpha(c,1-rise/31,()=>rect(c,-9+i*9,y%3-25-rise,2,3,'#eab36d'));}
+      }
     } else if (kind === 'duelist') {
       const staggered = e.stagger > 0, attack = e.rhythm || {}, raised = attack.phase === 'windup';
       if (staggered) c.rotate(-.13);
@@ -380,6 +445,28 @@
       rect(c,-14,-36,28,5,'#70826b');rect(c,-4,-42,8,7,'#b89d68');rect(c,-2,-46,4,5,'#e0bd79');
       const facing = num(attack.angle, num(e.facing));
       blade(c, 0, -3, facing + (raised && attack.type === 'quake' ? -1.15 : raised && attack.type === 'sweep' ? .8 : 0), raised, attack.phase === 'active', true);
+    } else if (kind === 'brute') {
+      const attack=e.rhythm||{},charging=attack.type==='rush'&&attack.phase==='active',staggered=e.stagger>0||e.stun>0;
+      if(charging)c.rotate(Math.cos(num(attack.angle))*.14);else if(staggered)c.rotate(-.17);
+      rect(c,-19,4+step,13,16,'#1b302b');rect(c,7,4-step,13,16,'#1b302b');rect(c,-18,5+step,11,11,'#a1875c');rect(c,8,5-step,11,11,'#90794f');
+      rect(c,-26,-27,52,37,'#1c342c');rect(c,-22,-25,44,34,'#8c7957');rect(c,-21,-24,12,30,'#b19c6b');rect(c,10,-23,12,30,'#635e47');
+      rect(c,-29,-23,13,29,'#65755a');rect(c,17,-23,13,29,'#596e52');rect(c,-32,-24,18,7,'#b5ad7c');rect(c,15,-24,18,7,'#b5ad7c');
+      rect(c,-15,-43,30,22,'#293b2e');rect(c,-12,-42,24,20,'#ac9f72');rect(c,-11,-41,7,17,'#d0bf8a');rect(c,5,-40,7,17,'#7f825f');
+      rect(c,-18,-39,8,6,'#b5a77c');rect(c,-22,-45,6,11,'#dfc99a');rect(c,10,-39,8,6,'#a79870');rect(c,16,-45,6,11,'#d5c08c');
+      rect(c,-8,-34,5,3,charging?'#ffe2a0':'#5a4838');rect(c,4,-34,5,3,charging?'#ffe2a0':'#5a4838');rect(c,-7,-25,14,4,'#4f4f37');
+      rect(c,-20,2,40,6,'#626f50');rect(c,-4,1,8,9,'#d0b573');
+      if(attack.type==='quake'&&attack.phase==='windup'){rect(c,-28,-42,8,23,'#7f8864');rect(c,20,-42,8,23,'#7f8864');rect(c,-33,-51,18,12,'#c4b17e');rect(c,15,-51,18,12,'#c4b17e');}
+      if(staggered){path(c,[[-24,-51],[-30,-58]],'#edcf8d',2);path(c,[[22,-53],[29,-58]],'#edcf8d',2);}
+    } else if (kind === 'pyromancer') {
+      const attack=e.rhythm||{},casting=attack.phase==='windup';
+      c.fillStyle='#233a33';c.beginPath();c.moveTo(-9,-23);c.lineTo(10,-23);c.lineTo(19,16);c.lineTo(-18,16);c.closePath();c.fill();
+      rect(c,-11,-18,22,30,'#715f55');rect(c,-9,-17,7,28,'#9d7c5b');rect(c,5,-17,7,28,'#4e5147');rect(c,-2,-15,4,28,'#c6a05e');
+      rect(c,-10,-35,20,21,'#20352f');rect(c,-8,-33,16,17,'#837a5d');rect(c,-6,-28,12,10,'#223831');rect(c,-4,-26,3,3,'#efbf75');rect(c,3,-26,3,3,'#efbf75');
+      c.fillStyle='#927c57';c.beginPath();c.moveTo(-14,-31);c.lineTo(0,-50);c.lineTo(14,-31);c.closePath();c.fill();rect(c,-15,-33,30,4,'#c5a66c');
+      const side=Math.cos(num(attack.angle,num(e.facing)))<0?-1:1,handX=side*23,handY=casting?-29:-6;
+      path(c,[[side*8,-14],[handX,handY-5]],'#a78b66',5);path(c,[[handX,handY-9],[handX,handY+9]],'#c4aa71',2);
+      lantern(c,handX,handY+12,time,casting?.88:.68);
+      if(casting){glow(c,handX,handY+10,44,'#eaa35435');path(c,[[handX-12,handY+13],[handX,handY+20],[handX+12,handY+13]],'#f0d195',2);}
     } else if (kind === 'shield') {
       rect(c,-10,3+step,7,12,'#172b29');rect(c,4,3-step,7,12,'#172b29');rect(c,-10,4+step,7,7,'#827f68');rect(c,4,4-step,7,7,'#827f68');
       rect(c,-14,-16,28,24,'#172c2b');rect(c,-12,-15,24,21,'#65796c');rect(c,-11,-14,7,19,'#a0a68a');rect(c,5,-13,7,18,'#405d54');rect(c,-13,3,27,5,'#b49b66');
@@ -418,13 +505,22 @@
     if (e.elite && !boss) {
       const crownY = y - 64;
       path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
-      label(c, kind === 'duelist' ? '守刃者' : '精英', x, crownY - 15, '#ebcf8e', 8);
+      label(c, {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司'}[kind] || '精英', x, crownY - 15, '#ebcf8e', 8);
     }
-    if (boss) label(c, '炉心守卫', x, y - 72, '#ddca97', 9);
+    if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
   }
   function bullet(c, b) {
     const x = num(b.x), y = num(b.y), r = num(b.r, 3), friendly = b.friendly !== false;
     const vx = num(b.vx), vy = num(b.vy), speed = Math.hypot(vx, vy) || 1, dx = vx / speed, dy = vy / speed;
+    if(b.kind==='fireball'||b.fireball){
+      const core=friendly?'#d2f0d2':'#ffe2a0',edge=friendly?'#6db9ac':'#dd8e50';
+      glow(c,x,y,Math.max(20,r*4),friendly?'#86d4c441':'#f2a4553b');
+      for(let i=3;i>=1;i--)alpha(c,.34-i*.06,()=>ellipse(c,x-dx*i*9,y-dy*i*9,Math.max(2,r-i),Math.max(2,r-i),edge));
+      ellipse(c,x,y,r+2,r+2,edge);ellipse(c,x,y,Math.max(1,r-1),Math.max(1,r-1),core);
+      if((b.reflectable||b.fireball)&&!friendly){c.strokeStyle='#f5d99d';c.lineWidth=2;c.beginPath();c.arc(x,y,r+6,-Math.PI*.25,Math.PI*.25);c.stroke();c.beginPath();c.arc(x,y,r+6,Math.PI*.75,Math.PI*1.25);c.stroke();}
+      if(friendly)path(c,[[x-dx*(r+7)-dy*5,y-dy*(r+7)+dx*5],[x-dx*(r+2),y-dy*(r+2)],[x-dx*(r+7)+dy*5,y-dy*(r+7)-dx*5]],'#d8f5db',2);
+      return;
+    }
     c.lineCap = 'round'; path(c, [[x - dx * (friendly ? 11 : 7), y - dy * (friendly ? 11 : 7)], [x, y]], friendly ? '#efd89b60' : '#d98c7066', friendly ? 3 : 4); c.lineCap = 'butt';
     if (friendly) { rect(c, x - r, y - r, r * 2, r * 2, '#efd293'); rect(c, x - 1, y - 1, 3, 3, '#fff4c6'); }
     else { glow(c, x, y, 14, '#e8a67533'); ellipse(c, x, y, r + 1, r + 1, '#8d594c'); ellipse(c, x, y, r, r, '#e4a576'); rect(c, x - 1, y - 1, 2, 2, '#ffe5a5'); }
@@ -463,7 +559,7 @@
     }
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
-  const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b' };
+  const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475' };
   function rhythmArea(c, e, state, localId) {
     const r = e && e.rhythm;
     if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
@@ -478,10 +574,17 @@
     const circle = r.type === 'quake' || arc >= Math.PI * 2 - .01;
     c.save(); c.translate(x, y); c.rotate(angle);
     const shape = () => { c.beginPath(); if (!circle) c.moveTo(0, 0); c.arc(0, 0, radius, circle ? 0 : -arc / 2, circle ? Math.PI * 2 : arc / 2); c.closePath(); };
-    shape(); c.fillStyle = color + (active ? '38' : '13'); c.fill();
-    c.strokeStyle = color + (active ? 'ee' : '88'); c.lineWidth = active ? 4 : 2;
-    if (!active) c.setLineDash([7, 6]); shape(); c.stroke(); c.setLineDash([]);
-    if (r.type === 'thrust') {
+    if (r.type === 'fireball') {
+      // This line previews a travelling projectile, not an instant floor-wide hit.
+      path(c,[[num(e.r,20)+8,0],[radius,0]],color+'28',12);
+      if(!active)c.setLineDash([9,7]);path(c,[[num(e.r,20)+8,0],[radius,0]],color+(active?'cf':'88'),2);c.setLineDash([]);
+      for(let i=1;i<=3;i++){const dx=radius*(.22+i*.19);path(c,[[dx-7,-5],[dx,0],[dx-7,5]],color+'a0',2);}
+    } else {
+      shape(); c.fillStyle = color + (active ? '38' : '13'); c.fill();
+      c.strokeStyle = color + (active ? 'ee' : '88'); c.lineWidth = active ? 4 : 2;
+      if (!active) c.setLineDash([7, 6]); shape(); c.stroke(); c.setLineDash([]);
+    }
+    if (r.type === 'thrust' || r.type === 'rush') {
       // Directional spearheads also identify a thrust when color is hard to see.
       for (let i = 1; i <= 3; i++) { const dx = radius * (.26 + i * .17); path(c, [[dx-9,-8],[dx,0],[dx-9,8]], color + (active ? 'ed' : '99'), active ? 3 : 2); }
     } else if (r.type === 'sweep') {
@@ -506,7 +609,7 @@
     }
     c.restore();
     if (!active) {
-      const glyph = { combo: '刃', thrust: '突', sweep: '扫', quake: '震' }[r.type];
+      const glyph = { combo: '刃', thrust: '突', sweep: '扫', quake: '震', rush: '冲', fireball: '炎' }[r.type];
       const gy = y - (e.kind === 'boss' ? 108 : 103);
       c.save(); c.translate(x, gy); c.rotate(Math.PI / 4); rect(c,-10,-10,20,20,'#142c2be8'); c.strokeStyle=color;c.lineWidth=2;c.strokeRect(-10,-10,20,20);c.restore();
       label(c, glyph, x, gy, color, 13);
@@ -527,18 +630,18 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= .62 && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' ? 1 : /^event-|^supply-collected$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
     let x = 0, y = 0, flash = 0;
     for (const {event:e, age} of events) {
-      const success = ['perfect-parry','mikiri','counterattack'].includes(e.type), beat = e.type === 'rhythm-beat';
-      if (!success && !beat) continue;
-      const duration = beat ? .16 : .13;
+      const success = ['perfect-parry','mikiri','counterattack','fireball-reflected'].includes(e.type), beat = e.type === 'rhythm-beat', phase = e.type === 'boss-phase';
+      if (!success && !beat && !phase) continue;
+      const duration = phase ? .24 : beat ? .16 : .13;
       if (age > duration) continue;
-      const amplitude = (beat ? 1.8 : 2.5) * (1 - age / duration), phase = (hash(e.id || e.type) % 17) + age * 175;
-      x += Math.sin(phase) * amplitude; y += Math.cos(phase * 1.3) * amplitude * .7;
+      const amplitude = (phase ? 1.5 : beat ? 1.8 : 2.5) * (1 - age / duration), oscillation = (hash(e.id || e.type) % 17) + age * 175;
+      x += Math.sin(oscillation) * amplitude; y += Math.cos(oscillation * 1.3) * amplitude * .7;
       if (success || beat) flash = Math.max(flash, (success ? .07 : .035) * Math.max(0, 1 - age / .09));
     }
     return { x:Math.max(-3, Math.min(3, x)), y:Math.max(-2, Math.min(2, y)), flash:Math.min(.07,flash) };
@@ -546,17 +649,29 @@
   function combatEffects(c, events) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (e.type === 'boss-phase' || e.type === 'event-start' || e.type === 'event-complete' || e.type === 'supply-collected' || e.type === 'decoy') {
+        const phase=e.type==='boss-phase',supplied=e.type==='supply-collected',ghost=e.type==='decoy',life=phase?1:ghost?.48:.85;
+        if(age>life)continue;
+        const ratio=age/life,x=num(e.x),y=num(e.y),color=phase?'#eeb77d':supplied||ghost?'#b7e1cf':e.kind==='sluice'?'#9bd0c4':'#e3ce91';
+        alpha(c,1-ratio,()=>{
+          const radius=14+ratio*(phase?94:ghost?27:56);
+          c.strokeStyle=color;c.lineWidth=phase?3:2;c.beginPath();c.ellipse(x,y,radius,radius*(phase?.62:.5),0,0,Math.PI*2);c.stroke();
+          if(phase){for(let i=0;i<6;i++){const angle=i*Math.PI/3,inner=17+ratio*12,outer=inner+19+ratio*31;path(c,[[x+Math.cos(angle)*inner,y+Math.sin(angle)*inner*.65],[x+Math.cos(angle+.05)*outer,y+Math.sin(angle+.05)*outer*.65]],color,2);}label(c,'炉火觉醒',x,y-88-ratio*12,color,16);}
+          else if(!ghost){const name=supplied?'补给已领取':e.type==='event-complete'?'机关已运转':e.kind==='sluice'?'水路开启':'升降台启动';label(c,name,x,y-66-ratio*10,color,12);}
+        });
+        continue;
+      }
       const beat = e.type === 'rhythm-beat', broken = e.type === 'guard-break';
       const life = beat ? .24 : .55;
       if (age > life) continue;
-      const ratio = age / life, x = num(e.x), y = num(e.y), color = broken ? '#e39b83' : e.type === 'perfect-dodge' ? '#b4e1da' : '#ffe0a2';
+      const ratio = age / life, x = num(e.x), y = num(e.y), color = broken ? '#e39b83' : e.type === 'perfect-dodge' || e.type === 'fireball-reflected' ? '#b4e1da' : '#ffe0a2';
       alpha(c, 1-ratio, () => {
         c.strokeStyle = color; c.lineWidth = beat ? 2 : 3 * (1-ratio) + 1;
         c.beginPath(); c.arc(x,y,11+ratio*(beat?36:49),0,Math.PI*2); c.stroke();
         if (!beat) {
           for (let i=0; i<8; i++) { const a=i*Math.PI/4+(hash(e.id)%7)*.1, inner=7+ratio*12, outer=inner+9+ratio*15;
             path(c,[[x+Math.cos(a)*inner,y+Math.sin(a)*inner],[x+Math.cos(a)*outer,y+Math.sin(a)*outer]],color,i%2?2:3); }
-          const name = { 'perfect-parry':'铮', 'perfect-dodge':'闪', mikiri:'看破', counterattack:'反击', 'guard-break':'破防' }[e.type];
+          const name = { 'perfect-parry':'铮', 'perfect-dodge':'闪', mikiri:'看破', counterattack:'反击', 'guard-break':'破防', 'fireball-reflected':'反射' }[e.type];
           if (name) label(c,name,x,y-45-ratio*12,color,e.type==='counterattack'?17:14);
         }
       });
@@ -615,6 +730,10 @@
         c.beginPath(); c.moveTo(point.x, point.y - 5); c.lineTo(point.x + 4, point.y); c.lineTo(point.x, point.y + 5); c.lineTo(point.x - 4, point.y); c.closePath(); c.fill();
       } else if (room.visited && room.elite) {
         rect(c, point.x - 2, point.y - 2, 4, 4, '#e5bc70');
+      } else if (room.visited && room.eventKind === 'sluice') {
+        path(c,[[point.x-3,point.y-1],[point.x,point.y+1],[point.x+3,point.y-1]],'#8dbcb8',2);
+      } else if (room.visited && room.eventKind === 'lift') {
+        rect(c,point.x-3,point.y-3,2,6,'#d3c795');rect(c,point.x+1,point.y-3,2,6,'#d3c795');
       }
       if (isCurrent) rect(c, point.x - 1, point.y - 1, 2, 2, '#20372e');
     }
@@ -644,6 +763,7 @@
     values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
+      ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time) })),

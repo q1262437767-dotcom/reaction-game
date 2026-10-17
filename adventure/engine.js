@@ -13,9 +13,12 @@
     holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 }
   };
   var BUFFS = {
-    pierce: { label: '穿透棱镜', description: '全队子弹可穿透 2 个敌人，适合把敌人引成一线' },
+    pierce: { label: '穿透棱镜', description: '子弹穿透 2 个敌人；近战伤害 +1' },
     swift: { label: '疾风羽饰', description: '全队移动速度 +15%，闪避冷却缩短至 0.75 秒' },
-    vigor: { label: '生命苔石', description: '全队生命上限 +1，并恢复 2 点生命；本局最多 7 点生命' }
+    vigor: { label: '生命苔石', description: '全队生命上限 +1，并恢复 2 点生命；本局最多 7 点生命' },
+    resonance: { label: '鸣震核心', description: '主动反击产生冲击，伤害并推开附近敌人' },
+    riposte: { label: '回刃纹章', description: '连续成功招架 2 次，下一次主动反击附带范围斩击' },
+    decoy: { label: '留影灯芯', description: '精准闪避或看破后留下残影，吸引敌人的下一招' }
   };
   var ROOM_DEFS = [
     { id: 'camp', name: '苔灯营地', kind: 'camp', next: 1 },
@@ -41,7 +44,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       if (s.combatEvents.length > 24) s.combatEvents.shift();
@@ -101,7 +104,7 @@
       fireCd: 0, downed: false, carry: null, kills: 0, prevDash: false, prevInteract: false,
       prevGuard: false, prevShoot: false, guarding: false, guardWindow: 0, guardCd: 0, guardStrain: 0,
       dashWindow: 0, dashOriginX: 0, dashOriginY: 0, counterTime: 0, counterEnemy: null,
-      counterKind: '', meleeTime: 0, guardLoad: 0, guardAttackLock: 0 };
+      counterKind: '', meleeTime: 0, guardLoad: 0, guardAttackLock: 0, parryChain: 0, ward: 0 };
   }
   function addPlayer(s, requestedId) {
     var key = requestedId || (s.players.p1 ? 'p2' : 'p1');
@@ -133,12 +136,12 @@
     var mode = options.mode === 'random' ? 'random' : 'story';
     var missionId = mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
-    var s = { version: 1, combatVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
+    var s = { version: 1, combatVersion: 1, contentVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       difficulty: Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
-      runBuffs: [], relicRooms: [], interactables: [],
+      runBuffs: [], relicRooms: [], interactables: [], decoys: [], roomEvent: null,
       unlocks: clone(options.unlocks || {}), playerCount: 0, players: {}, enemies: [], bullets: [], props: [],
       particles: [], events: [], combatEvents: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
       room: null, roomData: {}, rooms: ROOM_DEFS.map(function (r, i) {
@@ -203,7 +206,14 @@
     for (var i = battleRooms.length - 1; i > 0; i -= 1) {
       var j = Math.floor(random(s) * (i + 1)), swap = battleRooms[i]; battleRooms[i] = battleRooms[j]; battleRooms[j] = swap;
     }
-    battleRooms.slice(0, 3).forEach(function (r, index) { r.elite = true; r.eliteBuff = Object.keys(BUFFS)[index]; });
+    var relicPool = Object.keys(BUFFS);
+    for (var b = relicPool.length - 1; b > 0; b -= 1) {
+      var k = Math.floor(random(s) * (b + 1)), relic = relicPool[b]; relicPool[b] = relicPool[k]; relicPool[k] = relic;
+    }
+    battleRooms.slice(0, 3).forEach(function (r, index) {
+      r.elite = true; r.eliteKind = ['duelist', 'brute', 'pyromancer'][index]; r.eliteBuff = relicPool[index];
+    });
+    battleRooms.slice(3, 5).forEach(function (r, index) { r.eventKind = index ? 'lift' : 'sluice'; });
     s.exploration = { kills: 0, target: 0, totalEnemies: 0, bossAwake: false, bossSpawned: false, bossDefeated: false };
     s.rooms.forEach(function (r) {
       var data = randomRoomContent(s, r);
@@ -266,22 +276,56 @@
     var kinds = ['chaser', 'shooter', 'shield', 'charger'];
     var count = 3 + (random(s) < 0.5 ? 1 : 0);
     for (var n = 0; n < count; n += 1) {
-      var foe = enemy(s, room.elite && !n ? 'duelist' : kinds[Math.floor(random(s) * kinds.length)], spots[n][0], spots[n][1]);
+      var foe = enemy(s, room.elite && !n ? room.eliteKind || 'duelist' : kinds[Math.floor(random(s) * kinds.length)], spots[n][0], spots[n][1]);
       if (room.elite && !n) {
         foe.elite = true; foe.relicBuff = room.eliteBuff;
         foe.hp = foe.maxHp = foe.maxHp + 5; foe.r += 4; foe.speed *= 1.08;
       }
       data.enemies.push(foe);
     }
+    if (room.eventKind) {
+      data.roomEvent = { kind: room.eventKind, stage: 'ready', enemyIds: [], collected: false };
+      data.interactables.push({ id: 'event-' + room.index, kind: room.eventKind, x: 480, y: 440, r: 25,
+        label: room.eventKind === 'sluice' ? '开启水闸' : '启动升降台', active: true, used: false });
+      if (room.eventKind === 'sluice') {
+        room.name = '失压水闸';
+        var barrier = rect(430, 215, 100, 42); barrier.eventBarrier = true; data.walls.push(barrier);
+        data.fires.push({ id: id(s, 'fire-'), x: 480, y: 288, r: 34, active: true, sluiceFire: true });
+      } else room.name = '遗落升降台';
+    }
+    data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
     return data;
+  }
+  function placeEnemyInRoom(data, foe, players) {
+    function free(x, y) {
+      var point = { x: x, y: y, r: foe.r };
+      return x >= 30 + foe.r && x <= W - 30 - foe.r && y >= 30 + foe.r && y <= H - 30 - foe.r &&
+        !data.walls.some(function (w) { return circleRect(point, w); }) &&
+        !data.doors.some(function (w) { return w.locked && circleRect(point, w); }) &&
+        !data.props.some(function (q) { return solidProp(q) && dist(point, q) < foe.r + q.r + 3; }) &&
+        !data.enemies.some(function (q) { return q !== foe && q.hp > 0 && dist(point, q) < foe.r + q.r + 4; }) &&
+        !(players || []).some(function (p) { return dist(point, p) < foe.r + p.r + 48; });
+    }
+    var x = foe.x, y = foe.y;
+    if (free(x, y)) return true;
+    for (var radius = 24; radius <= 240; radius += 24) {
+      for (var angle = 0; angle < 16; angle += 1) {
+        var px = x + Math.cos(angle * TAU / 16) * radius, py = y + Math.sin(angle * TAU / 16) * radius;
+        if (free(px, py)) { foe.x = px; foe.y = py; return true; }
+      }
+    }
+    for (var gy = 90; gy <= 510; gy += 40) for (var gx = 90; gx <= 870; gx += 40) {
+      if (free(gx, gy)) { foe.x = gx; foe.y = gy; return true; }
+    }
+    return false;
   }
   function awakenBoss(s) {
     var run = s.exploration;
     if (!run || run.bossAwake || run.kills < run.target) return;
     run.bossAwake = true; run.bossSpawned = true;
     var boss = enemy(s, 'boss', 640, 300);
-    if (s.room && s.room.index === s.bossIndex) s.enemies.push(boss);
-    else s.roomData[s.bossIndex].enemies.push(boss);
+    if (s.room && s.room.index === s.bossIndex) { placeEnemyInRoom(s, boss, alivePlayers(s)); s.enemies.push(boss); }
+    else { placeEnemyInRoom(s.roomData[s.bossIndex], boss); s.roomData[s.bossIndex].enemies.push(boss); }
     s.message = '炉心守卫已苏醒'; s.messageTime = 3;
     event(s, 'boss-awakened', { room: s.bossIndex });
   }
@@ -293,14 +337,14 @@
       charges: kind === 'water' ? 3 : 0, destroyed: false };
   }
   function enemy(s, kind, x, y) {
-    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
+    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'brute' ? 30 : kind === 'pyromancer' ? 20 : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
     if (s.difficulty === 2) hp += kind === 'boss' ? 10 : 1;
-    return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'charger' ? 19 : 16,
-      hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
+    return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'brute' ? 27 : kind === 'charger' ? 19 : 16,
+      hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'brute' ? 72 : kind === 'pyromancer' ? 65 : kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
       aimX: 0, aimY: 0, phase: 0, flash: 0, stun: 0, navTime: 0, navX: x, navY: y,
       chargeTime: 0, chargeX: 0, chargeY: 0, shieldOpen: 0,
-      rhythm: null, rhythmCycle: 0, stagger: 0, posture: 0, maxPosture: kind === 'boss' ? 7 : 4 };
+      rhythm: null, rhythmCycle: 0, stagger: 0, posture: 0, stage: 1, maxPosture: kind === 'boss' ? 7 : 4 };
   }
   function roomContent(s, index) {
     var data = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28),
@@ -400,12 +444,14 @@
     });
     // Carried objects travel with their owner; don't duplicate them on revisits.
     data.props = data.props.filter(function (p) { return !p.carriedBy; });
+    data.roomEvent = s.roomEvent ? clone(s.roomEvent) : null;
     s.roomData[s.room.index] = data;
   }
   function resetCombat(p) {
     p.guarding = false; p.guardWindow = 0; p.guardCd = 0; p.guardStrain = 0; p.guardLoad = 0;
     p.dashWindow = 0; p.dashTime = 0; p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     p.meleeTime = 0; p.guardAttackLock = 0; p.prevGuard = false; p.prevShoot = false;
+    p.parryChain = 0;
   }
   function enterRoom(s, index, initial) {
     index = Number(index);
@@ -422,12 +468,13 @@
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     // Do not cache a pending strike and resume it on a later room visit.
-    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.stagger = 0; e.attackCd = Math.max(e.attackCd, 0.8); });
+    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.attackCd = Math.max(e.attackCd, 0.8); });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
+    s.roomEvent = data.roomEvent || null; s.decoys = [];
     carried.forEach(function (p) { if (!s.props.some(function (q) { return q.id === p.id; })) s.props.push(p); });
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
     if (s.mode === 'random') s.rooms[index].neighbors.forEach(function (n) { s.rooms[n].discovered = true; });
@@ -509,7 +556,7 @@
   function offerRelics(s, group) {
     if (s.relicRooms.indexOf(group) >= 0) return;
     s.relicRooms.push(group);
-    var available = Object.keys(BUFFS).filter(function (key) { return s.runBuffs.indexOf(key) < 0; });
+    var available = ['pierce', 'swift', 'vigor'].filter(function (key) { return s.runBuffs.indexOf(key) < 0; });
     for (var i = available.length - 1; i > 0; i -= 1) {
       var j = Math.floor(random(s) * (i + 1)), swap = available[i]; available[i] = available[j]; available[j] = swap;
     }
@@ -522,7 +569,7 @@
     if (available.length) event(s, 'relic-offer', { group: group });
   }
   function takeRelic(s, item) {
-    if (!item.active || item.used || !BUFFS[item.buff] || s.runBuffs.indexOf(item.buff) >= 0) return false;
+    if (!item.active || item.used || !BUFFS[item.buff] || s.runBuffs.indexOf(item.buff) >= 0 || s.runBuffs.length >= 6) return false;
     s.runBuffs.push(item.buff);
     s.interactables.forEach(function (q) {
       if (q.kind === 'relic' && (q.group === item.group || q.buff === item.buff)) {
@@ -585,6 +632,46 @@
     s.message = '第 ' + m.wave + ' / 3 波来袭！'; s.messageTime = 2.4;
     event(s, 'wave-start', { wave: m.wave }); syncMission(s); setHint(s);
     return true;
+  }
+  function startRoomEvent(s, item) {
+    var state = s.roomEvent;
+    if (s.mode !== 'random' || !state || state.kind !== item.kind || state.stage !== 'ready' || item.used) return false;
+    item.used = true; item.active = false; state.stage = 'active';
+    var kinds = state.kind === 'sluice' ? ['duelist'] : ['chaser', 'shield', 'shooter'];
+    var spots = state.kind === 'sluice' ? [[740, 300]] : [[800, 140], [800, 460], [480, 100]];
+    kinds.forEach(function (kind, index) {
+      var foe = enemy(s, kind, spots[index][0], spots[index][1]);
+      if (state.kind === 'sluice') {
+        foe.elite = true; foe.patrol = true;
+        var available = Object.keys(BUFFS).filter(function (key) { return s.runBuffs.indexOf(key) < 0; });
+        foe.relicBuff = available[Math.floor(random(s) * available.length)] || 'resonance';
+      }
+      placeEnemyInRoom(s, foe, alivePlayers(s));
+      state.enemyIds.push(foe.id); s.enemies.push(foe);
+    });
+    s.exploration.totalEnemies += kinds.length;
+    // Awakening keeps the original threshold: optional events never become a compulsory chore.
+    if (state.kind === 'sluice') {
+      s.walls = s.walls.filter(function (w) { return !w.eventBarrier; });
+      s.fires.forEach(function (f) { if (f.sluiceFire && f.active) { f.active = false; s.stats.fires += 1; } });
+      s.message = '水路已通 · 一名巡逻守刃者听见了动静';
+    } else s.message = '升降台启动 · 守住后可以领取补给';
+    s.messageTime = 3;
+    event(s, 'event-start', { kind: state.kind, room: s.room.index, x: item.x, y: item.y });
+    return true;
+  }
+  function updateRoomEvent(s) {
+    var state = s.roomEvent;
+    if (!state || state.stage !== 'active' || state.enemyIds.some(function (key) {
+      return s.enemies.some(function (e) { return e.id === key && e.hp > 0; });
+    })) return;
+    state.stage = 'complete';
+    if (state.kind === 'lift') {
+      s.interactables.push({ id: 'supply-' + s.room.index, kind: 'supply-cache', x: 480, y: 440, r: 24,
+        label: '领取补给与护盾', active: true, used: false });
+      s.message = '补给已送达 · 升降台旁按 E 领取'; s.messageTime = 3;
+    }
+    event(s, 'event-complete', { kind: state.kind, room: s.room.index, x: 480, y: 440 });
   }
   function updateHoldout(s, dt) {
     var m = s.mission;
@@ -750,6 +837,14 @@
         return false;
       }
       if (target.kind === 'relic') return takeRelic(s, target);
+      if (target.kind === 'sluice' || target.kind === 'lift') return startRoomEvent(s, target);
+      if (target.kind === 'supply-cache' && s.roomEvent && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
+        target.used = true; target.active = false; s.roomEvent.collected = true;
+        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; });
+        event(s, 'supply-collected', { room: s.room.index, x: target.x, y: target.y });
+        burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
+        s.message = '全队恢复 2 点生命，获得一次护盾'; s.messageTime = 3; return true;
+      }
       if (target.kind === 'cache') {
         if (s.mission.caches.indexOf(target.id) < 0) s.mission.caches.push(target.id);
         target.used = true; target.active = false;
@@ -785,6 +880,12 @@
   }
   function damagePlayer(s, p, amount, source) {
     if (!p || p.downed || p.invuln > 0 || s.status !== 'playing') return false;
+    p.parryChain = 0;
+    if (p.ward > 0) {
+      p.ward = 0; p.invuln = 0.85;
+      event(s, 'ward-block', { playerId: p.id, x: p.x, y: p.y });
+      particle(s, 'counter', p.x, p.y, { r: 35, ttl: 0.3, life: 0.3, color: '#9ed8ff' }); return true;
+    }
     p.hp = Math.max(0, p.hp - amount); p.invuln = 0.85; s.stats.damage += amount;
     p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     event(s, 'player-hit', { playerId: p.id, hp: p.hp, source: source });
@@ -799,6 +900,16 @@
   function damageEnemy(s, e, amount, owner) {
     if (e.hp <= 0) return;
     e.hp -= amount; e.flash = 0.12;
+    if (s.mode === 'random' && e.kind === 'boss' && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
+      e.stage = 2; e.rhythm = null; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0;
+      s.walls = s.walls.filter(function (w) {
+        var boundary = w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28;
+        if (!boundary) burst(s, 'wood', w.x + w.w / 2, w.y + w.h / 2, '#bcaa8d', 6);
+        return boundary;
+      });
+      s.message = '炉心暴走 · 石柱崩塌'; s.messageTime = 2;
+      event(s, 'boss-phase', { enemyId: e.id, stage: 2, x: e.x, y: e.y });
+    }
     if (e.hp <= 0) {
       s.stats.kills += 1;
       if (s.players[owner]) s.players[owner].kills += 1;
@@ -808,11 +919,19 @@
         if (e.kind === 'boss') s.exploration.bossDefeated = true;
         else {
           s.exploration.kills += 1;
-          if (e.elite && BUFFS[e.relicBuff] && s.runBuffs.indexOf(e.relicBuff) < 0) {
-            var def = BUFFS[e.relicBuff];
-            s.interactables.push({ id: 'drop-' + e.id, kind: 'relic', buff: e.relicBuff, group: 'elite-' + e.id,
-              x: e.x, y: e.y, r: 18, label: def.label, description: def.description, active: true, used: false });
-            event(s, 'relic-dropped', { enemyId: e.id, buff: e.relicBuff, x: e.x, y: e.y });
+          if (e.elite && BUFFS[e.relicBuff]) {
+            var available = Object.keys(BUFFS).filter(function (key) { return key !== e.relicBuff && s.runBuffs.indexOf(key) < 0; });
+            var choices = s.runBuffs.indexOf(e.relicBuff) < 0 ? [e.relicBuff] : [];
+            while (choices.length < 2 && available.length) choices.push(available.splice(Math.floor(random(s) * available.length), 1)[0]);
+            choices.forEach(function (key, index) {
+              var def = BUFFS[key], point = { id: 'drop-' + e.id + (index ? '-choice' : ''), kind: 'relic', buff: key, group: 'elite-' + e.id,
+                x: clamp(e.x + (index ? 30 : -30), 66, W - 66), y: clamp(e.y, 66, H - 66), r: 18,
+                label: def.label, description: def.description, active: true, used: false };
+              // Place both alternatives in reachable space, including deaths beside cover.
+              if (collides(s, point.x, point.y, point.r, null, true)) { point.x = e.x; point.y = e.y; }
+              s.interactables.push(point);
+            });
+            if (choices.length) event(s, 'relic-dropped', { enemyId: e.id, buff: choices[0], x: e.x, y: e.y });
           }
           awakenBoss(s);
         }
@@ -921,11 +1040,24 @@
         strikeContains(s, e, e.rhythm, p);
     }).sort(function (a, b) { return a.rhythm.remaining - b.rhythm.remaining || dist(a, p) - dist(b, p); });
     if (threats.length) p.facing = Math.atan2(threats[0].y - p.y, threats[0].x - p.x);
+    else {
+      var ball = s.bullets.filter(function (b) {
+        return !b.friendly && b.fireball && !b.dead && dist(p, b) < 145 &&
+          (p.x - b.x) * b.vx + (p.y - b.y) * b.vy > 0;
+      }).sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
+      if (ball) p.facing = Math.atan2(ball.y - p.y, ball.x - p.x);
+    }
   }
   function grantCounter(s, p, e, kind) {
     p.counterTime = 1.25; p.counterEnemy = e.id; p.counterKind = kind;
     p.guardWindow = 0; p.dashWindow = 0; p.guardStrain = 0; p.guardLoad = 0;
     p.guardCd = Math.min(p.guardCd, 0.12);
+    if (kind === 'parry') p.parryChain = Math.min(2, (p.parryChain || 0) + 1);
+    if (kind !== 'parry' && s.runBuffs.indexOf('decoy') >= 0) {
+      s.decoys.push({ id: id(s, 'decoy-'), playerId: p.id, x: p.dashOriginX, y: p.dashOriginY, r: 14, ttl: 3 });
+      if (s.decoys.length > 4) s.decoys.shift();
+      event(s, 'decoy', { playerId: p.id, x: p.dashOriginX, y: p.dashOriginY });
+    }
     if (s.practice) {
       if (kind === 'parry') s.practiceParries = (s.practiceParries || 0) + 1;
       p.hp = Math.min(p.maxHp, p.hp + 1);
@@ -940,8 +1072,21 @@
   }
   function resolveRhythm(s, e, r) {
     event(s, 'rhythm-beat', { attack: r.type, beat: r.beat, beats: r.beats, enemyId: e.id, x: e.x, y: e.y });
+    if (r.type === 'fireball') {
+      particle(s, 'counter', e.x + Math.cos(r.angle) * (e.r + 9), e.y + Math.sin(r.angle) * (e.r + 9),
+        { r: 24, ttl: 0.24, life: 0.24, color: '#ffd189' });
+      hostileBullet(s, e, r.angle, 205, 12);
+      var ball = s.bullets[s.bullets.length - 1];
+      ball.fireball = true; ball.kind = 'fireball'; ball.reflectable = true; ball.color = '#ffd189'; ball.damage = 1;
+      return;
+    }
     particle(s, r.type === 'quake' ? 'shockwave' : 'slash', e.x, e.y,
       { r: r.range, angle: r.angle, arc: r.arc, ttl: 0.24, life: 0.24, color: '#ffd28f' });
+    if (r.type === 'rush') {
+      e.chargeX = Math.cos(r.angle); e.chargeY = Math.sin(r.angle); e.chargeTime = 0.85;
+      return;
+    }
+    if (r.targetId) s.decoys = s.decoys.filter(function (d) { return d.id !== r.targetId; });
     alivePlayers(s).forEach(function (p) {
       var currentHit = strikeContains(s, e, r, p);
       var origin = { x: p.dashOriginX, y: p.dashOriginY, r: p.r };
@@ -975,9 +1120,9 @@
   function rhythmWindup(s, e, type, beat, beats, target) {
     var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
     e.rhythm = { type: type, phase: 'windup', remaining: duration, duration: duration,
-      beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x),
-      range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'quake' ? 450 : 235,
-      arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' ? 0.34 : type === 'quake' ? TAU : Math.PI * 1.65 };
+      beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x), targetId: target.id,
+      range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'quake' ? 450 : type === 'rush' || type === 'fireball' ? 560 : 235,
+      arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' || type === 'rush' ? 0.34 : type === 'fireball' ? 0.14 : type === 'quake' ? TAU : Math.PI * 1.65 };
     e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
     event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
   }
@@ -986,6 +1131,30 @@
     if (e.stagger > 0) return true;
     var r = e.rhythm;
     if (r) {
+      if (r.type === 'rush' && r.phase === 'active' && e.chargeTime > 0) {
+        var oldX = e.x, oldY = e.y, speed = 430;
+        e.chargeTime = Math.max(0, e.chargeTime - dt);
+        move(s, e, e.chargeX * speed * dt, e.chargeY * speed * dt, false);
+        particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#efaa72' });
+        var decoy = s.decoys.find(function (d) { return dist(e, d) < e.r + d.r + 8; });
+        if (decoy) { s.decoys = s.decoys.filter(function (d) { return d.id !== decoy.id; }); e.chargeTime = 0; }
+        alivePlayers(s).forEach(function (p) {
+          if (dist(e, p) >= e.r + p.r + 20) return;
+          if (p.dashWindow > 0 && p.invuln <= 0.3) {
+            grantCounter(s, p, e, 'dodge'); e.chargeTime = 0;
+          } else if (dist(e, p) < e.r + p.r + 3 && damagePlayer(s, p, 1, 'rush')) e.chargeTime = 0;
+        });
+        var blocked = len(e.x - oldX, e.y - oldY) < speed * dt * 0.45;
+        if (blocked || e.chargeTime <= 0) {
+          e.chargeTime = 0; e.stagger = blocked ? 1.7 : 0.85; e.rhythm = null; e.attackCd = 1;
+          if (blocked) {
+            e.posture = 0;
+            particle(s, 'shockwave', e.x, e.y, { r: 85, ttl: 0.35, life: 0.35, color: '#e9c49a' });
+            event(s, 'brute-wall-hit', { enemyId: e.id, x: e.x, y: e.y });
+          }
+        }
+        return true;
+      }
       r.remaining = Math.max(0, r.remaining - dt);
       if (r.remaining > 0) return true;
       if (r.phase === 'windup') {
@@ -999,15 +1168,16 @@
     }
     e.attackCd -= dt;
     var distance = dist(e, target), boss = e.kind === 'boss';
-    var type = ['combo', 'thrust', boss ? 'quake' : 'sweep'][e.rhythmCycle % 3];
+    var type = e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
+      ['combo', 'thrust', boss && (s.mode !== 'random' || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
     // A telegraph must start within the strike's reach. Previously a stationary
     // beginner saw slashes at ~168px even though they could only connect at 159px.
-    var engageRange = type === 'combo' ? 128 : type === 'thrust' ? 250 : boss ? 460 : 230;
+    var engageRange = type === 'combo' ? 128 : type === 'thrust' ? 250 : type === 'rush' || type === 'fireball' ? 560 : type === 'quake' ? 460 : 230;
     if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
       e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? 2 : 1, target); return true;
     }
-    var approachRange = type === 'combo' ? 118 : boss ? 150 : 118;
+    var approachRange = type === 'combo' ? 118 : type === 'fireball' ? 320 : type === 'rush' ? 360 : boss ? 150 : 118;
     if (distance > approachRange || !lineClear(s, e, target, e.r + 1)) {
       e.navTime -= dt;
       if (e.navTime <= 0) { var wp = waypoint(s, e, target); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.35; }
@@ -1029,6 +1199,23 @@
           var counterKind = p.counterKind;
           p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
           damageEnemy(s, foe, 6, p.id);
+          var resonance = s.runBuffs.indexOf('resonance') >= 0;
+          var riposte = s.runBuffs.indexOf('riposte') >= 0 && p.parryChain >= 2;
+          if (resonance || riposte) {
+            var radius = riposte ? 165 : 140;
+            particle(s, riposte ? 'slash' : 'shockwave', p.x, p.y,
+              { r: radius, angle: p.facing, arc: TAU, ttl: 0.32, life: 0.32, color: riposte ? '#d9bdff' : '#a8efe0' });
+            s.enemies.forEach(function (other) {
+              if (other.hp <= 0 || dist(p, other) > radius + other.r || !meleeLineClear(s, p, other, 3)) return;
+              damageEnemy(s, other, (resonance ? 2 : 0) + (riposte ? 3 : 0), p.id);
+              if (resonance) {
+                var knock = Math.atan2(other.y - p.y, other.x - p.x);
+                move(s, other, Math.cos(knock) * 55, Math.sin(knock) * 55, false);
+                other.stagger = Math.max(other.stagger, 0.45);
+              }
+            });
+            if (riposte) p.parryChain = 0;
+          }
           event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, x: foe.x, y: foe.y });
           return true;
         }
@@ -1057,8 +1244,9 @@
       e.flash = Math.max(0, e.flash - dt); e.stun = Math.max(0, e.stun - dt);
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
       if (e.stun > 0) return;
-      var p = targets.slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
-      if (e.kind === 'duelist' || e.kind === 'boss') { updateRhythm(s, e, p, dt); return; }
+      var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < 600 && lineClear(s, e, d, 4); });
+      var p = (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
+      if (e.kind === 'duelist' || e.kind === 'boss' || e.kind === 'brute' || e.kind === 'pyromancer') { updateRhythm(s, e, p, dt); return; }
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
       if (e.kind === 'charger' && e.chargeTime > 0) {
         var oldX = e.x, oldY = e.y;
@@ -1088,6 +1276,7 @@
         e.windup -= dt;
         if (e.windup <= 0) {
           var angle = Math.atan2(e.aimY - e.y, e.aimX - e.x);
+          s.decoys = s.decoys.filter(function (d) { return d.id !== e.targetId; });
           if (e.kind === 'chaser') {
             targets.forEach(function (q) { if (dist(e, q) < e.r + q.r + 27) damagePlayer(s, q, 1, 'melee'); });
             particle(s, 'slash', e.x + Math.cos(angle) * 24, e.y + Math.sin(angle) * 24,
@@ -1119,6 +1308,7 @@
       if (e.attackCd <= 0 && inRange) {
         e.windup = e.kind === 'chaser' ? 0.36 : e.kind === 'shooter' ? 0.6 : e.kind === 'shield' ? 0.85 : e.kind === 'charger' ? 0.85 : 0.78;
         e.aimX = p.x; e.aimY = p.y;
+        e.targetId = p.id;
         if (e.kind !== 'shield') e.facing = Math.atan2(dy, dx);
         e.attack = e.kind === 'charger' ? 'charge' : e.kind === 'boss' && e.phase % 2 === 0 ? 'ring' : 'aim';
         event(s, 'enemy-windup', { enemyId: e.id, kind: e.kind, attack: e.attack });
@@ -1184,8 +1374,22 @@
             }
           }
         } else {
-          var target = alivePlayers(s).find(function (p) { return dist(p, b) < p.r + b.r; });
-          if (target) { damagePlayer(s, target, b.damage, 'bullet'); b.dead = true; }
+          var shadow = s.decoys.find(function (d) { return dist(d, b) < d.r + b.r; });
+          if (shadow) { s.decoys = s.decoys.filter(function (d) { return d.id !== shadow.id; }); b.dead = true; }
+          var target = !b.dead && alivePlayers(s).find(function (p) { return dist(p, b) < p.r + b.r + (b.fireball ? 9 : 0); });
+          if (target) {
+            if (b.fireball && target.guardWindow > 0 && target.guarding && target.invuln <= 0.3 && facingEnemy(target, b)) {
+              var caster = s.enemies.find(function (e) { return e.id === b.owner && e.hp > 0; });
+              var angle = caster ? Math.atan2(caster.y - b.y, caster.x - b.x) : Math.atan2(-b.vy, -b.vx);
+              b.friendly = true; b.owner = target.id; b.vx = Math.cos(angle) * 390; b.vy = Math.sin(angle) * 390;
+              b.damage = 7; b.color = '#aaffdf'; b.hitsLeft = 1; b.hitIds = []; b.ttl = 3;
+              if (caster) grantCounter(s, target, caster, 'parry');
+              else target.guardWindow = 0;
+              event(s, 'fireball-reflected', { playerId: target.id, enemyId: caster ? caster.id : null, x: b.x, y: b.y });
+              break;
+            }
+            if (dist(target, b) < target.r + b.r) { damagePlayer(s, target, b.damage, 'bullet'); b.dead = true; }
+          }
         }
       }
       if (b.ttl <= 0) b.dead = true;
@@ -1334,7 +1538,8 @@
     alivePlayers(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');
     });
-    collectPickups(s); updateHoldout(s, dt); refreshProgress(s);
+    s.decoys = s.decoys.filter(function (d) { d.ttl -= dt; return d.ttl > 0; });
+    collectPickups(s); updateRoomEvent(s); updateHoldout(s, dt); refreshProgress(s);
     s.particles = s.particles.filter(function (fx) {
       fx.ttl -= dt; fx.x += fx.vx * dt; fx.y += fx.vy * dt; return fx.ttl > 0;
     });

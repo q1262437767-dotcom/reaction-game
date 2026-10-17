@@ -85,13 +85,19 @@
         tone(event.attack === 'thrust' ? 230 : 150, Math.min(.35, remaining), .018, 'triangle', 0, 390);
       } else if (event.type === 'rhythm-beat') {
         tone(65, .13, .035, 'triangle', 0, 35);
-      } else if (['perfect-parry', 'mikiri', 'perfect-dodge'].includes(event.type)) {
+      } else if (['perfect-parry', 'mikiri', 'perfect-dodge', 'fireball-reflected'].includes(event.type)) {
         tone(event.type === 'mikiri' ? 1040 : 1460, .11, .045, 'triangle', 0, 780);
         tone(2180, .055, .022, 'sine', .025);
       } else if (event.type === 'counterattack') {
         tone(330, .17, .035, 'triangle', 0, 100);
       } else if (event.type === 'guard-break') {
         tone(120, .23, .035, 'sawtooth', 0, 45);
+      } else if (event.type === 'boss-phase') {
+        tone(95, .7, .035, 'triangle', 0, 180);
+      } else if (event.type === 'event-start') {
+        tone(170, .25, .02, 'triangle', 0, 95);
+      } else if (['event-complete', 'supply-collected'].includes(event.type)) {
+        tone(620, .15, .025); tone(830, .15, .02, 'sine', .08);
       } else if (event.type === 'shoot' && performance.now() - soundLast > 170) {
         tone(180 + Math.random() * 70, 0.035, 0.007, 'triangle'); soundLast = performance.now();
       } else if (event.type === 'player-hit') tone(92, 0.13, 0.04, 'sawtooth');
@@ -101,10 +107,23 @@
       else if (event.type === 'boss-awakened') tone(240, 0.55, 0.045, 'triangle');
     }
     if (paused || hasDialog()) return;
+    const local = state.players && state.players[localId()];
+    if (local && !local.downed) for (const ball of state.bullets || []) {
+      if (ball.friendly || !ball.reflectable || ball.dead) continue;
+      const dx = local.x - ball.x, dy = local.y - ball.y, speed = Math.hypot(ball.vx, ball.vy);
+      if (!speed) continue;
+      const along = (dx * ball.vx + dy * ball.vy) / speed;
+      const side = Math.abs(dx * ball.vy - dy * ball.vx) / speed;
+      const arrival = (along - local.r - ball.r) / speed;
+      const cue = 'fireball-cue:' + ball.id;
+      if (arrival > 0 && arrival <= .28 && side < local.r + ball.r + 9 && !heardEvents.has(cue)) {
+        heardEvents.add(cue); tone(1180, .06, .028, 'sine');
+      }
+    }
     // Read the live windup, so a staggered or defeated attacker leaves no scheduled warning behind.
     for (const enemy of state.enemies || []) {
       const attack = enemy.rhythm;
-      if (!attack || attack.phase !== 'windup' || attack.remaining <= 0 || attack.remaining > .30 || enemy.stagger > 0 || enemy.hp <= 0) continue;
+      if (!attack || attack.type === 'fireball' || attack.phase !== 'windup' || attack.remaining <= 0 || attack.remaining > .30 || enemy.stagger > 0 || enemy.hp <= 0) continue;
       const windup = [...(state.combatEvents || [])].reverse().find(event => event.type === 'rhythm-windup' && event.enemyId === enemy.id && event.attack === attack.type && event.beat === attack.beat);
       if (!windup) continue;
       const cueId = 'cue:' + windup.id;
@@ -141,11 +160,11 @@
     $('story-mission-field').hidden = random;
     $('game-wrap').setAttribute('data-mode', state ? state.mode : gameMode);
     $('mission-name').textContent = random ? '迷雾远征' : mission.name;
-    $('mission-description').textContent = random ? '每次出发，遗迹都会重新排列。沿着迷雾寻找自己的路线。' : mission.description;
+    $('mission-description').textContent = random ? '三种精英守着遗物，旧水闸与升降台仍在运转。绕路做准备，或直接深入炉心。' : mission.description;
     $('mission-goal').textContent = random ? '探索遗迹，击杀守卫唤醒深处的 Boss。' : mission.goal;
     $('mission-reward').textContent = `带回 ${mission.reward + (selectedDifficulty() === 2 ? 20 : 0)} 星屑`;
     const unlocked = canStart(gameMode, mission.id, selectedDifficulty());
-    $('mission-lock').textContent = random ? '自由探索 · 精英掉落遗物' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
+    $('mission-lock').textContent = random ? '3 种精英 · 2 种事件 · 6 件遗物' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
     $('mission-lock').hidden = false;
     $('solo-start').disabled = !unlocked;
     if (!state && net && net.connected && net.role === 'host') net.send({ type: 'lobby', mode: gameMode, mission: mission.id, difficulty: selectedDifficulty() });
@@ -165,6 +184,10 @@
     $('journal-list').innerHTML = C.BADGES.map(badge => {
       const earned = camp.badges.includes(badge.id);
       return `<div class="journal-item${earned ? ' earned' : ''}"><span class="journal-icon" aria-hidden="true"><span>${earned ? '◆' : '◇'}</span></span><div><strong>${escapeHTML(badge.name)}</strong><p>${escapeHTML(badge.description)}</p></div><span class="journal-status">${earned ? '已达成' : '未达成'}</span></div>`;
+    }).join('');
+    $('relic-journal').innerHTML = C.RELICS.map(id => {
+      const relic = E.BUFFS[id] || { label: id, description: '' }, found = camp.relics.includes(id);
+      return `<div class="journal-item${found ? ' earned' : ''}"><span class="journal-icon" aria-hidden="true">${found ? '◆' : '◇'}</span><div><strong>${escapeHTML(relic.label)}</strong><p>${escapeHTML(relic.description)}</p></div><span class="journal-status">${found ? '已发现' : '待发现'}</span></div>`;
     }).join('');
     for (const mission of C.MISSIONS) {
       const item = $('mission-select').querySelector(`option[value="${mission.id}"]`);
@@ -292,27 +315,30 @@
       shoot: raw.shoot === true, dash: raw.dash === true, guard: raw.guard === true, guardPulse: raw.guardPulse === true, interact: raw.interact === true };
   }
   function validState(s) {
-    if (!s || s.version !== 1 || s.combatVersion !== 1 || s.practice !== false || !['random', 'story'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
+    if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.practice !== false || !['random', 'story'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (!s.players || !s.players.p1 || !s.players.p2 || Object.keys(s.players).length !== 2) return false;
-    if (!s.mission || !C.MISSIONS.some(m => m.id === s.mission.id) || ![1, 2].includes(s.difficulty) || !Array.isArray(s.runBuffs) || s.runBuffs.length > 3) return false;
-    const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, rooms: 16, interactables: 30 };
+    if (!s.mission || !C.MISSIONS.some(m => m.id === s.mission.id) || ![1, 2].includes(s.difficulty) || !Array.isArray(s.runBuffs) || s.runBuffs.length > 6 || new Set(s.runBuffs).size !== s.runBuffs.length || s.runBuffs.some(id => !C.RELICS.includes(id))) return false;
+    const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, rooms: 16, interactables: 30, decoys: 8 };
     for (const [key, cap] of Object.entries(limits)) if (!Array.isArray(s[key]) || s[key].length > cap) return false;
     const bounded = (n, max) => Number.isFinite(n) && n >= 0 && n <= max;
     for (const p of Object.values(s.players)) {
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp)) return false;
       if (!['blade', 'pistol', 'scatter'].includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
+      if (p.ward != null && (!Number.isInteger(p.ward) || !bounded(p.ward, 1))) return false;
     }
     for (const enemy of s.enemies) {
       if (!enemy || !bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000)) return false;
       if (enemy.rhythm != null) {
         const attack = enemy.rhythm;
-        if (!['combo', 'thrust', 'sweep', 'quake'].includes(attack.type) || !['windup', 'active', 'recover'].includes(attack.phase) || !bounded(attack.remaining, 10) || !bounded(attack.duration, 10) || !Number.isInteger(attack.beat) || !Number.isInteger(attack.beats) || attack.beat < 0 || attack.beat > attack.beats || attack.beats < 1 || attack.beats > 8 || !Number.isFinite(attack.angle) || Math.abs(attack.angle) > Math.PI * 4 || !bounded(attack.range, 1600) || !bounded(attack.arc, Math.PI * 2)) return false;
+        if (!['combo', 'thrust', 'sweep', 'quake', 'rush', 'fireball'].includes(attack.type) || !['windup', 'active', 'recover'].includes(attack.phase) || !bounded(attack.remaining, 10) || !bounded(attack.duration, 10) || !Number.isInteger(attack.beat) || !Number.isInteger(attack.beats) || attack.beat < 0 || attack.beat > attack.beats || attack.beats < 1 || attack.beats > 8 || !Number.isFinite(attack.angle) || Math.abs(attack.angle) > Math.PI * 4 || !bounded(attack.range, 1600) || !bounded(attack.arc, Math.PI * 2)) return false;
       }
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
     }
+    if (s.roomEvent != null && (!['sluice', 'lift'].includes(s.roomEvent.kind) || !['ready', 'active', 'complete'].includes(s.roomEvent.stage) || !Array.isArray(s.roomEvent.enemyIds) || s.roomEvent.enemyIds.length > 8 || s.roomEvent.enemyIds.some(id => typeof id !== 'string' || id.length > 100))) return false;
+    for (const d of s.decoys) if (!d || typeof d.id !== 'string' || !['p1', 'p2'].includes(d.playerId || d.owner) || !bounded(d.x, 960) || !bounded(d.y, 600) || !bounded(d.ttl, 5)) return false;
     if (s.room.index >= s.rooms.length || s.rooms.length < 2) return false;
     if (s.mode === 'story' && (s.rooms.length !== 7 || s.room.index > 6)) return false;
     if (s.mode === 'random') {
@@ -508,11 +534,11 @@
     $('hud-stage').textContent = state ? state.room.name : '苔灯营地';
     $('hud-objective').textContent = state ? state.objective : '独自探险，或邀请一位搭档';
     $('hud-objective').hidden = !!random;
-    $('hud-health').textContent = p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}` : '6 / 6';
+    $('hud-health').textContent = p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6';
     $('hud-dash').textContent = p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     $('hud-loot').textContent = `${camp.coins} 星屑`;
     $('hud-team').textContent = state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ? (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
-    const buffs = { pierce: '穿透棱镜', swift: '疾风羽饰', vigor: '生命苔石' };
+    const buffs = Object.fromEntries(Object.entries(E.BUFFS).map(([id, buff]) => [id, buff.label]));
     $('route-progress').textContent = state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
     $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
@@ -543,7 +569,7 @@
       net.send({ type: 'state', state: E.snapshot(state, true), runId }); lastSend = now;
     }
     settle();
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || hasDialog() || !!(state.practice && tutorialPending) }); else R.preview(ctx, C.progress(camp)); }
+    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || hasDialog() || !!(state.practice && tutorialPending), reducedMotion: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) }); else R.preview(ctx, C.progress(camp)); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);
