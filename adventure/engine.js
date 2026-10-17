@@ -41,6 +41,11 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break)$/.test(type)) {
+      s.combatEvents = s.combatEvents || [];
+      s.combatEvents.push(clone(e));
+      if (s.combatEvents.length > 24) s.combatEvents.shift();
+    }
     return e;
   }
   function particle(s, kind, x, y, extra) {
@@ -93,7 +98,10 @@
     return { id: idValue, name: index ? '萤火搭档' : '探险队长', x: 128, y: 275 + index * 52,
       r: 14, hp: 6, maxHp: 6, weapon: weapon, color: index ? '#f5b655' : '#72dfc7',
       facing: 0, vx: 0, vy: 0, moving: false, dashCd: 0, dashTime: 0, dashX: 1, dashY: 0, invuln: 0,
-      fireCd: 0, downed: false, carry: null, kills: 0, prevDash: false, prevInteract: false };
+      fireCd: 0, downed: false, carry: null, kills: 0, prevDash: false, prevInteract: false,
+      prevGuard: false, prevShoot: false, guarding: false, guardWindow: 0, guardCd: 0, guardStrain: 0,
+      dashWindow: 0, dashOriginX: 0, dashOriginY: 0, counterTime: 0, counterEnemy: null,
+      counterKind: '', meleeTime: 0, guardLoad: 0, guardAttackLock: 0 };
   }
   function addPlayer(s, requestedId) {
     var key = requestedId || (s.players.p1 ? 'p2' : 'p1');
@@ -125,14 +133,14 @@
     var mode = options.mode === 'random' ? 'random' : 'story';
     var missionId = mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
-    var s = { version: 1, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
-      time: 0, elapsed: 0, status: 'playing', loadout: options.loadout === 'scatter' ? 'scatter' : 'pistol',
+    var s = { version: 1, combatVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
+      time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       difficulty: Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
       runBuffs: [], relicRooms: [], interactables: [],
       unlocks: clone(options.unlocks || {}), playerCount: 0, players: {}, enemies: [], bullets: [], props: [],
-      particles: [], events: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
+      particles: [], events: [], combatEvents: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
       room: null, roomData: {}, rooms: ROOM_DEFS.map(function (r, i) {
         return { index: i, id: r.id, name: r.name, kind: r.kind,
           cleared: r.kind === 'camp', visited: false, discovered: r.kind !== 'secret' };
@@ -143,7 +151,14 @@
     if (missionId === 'holdout') { s.rooms[1].name = '长夜信标庭院'; s.rooms[1].kind = 'holdout'; }
     addPlayer(s, 'p1');
     if (options.players === 2) addPlayer(s, 'p2');
-    if (mode === 'random') createExploration(s);
+    if (s.practice) {
+      s.mode = 'story';
+      s.rooms = [{ index: 0, id: 'blade-trial', name: '听刃试炼', kind: 'practice', cleared: false, visited: false, discovered: true }];
+      var master = enemy(s, 'duelist', 590, 300); master.elite = true; master.hp = master.maxHp = 48;
+      s.roomData[0] = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28), rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
+        doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
+      s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
+    } else if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
     return s;
   }
@@ -250,7 +265,7 @@
     var kinds = ['chaser', 'shooter', 'shield', 'charger'];
     var count = 3 + (random(s) < 0.5 ? 1 : 0);
     for (var n = 0; n < count; n += 1) {
-      var foe = enemy(s, kinds[Math.floor(random(s) * kinds.length)], spots[n][0], spots[n][1]);
+      var foe = enemy(s, room.elite && !n ? 'duelist' : kinds[Math.floor(random(s) * kinds.length)], spots[n][0], spots[n][1]);
       if (room.elite && !n) {
         foe.elite = true; foe.relicBuff = room.eliteBuff;
         foe.hp = foe.maxHp = foe.maxHp + 5; foe.r += 4; foe.speed *= 1.08;
@@ -277,13 +292,14 @@
       charges: kind === 'water' ? 3 : 0, destroyed: false };
   }
   function enemy(s, kind, x, y) {
-    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'shield' || kind === 'charger' ? 4 : 3;
+    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
     if (s.difficulty === 2) hp += kind === 'boss' ? 10 : 1;
     return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'charger' ? 19 : 16,
-      hp: hp, maxHp: hp, speed: (kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
+      hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
       aimX: 0, aimY: 0, phase: 0, flash: 0, stun: 0, navTime: 0, navX: x, navY: y,
-      chargeTime: 0, chargeX: 0, chargeY: 0, shieldOpen: 0 };
+      chargeTime: 0, chargeX: 0, chargeY: 0, shieldOpen: 0,
+      rhythm: null, rhythmCycle: 0, stagger: 0, posture: 0, maxPosture: kind === 'boss' ? 7 : 4 };
   }
   function roomContent(s, index) {
     var data = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28),
@@ -385,6 +401,11 @@
     data.props = data.props.filter(function (p) { return !p.carriedBy; });
     s.roomData[s.room.index] = data;
   }
+  function resetCombat(p) {
+    p.guarding = false; p.guardWindow = 0; p.guardCd = 0; p.guardStrain = 0; p.guardLoad = 0;
+    p.dashWindow = 0; p.dashTime = 0; p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
+    p.meleeTime = 0; p.guardAttackLock = 0; p.prevGuard = false; p.prevShoot = false;
+  }
   function enterRoom(s, index, initial) {
     index = Number(index);
     if (!Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
@@ -399,6 +420,8 @@
       }
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
+    // Do not cache a pending strike and resume it on a later room visit.
+    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.stagger = 0; e.attackCd = Math.max(e.attackCd, 0.8); });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
@@ -408,9 +431,11 @@
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
     if (s.mode === 'random') s.rooms[index].neighbors.forEach(function (n) { s.rooms[n].discovered = true; });
     s.room = clone(s.rooms[index]);
-    s.bullets = []; s.particles = []; s.travelCd = 0.9;
+    s.bullets = []; s.particles = []; s.combatEvents = []; s.travelCd = 0.9;
     Object.keys(s.players).forEach(function (key, i) {
       var p = s.players[key]; p.x = 130; p.y = 275 + i * 52;
+      resetCombat(p);
+      if (s.practice) { p.x = 390; p.y = 300 + i * 48; p.facing = 0; }
       if (s.mode === 'random') {
         var dx = previous ? s.rooms[index].gx - previous.gx : 0;
         var dy = previous ? s.rooms[index].gy - previous.gy : 0;
@@ -426,6 +451,7 @@
   }
   function setHint(s) {
     if (s.status !== 'playing') return;
+    if (s.practice) { s.objective = '击败持刀守卫'; s.hint = ''; return; }
     if (s.mode === 'random') {
       s.objective = s.exploration.bossAwake ? '炉心守卫已苏醒' : '守卫 ' + s.exploration.kills + ' / ' + s.exploration.target;
       s.hint = '';
@@ -579,6 +605,12 @@
     }
   }
   function refreshProgress(s) {
+    if (s.practice) {
+      s.room.cleared = !s.enemies.some(function (e) { return e.hp > 0; });
+      s.rooms[0].cleared = s.room.cleared;
+      if (s.room.cleared && s.status === 'playing') finish(s, 'won');
+      setHint(s); return;
+    }
     if (s.mode === 'random') {
       var clearRandom = s.room.kind === 'boss' ? s.exploration.bossDefeated : !s.enemies.some(function (e) { return e.hp > 0; });
       if (clearRandom && !s.rooms[s.room.index].cleared) {
@@ -620,6 +652,13 @@
     if (s.status !== 'playing') return;
     s.status = status;
     s.bullets = [];
+    Object.keys(s.players).forEach(function (key) { resetCombat(s.players[key]); });
+    if (s.practice) {
+      s.reward = null; s.rewardGranted = false;
+      s.mission.phase = status === 'won' ? 'complete' : 'failed';
+      s.message = status === 'won' ? '试炼完成' : '再听一次刀锋的节奏'; s.messageTime = 999;
+      event(s, status === 'won' ? 'practice-complete' : 'defeat'); return;
+    }
     if (status === 'won' && !s.rewardGranted) {
       s.rewardGranted = true;
       s.mission.phase = 'complete'; s.mission.progress = s.mission.total;
@@ -665,7 +704,7 @@
     var downed = Object.keys(s.players).map(function (key) { return s.players[key]; })
       .find(function (q) { return q.downed && q.id !== p.id && dist(p, q) < 78; });
     if (downed) {
-      downed.downed = false; downed.hp = 3; downed.invuln = 1.8;
+      downed.downed = false; downed.hp = 3; downed.invuln = 1.8; resetCombat(downed);
       downed.prevInteract = true; s.stats.revives += 1;
       event(s, 'revive', { playerId: downed.id, by: p.id });
       burst(s, 'heal', downed.x, downed.y, '#83f2b5', 12);
@@ -746,10 +785,11 @@
   function damagePlayer(s, p, amount, source) {
     if (!p || p.downed || p.invuln > 0 || s.status !== 'playing') return false;
     p.hp = Math.max(0, p.hp - amount); p.invuln = 0.85; s.stats.damage += amount;
+    p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     event(s, 'player-hit', { playerId: p.id, hp: p.hp, source: source });
     burst(s, 'hit', p.x, p.y, '#ff8d83', 7);
     if (p.hp <= 0) {
-      releaseCarry(s, p, false, true); p.downed = true; p.dashTime = 0;
+      releaseCarry(s, p, false, true); p.downed = true; resetCombat(p);
       event(s, 'downed', { playerId: p.id });
       if (!alivePlayers(s).length) finish(s, 'lost');
     }
@@ -824,6 +864,16 @@
     }
     return true;
   }
+  function meleeLineClear(s, a, b, radius) {
+    if (!lineClear(s, a, b, radius)) return false;
+    var n = Math.max(1, Math.ceil(dist(a, b) / 8));
+    for (var i = 1; i < n; i += 1) {
+      var x = a.x + (b.x - a.x) * i / n, y = a.y + (b.y - a.y) * i / n;
+      if (s.props.some(function (q) { return solidProp(q) && q.id !== b.id && q.carriedBy !== a.id && !q.thrown &&
+        len(q.x - x, q.y - y) < q.r + (radius || 4); })) return false;
+    }
+    return true;
+  }
   function waypoint(s, e, target) {
     if (lineClear(s, e, target, e.r + 2)) return target;
     // A tiny grid search keeps melee guards from becoming stuck behind room pillars.
@@ -831,9 +881,12 @@
     var sx = clamp(Math.floor(e.x / size), 1, cols - 2), sy = clamp(Math.floor(e.y / size), 1, rows - 2);
     var tx = clamp(Math.floor(target.x / size), 1, cols - 2), ty = clamp(Math.floor(target.y / size), 1, rows - 2);
     var start = sy * cols + sx, end = ty * cols + tx, queue = [start], seen = {};
+    var closest = start, closestDistance = Infinity;
     seen[start] = -1;
     for (var head = 0; head < queue.length && head < 360; head += 1) {
       var cur = queue[head];
+      var score = len(cur % cols * size + 20 - target.x, Math.floor(cur / cols) * size + 20 - target.y);
+      if (score < closestDistance) { closestDistance = score; closest = cur; }
       if (cur === end) break;
       var cx = cur % cols, cy = Math.floor(cur / cols);
       var neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
@@ -844,10 +897,139 @@
         seen[key] = cur; queue.push(key);
       }
     }
-    if (seen[end] === undefined) return target;
-    var current = end, prev = seen[current];
+    // A large guard cannot occupy the 60px boundary cells. Follow the nearest
+    // reachable cell instead of abandoning navigation for a blocked direct line.
+    var current = seen[end] === undefined ? closest : end, prev = seen[current];
+    if (current === start) return e;
     while (prev !== start && prev !== -1) { current = prev; prev = seen[current]; }
     return { x: current % cols * size + 20, y: Math.floor(current / cols) * size + 20 };
+  }
+  function angleDelta(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+  function facingEnemy(p, e) { return Math.cos(Math.atan2(e.y - p.y, e.x - p.x) - p.facing) > 0.25; }
+  function strikeContains(s, e, r, point) {
+    var distance = dist(e, point);
+    return distance <= r.range + point.r &&
+      (r.arc >= TAU - 0.01 || Math.abs(angleDelta(Math.atan2(point.y - e.y, point.x - e.x), r.angle)) <= r.arc / 2 + 0.08) &&
+      lineClear(s, e, point, 3);
+  }
+  function grantCounter(s, p, e, kind) {
+    p.counterTime = 1.25; p.counterEnemy = e.id; p.counterKind = kind;
+    p.guardWindow = 0; p.dashWindow = 0; p.guardStrain = 0; p.guardLoad = 0;
+    p.guardCd = Math.min(p.guardCd, 0.12);
+    e.posture = Math.min(e.maxPosture, e.posture + (kind === 'mikiri' ? 2 : 1));
+    if (e.posture >= e.maxPosture) {
+      e.posture = 0; e.stagger = 1.15; e.rhythm = null;
+    } else if (kind !== 'parry') { e.stagger = 0.65; e.rhythm = null; }
+    var type = kind === 'parry' ? 'perfect-parry' : kind === 'mikiri' ? 'mikiri' : 'perfect-dodge';
+    event(s, type, { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
+    particle(s, 'counter', p.x, p.y, { r: 45, ttl: 0.3, life: 0.3, color: '#bfffee' });
+  }
+  function resolveRhythm(s, e, r) {
+    event(s, 'rhythm-beat', { attack: r.type, beat: r.beat, beats: r.beats, enemyId: e.id, x: e.x, y: e.y });
+    particle(s, r.type === 'quake' ? 'shockwave' : 'slash', e.x, e.y,
+      { r: r.range, angle: r.angle, arc: r.arc, ttl: 0.24, life: 0.24, color: '#ffd28f' });
+    alivePlayers(s).forEach(function (p) {
+      var currentHit = strikeContains(s, e, r, p);
+      var origin = { x: p.dashOriginX, y: p.dashOriginY, r: p.r };
+      var crossed = p.dashWindow > 0 && strikeContains(s, e, r, origin);
+      if (!currentHit && !crossed) return;
+      // Arrival protection is never converted into an earned perfect action.
+      if (p.invuln > 0.3) return;
+      if (r.type === 'combo' && p.guardWindow > 0 && p.guarding && facingEnemy(p, e)) {
+        grantCounter(s, p, e, 'parry'); return;
+      }
+      if (p.dashWindow > 0) {
+        var toward = Math.cos(Math.atan2(e.y - p.dashOriginY, e.x - p.dashOriginX) - Math.atan2(p.dashY, p.dashX)) > 0.55;
+        if (r.type === 'thrust' && toward) { grantCounter(s, p, e, 'mikiri'); return; }
+        if (r.type !== 'thrust') { grantCounter(s, p, e, 'dodge'); return; }
+      }
+      if (!currentHit) return;
+      if (r.type === 'combo' && p.guarding && facingEnemy(p, e) && p.guardCd < 0.5) {
+        p.guardLoad += 1;
+        if (p.guardLoad < 3) {
+          event(s, 'guard', { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
+          particle(s, 'spark', p.x, p.y, { r: 17, ttl: 0.18, life: 0.18, color: '#b5cbd3' }); return;
+        }
+      }
+      if (p.guarding) {
+        p.guarding = false; p.guardWindow = 0; p.guardCd = 0.7; p.guardLoad = 0;
+        event(s, 'guard-break', { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
+      }
+      damagePlayer(s, p, s.practice || r.type === 'quake' ? 2 : 1, r.type);
+    });
+  }
+  function rhythmWindup(s, e, type, beat, beats, target) {
+    var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
+    e.rhythm = { type: type, phase: 'windup', remaining: duration, duration: duration,
+      beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x),
+      range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'quake' ? 450 : 235,
+      arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' ? 0.34 : type === 'quake' ? TAU : Math.PI * 1.65 };
+    e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
+    event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
+  }
+  function updateRhythm(s, e, target, dt) {
+    e.stagger = Math.max(0, e.stagger - dt);
+    if (e.stagger > 0) return true;
+    var r = e.rhythm;
+    if (r) {
+      r.remaining = Math.max(0, r.remaining - dt);
+      if (r.remaining > 0) return true;
+      if (r.phase === 'windup') {
+        r.phase = 'active'; r.duration = 0.12; r.remaining = r.duration;
+        resolveRhythm(s, e, r);
+      } else if (r.phase === 'active') {
+        if (r.beat < r.beats) rhythmWindup(s, e, r.type, r.beat + 1, r.beats, target);
+        else { r.phase = 'recover'; r.duration = 0.65; r.remaining = r.duration; }
+      } else { e.rhythm = null; e.attackCd = 0.55; }
+      return true;
+    }
+    e.attackCd -= dt;
+    var distance = dist(e, target), boss = e.kind === 'boss';
+    var type = ['combo', 'thrust', boss ? 'quake' : 'sweep'][e.rhythmCycle % 3];
+    var engageRange = type === 'combo' ? 170 : type === 'thrust' ? 250 : boss ? 460 : 230;
+    if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
+      e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? 2 : 1, target); return true;
+    }
+    if (distance > (boss ? 150 : 118) || !lineClear(s, e, target, e.r + 1)) {
+      e.navTime -= dt;
+      if (e.navTime <= 0) { var wp = waypoint(s, e, target); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.35; }
+      var dx = e.navX - e.x, dy = e.navY - e.y, length = len(dx, dy) || 1;
+      move(s, e, dx / length * e.speed * dt, dy / length * e.speed * dt, false);
+      e.facing = Math.atan2(target.y - e.y, target.x - e.x);
+    }
+    return true;
+  }
+  function meleeAttack(s, p, counter) {
+    if (counter) {
+      var foe = s.enemies.find(function (e) { return e.id === p.counterEnemy && e.hp > 0; });
+      if (foe && dist(p, foe) <= 178 + foe.r && meleeLineClear(s, p, foe, 7)) {
+        var angle = Math.atan2(foe.y - p.y, foe.x - p.x), gap = Math.max(0, dist(p, foe) - p.r - foe.r - 8);
+        move(s, p, Math.cos(angle) * Math.min(85, gap), Math.sin(angle) * Math.min(85, gap), false);
+        if (dist(p, foe) <= 112 + foe.r && meleeLineClear(s, p, foe, 7)) {
+          p.facing = angle; p.meleeTime = 0.24; p.fireCd = 0.34; p.guarding = false; p.guardWindow = 0; p.guardAttackLock = 0.28;
+          foe.stagger = 0.7; foe.rhythm = null; foe.attackCd = 0.8;
+          var counterKind = p.counterKind;
+          p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
+          damageEnemy(s, foe, 6, p.id);
+          event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, x: foe.x, y: foe.y });
+          return true;
+        }
+      }
+      return false;
+    }
+    p.meleeTime = 0.18; p.fireCd = 0.38;
+    s.enemies.forEach(function (e) {
+      if (e.hp <= 0 || dist(p, e) > 74 + e.r || Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), p.facing)) > 1.1 || !meleeLineClear(s, p, e, 5)) return;
+      var shielded = e.kind === 'shield' && e.shieldOpen <= 0 && e.stun <= 0 && Math.cos(Math.atan2(p.y - e.y, p.x - e.x) - e.facing) > 0.5;
+      if (!shielded) damageEnemy(s, e, s.runBuffs.indexOf('pierce') >= 0 ? 3 : 2, p.id);
+    });
+    s.props.forEach(function (q) {
+      if (!solidProp(q) || q.carriedBy === p.id || dist(p, q) > 74 + q.r || Math.abs(angleDelta(Math.atan2(q.y - p.y, q.x - p.x), p.facing)) > 1.1 || !meleeLineClear(s, p, q, 4)) return;
+      if (q.kind === 'barrel') explode(s, q, p.id);
+      else { q.hp -= 3; if (q.hp <= 0) q.destroyed = true; }
+    });
+    event(s, 'shoot', { playerId: p.id, weapon: 'blade', x: p.x, y: p.y });
+    return true;
   }
   function updateEnemies(s, dt) {
     var targets = alivePlayers(s);
@@ -858,6 +1040,7 @@
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
       if (e.stun > 0) return;
       var p = targets.slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
+      if (e.kind === 'duelist' || e.kind === 'boss') { updateRhythm(s, e, p, dt); return; }
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
       if (e.kind === 'charger' && e.chargeTime > 0) {
         var oldX = e.x, oldY = e.y;
@@ -1068,15 +1251,27 @@
     dt = clamp(finite(Number(dt), 1 / 60), 0, 0.05);
     inputs = inputs || {};
     s.events = []; s.time += dt; s.elapsed += dt;
+    s.combatEvents = (s.combatEvents || []).filter(function (entry) { return s.time - entry.time <= 2; }).slice(-24);
     s.travelCd = Math.max(0, s.travelCd - dt); s.messageTime = Math.max(0, s.messageTime - dt);
     var roomBefore = s.room.index;
     Object.keys(s.players).forEach(function (key) {
       var p = s.players[key], input = inputs[key] || {};
       var dashEdge = !!input.dash && !p.prevDash, interactEdge = !!input.interact && !p.prevInteract;
+      var guardEdge = !!input.guardPulse || !!input.guard && !p.prevGuard, shootEdge = !!input.shoot && !p.prevShoot;
       p.prevDash = !!input.dash; p.prevInteract = !!input.interact;
+      p.prevGuard = !!input.guard; p.prevShoot = !!input.shoot;
       var oldX = p.x, oldY = p.y;
       p.invuln = Math.max(0, p.invuln - dt); p.dashCd = Math.max(0, p.dashCd - dt);
       p.fireCd = Math.max(0, p.fireCd - dt);
+      p.guardWindow = Math.max(0, p.guardWindow - dt); p.guardCd = Math.max(0, p.guardCd - dt);
+      p.guardStrain = Math.max(0, p.guardStrain - dt * 0.5);
+      p.guardAttackLock = Math.max(0, p.guardAttackLock - dt);
+      p.dashWindow = Math.max(0, p.dashWindow - dt); p.meleeTime = Math.max(0, p.meleeTime - dt);
+      p.counterTime = Math.max(0, p.counterTime - dt);
+      if (p.counterTime <= 0 || !s.enemies.some(function (e) { return e.id === p.counterEnemy && e.hp > 0; })) {
+        p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
+      }
+      if (!input.guard) p.guardLoad = Math.max(0, p.guardLoad - dt * 0.7);
       if (p.downed) return;
       var aimX = finite(Number(input.aimX), p.x + Math.cos(p.facing) * 100);
       var aimY = finite(Number(input.aimY), p.y + Math.sin(p.facing) * 100);
@@ -1084,10 +1279,16 @@
       var mx = clamp(finite(Number(input.mx), 0), -1, 1), my = clamp(finite(Number(input.my), 0), -1, 1);
       var magnitude = len(mx, my);
       if (magnitude > 1) { mx /= magnitude; my /= magnitude; }
+      if (guardEdge && p.guardCd <= 0 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry) {
+        p.guardWindow = Math.max(0.055, 0.18 - p.guardStrain * 0.065);
+        p.guardStrain = Math.min(3, p.guardStrain + 1); p.guardCd = 0.34;
+      }
+      p.guarding = (!!input.guard || p.guardWindow > 0) && p.guardCd < 0.5 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry;
       if (dashEdge && p.dashCd <= 0) {
         p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(p.facing);
         p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(p.facing);
         p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.25);
+        p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.18; p.guarding = false; p.guardWindow = 0;
         event(s, 'dash', { playerId: key, x: p.x, y: p.y });
       }
       if (p.dashTime > 0) {
@@ -1098,9 +1299,13 @@
         var held = s.props.find(function (q) { return q.id === p.carry; });
         var speed = held ? held.kind === 'crate' ? 128 : 155 : 195;
         if (s.runBuffs.indexOf('swift') >= 0) speed *= 1.15;
+        if (p.guarding) speed *= 0.55;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
-      if (input.shoot && p.fireCd <= 0) shoot(s, p);
+      var usedCounter = shootEdge && p.counterTime > 0 && !p.carry && meleeAttack(s, p, true);
+      if (!usedCounter && input.shoot && p.fireCd <= 0 && !p.guarding) {
+        if (p.weapon === 'blade') meleeAttack(s, p, false); else shoot(s, p);
+      }
       p.vx = dt > 0 ? (p.x - oldX) / dt : 0; p.vy = dt > 0 ? (p.y - oldY) / dt : 0;
       p.moving = Math.abs(p.vx) + Math.abs(p.vy) > 1;
       if (interactEdge) interact(s, key);

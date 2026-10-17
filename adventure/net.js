@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 3;
+  const VERSION = 4;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -31,7 +31,7 @@
 
   function validMessage(message) {
     if (!isRecord(message) || !TYPES.has(message.type)) return false;
-    // A v3 lobby always identifies its mode. Never interpret an old or altered
+    // A v4 lobby always identifies its mode. Never interpret an old or altered
     // lobby as the default mode; the app validates mission/difficulty and state.
     return message.type !== 'lobby' || message.mode === 'random' || message.mode === 'story';
   }

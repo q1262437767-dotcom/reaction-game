@@ -264,6 +264,20 @@
     if (kind === 'scatter') { rect(c, length + 1, -5, 4, 9, '#52675b'); rect(c, 12, 2, 7, 3, '#8f7050'); }
     c.restore();
   }
+  function blade(c, x, y, angle, guarding, striking, large = false) {
+    c.save(); c.translate(x, y); c.rotate(angle);
+    const length = large ? 43 : 30;
+    if (striking) {
+      c.strokeStyle = '#f7e5b8b0'; c.lineWidth = large ? 8 : 5;
+      c.beginPath(); c.arc(0, 0, length + 9, -.85, .85); c.stroke();
+      c.strokeStyle = '#fff2cd'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, length + 12, -.75, .75); c.stroke();
+    }
+    if (guarding) c.rotate(-.8);
+    rect(c, 8, -3, length, 6, '#172b2b'); rect(c, 12, -2, length - 3, 4, '#b7c9bd');
+    rect(c, 14, -2, length - 6, 1, '#f2eed0'); rect(c, length + 9, -1, 5, 2, '#f8eed1');
+    rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
+    c.restore();
+  }
   function player(c, p, time, localId, state) {
     if (!p || p.dead) return;
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
@@ -299,12 +313,24 @@
     const facing = num(p.facing);
     if (Math.sin(facing) > -.6) { const look = Math.cos(facing) >= 0 ? 2 : -3; rect(c, look, -20, 2, 3, '#263b32'); rect(c, look + 5, -20, 2, 3, '#263b32'); }
     rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main); rect(c, -7, -31, 12, 2, light); rect(c, -12, -23, 25, 4, light); rect(c, -11, -21, 23, 2, dark); rect(c, 4, -30, 3, 6, '#dac783');
-    gun(c, 0, -3, facing, p.weapon, '#aebaa0');
-    if (p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
+    if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
+    else gun(c, 0, -3, facing, p.weapon, '#aebaa0');
+    if (p.weapon !== 'blade' && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
       c.save(); c.translate(Math.cos(facing) * (p.weapon === 'scatter' ? 31 : 25), -3 + Math.sin(facing) * (p.weapon === 'scatter' ? 31 : 25)); c.rotate(facing);
       rect(c,-2,-4,10,8,'#f3d496');rect(c,2,-2,10,4,'#fff3c6');rect(c,2,-7,4,14,'#f3d496');c.restore();
     }
     c.restore();
+    if (p.guarding) {
+      const ready = p.guardWindow > 0, color = ready ? '#fff1b9' : '#9cb9af';
+      c.strokeStyle = color; c.lineWidth = ready ? 4 : 2; c.beginPath(); c.arc(x, y, 24, facing - .85, facing + .85); c.stroke();
+      if (ready) { c.strokeStyle = '#ffe6a650'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 29, facing - .85, facing + .85); c.stroke(); }
+    }
+    if (p.counterTime > 0) {
+      const color = p.counterKind === 'mikiri' ? '#eac2a2' : p.counterKind === 'dodge' ? '#a8ddd5' : '#f4d58c';
+      c.strokeStyle = color; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 23, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, p.counterTime / 1.25)); c.stroke();
+      // A short-lived actionable state, rather than a permanent control reminder.
+      label(c, '反击', x, y + 34, color, 10);
+    }
     if (p.hp < p.maxHp) bar(c, x, y - 39, 28, p.hp / Math.max(1, p.maxHp), p.hp / p.maxHp < .3 ? '#df8e73' : '#adc98d');
     if (values(state.players).length > 1) label(c, second ? '伙伴' : isLocal ? '你' : '队长', x, y - 48, second ? '#e0ae93' : '#bdcf9f', 8);
     if (p.carry) {
@@ -322,7 +348,7 @@
       c.strokeStyle = '#dbb66c90'; c.lineWidth = 2;
       c.beginPath(); c.ellipse(x, y + 6, r + 7, (r + 7) * .47, 0, 0, Math.PI * 2); c.stroke();
     }
-    if (e.windup > 0) {
+    if (e.windup > 0 && !e.rhythm) {
       if (e.attack === 'ring') {
         const rr = boss ? 104 : 38;
         ellipse(c, x, y + 5, rr, rr * .65, '#e696631b'); c.strokeStyle = '#de947a'; c.lineWidth = 2; c.setLineDash([6,5]); c.beginPath(); c.ellipse(x, y + 5, rr, rr * .65, 0, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
@@ -343,6 +369,17 @@
       rect(c, -10, -35, 7, 4, '#e7b96d'); rect(c, 4, -35, 7, 4, '#e7b96d'); rect(c, -8, -26, 16, 3, '#334b3e');
       c.save(); c.rotate(Math.PI / 4); rect(c, -6, -7, 12, 12, '#c8ab63'); rect(c, -3, -4, 6, 6, '#eee0a0'); c.restore();
       grass(c, -12, -48, '#9cab6b'); grass(c, 12, -42, '#879f63');
+    } else if (kind === 'duelist') {
+      const staggered = e.stagger > 0, attack = e.rhythm || {}, raised = attack.phase === 'windup';
+      if (staggered) c.rotate(-.13);
+      rect(c,-10,4+step,7,12,'#172b29');rect(c,4,4-step,7,12,'#172b29');rect(c,-9,5+step,6,8,'#8b8570');rect(c,4,5-step,6,8,'#8b8570');
+      rect(c,-15,-17,30,25,'#142c2a');rect(c,-12,-16,24,22,'#787f72');rect(c,-11,-16,7,20,'#a8ac8a');rect(c,5,-15,7,20,'#4e655c');
+      rect(c,-14,2,29,5,'#b7a273');rect(c,-3,-16,6,20,'#a66453');rect(c,-8,7,7,10,'#675a4c');rect(c,2,7,7,10,'#675a4c');
+      rect(c,-12,-35,24,22,'#203733');rect(c,-10,-34,20,19,'#9b9f86');rect(c,-9,-33,6,16,'#c5c6a4');rect(c,5,-31,5,15,'#647d6c');
+      rect(c,-10,-26,20,6,'#243d36');rect(c,-6,-25,4,2,'#efc997');rect(c,3,-25,4,2,'#efc997');
+      rect(c,-14,-36,28,5,'#70826b');rect(c,-4,-42,8,7,'#b89d68');rect(c,-2,-46,4,5,'#e0bd79');
+      const facing = num(attack.angle, num(e.facing));
+      blade(c, 0, -3, facing + (raised && attack.type === 'quake' ? -1.15 : raised && attack.type === 'sweep' ? .8 : 0), raised, attack.phase === 'active', true);
     } else if (kind === 'shield') {
       rect(c,-10,3+step,7,12,'#172b29');rect(c,4,3-step,7,12,'#172b29');rect(c,-10,4+step,7,7,'#827f68');rect(c,4,4-step,7,7,'#827f68');
       rect(c,-14,-16,28,24,'#172c2b');rect(c,-12,-15,24,21,'#65796c');rect(c,-11,-14,7,19,'#a0a68a');rect(c,5,-13,7,18,'#405d54');rect(c,-13,3,27,5,'#b49b66');
@@ -366,14 +403,22 @@
       rect(c, -5, -29, 10, 5, '#5d774d'); rect(c, 0, -30, 6, 3, '#8ca165');
       c.save(); c.translate(13, -1 + step); c.rotate(.35); rect(c, -2, -12, 4, 20, '#2a3c2c'); rect(c, -1, -18, 3, 14, '#b7ba8a'); rect(c, -4, -5, 9, 3, '#8b7b4d'); c.restore();
     }
+    if (boss && e.rhythm) {
+      const attack = e.rhythm;
+      blade(c, 0, -5, num(attack.angle, num(e.facing)) + (attack.phase === 'windup' && attack.type === 'quake' ? -1.1 : 0), attack.phase === 'windup', attack.phase === 'active', true);
+    }
     if (e.hitFlash > 0 || e.flash > 0) { c.globalCompositeOperation = 'screen'; rect(c, boss ? -21 : -10, boss ? -43 : -24, boss ? 42 : 20, boss ? 55 : 31, '#d9d69c60'); }
     c.restore();
     if (kind === 'shield') { if(e.shieldOpen>0||e.stun>0)label(c,'破绽',x,y-46,'#eac891',8);else{c.strokeStyle='#d3c38b88';c.lineWidth=2;c.beginPath();c.arc(x,y,num(e.r,18)+10,num(e.facing)-Math.PI/3,num(e.facing)+Math.PI/3);c.stroke();} }
     if (e.hp < e.maxHp || boss || e.elite) bar(c, x, y - (boss ? 60 : e.elite ? 51 : 36), boss ? 64 : e.elite ? 43 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss || e.elite ? '#e2bb70' : '#d08d6f', boss || e.elite ? 4 : 3);
+    if (e.maxPosture > 0 && (kind === 'duelist' || boss || e.elite && e.rhythm)) {
+      bar(c, x, y - (boss ? 53 : e.elite ? 44 : 30), boss ? 64 : 43, num(e.posture) / e.maxPosture, e.stagger > 0 ? '#fff0b5' : '#d99c69', 3);
+      if (e.stagger > 0) label(c, '失衡', x, y - (boss ? 91 : 87), '#ffe2a4', 10);
+    }
     if (e.elite && !boss) {
       const crownY = y - 64;
       path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
-      label(c, '精英', x, crownY - 15, '#ebcf8e', 8);
+      label(c, kind === 'duelist' ? '守刃者' : '精英', x, crownY - 15, '#ebcf8e', 8);
     }
     if (boss) label(c, '炉心守卫', x, y - 72, '#ddca97', 9);
   }
@@ -393,7 +438,9 @@
       else if (kind === 'water') { const radius = num(p.r, 40) * (.45 + (1 - ratio) * .55); ellipse(c,x,y,radius,radius*.58,'#9acdd014'); c.strokeStyle='#addbce';c.lineWidth=2;c.beginPath();c.ellipse(x,y,radius,radius*.58,0,0,Math.PI*2);c.stroke();for(let i=0;i<9;i++){const angle=i*Math.PI*2/9;rect(c,x+Math.cos(angle)*radius,y+Math.sin(angle)*radius*.58,3,5,'#aed8ce');} }
       else if (kind === 'smoke' || kind === 'steam') ellipse(c, x, y, num(p.r, 5), num(p.r, 5) * .7, p.color || '#a2ae8870');
       else if (kind === 'trail') { ellipse(c,x,y+7,num(p.r,14)*.8,num(p.r,14)*.36,'#bad4aa45');rect(c,x-7,y-22,14,24,p.color||'#a7c6a3'); }
-      else if (kind === 'slash') { c.strokeStyle=p.color||'#e5c78e';c.lineWidth=4;c.beginPath();c.arc(x,y,num(p.r,22),-.8,1.3);c.stroke(); }
+      else if (kind === 'slash') { const angle=num(p.angle,.25),arc=num(p.arc,2.1);c.strokeStyle=p.color||'#e5c78e';c.lineWidth=2+ratio*3;c.beginPath();c.arc(x,y,num(p.r,22),angle-arc/2,angle+arc/2);c.stroke(); }
+      else if (kind === 'shockwave') { const radius=num(p.r,80)*(.86+(1-ratio)*.14);c.strokeStyle=p.color||'#e5c78e';c.lineWidth=2+ratio*4;c.beginPath();c.arc(x,y,radius,0,Math.PI*2);c.stroke();c.strokeStyle='#f0d7a340';c.lineWidth=2;c.beginPath();c.arc(x,y,radius*.92,0,Math.PI*2);c.stroke(); }
+      else if (kind === 'counter') { const radius=9+(1-ratio)*num(p.r,30);c.strokeStyle=p.color||'#d9e6bd';c.lineWidth=1+ratio*2;c.beginPath();c.arc(x,y,radius,0,Math.PI*2);c.stroke(); }
       else { const size = num(p.size ?? p.r, 3); rect(c, x - size / 2, y - size / 2, size, size, p.color || '#c6c396'); }
     });
   }
@@ -416,8 +463,100 @@
     }
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
+  const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b' };
+  function rhythmArea(c, e) {
+    const r = e && e.rhythm;
+    if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
+    const x = num(e.x), y = num(e.y), radius = Math.max(1, Math.min(1100, num(r.range, 100)));
+    const angle = num(r.angle), arc = Math.max(.03, Math.min(Math.PI * 2, num(r.arc, Math.PI / 2)));
+    const progress = 1 - Math.max(0, Math.min(1, num(r.remaining) / Math.max(.01, num(r.duration, 1))));
+    const active = r.phase === 'active', color = rhythmColors[r.type];
+    const circle = r.type === 'quake' || arc >= Math.PI * 2 - .01;
+    c.save(); c.translate(x, y); c.rotate(angle);
+    const shape = () => { c.beginPath(); if (!circle) c.moveTo(0, 0); c.arc(0, 0, radius, circle ? 0 : -arc / 2, circle ? Math.PI * 2 : arc / 2); c.closePath(); };
+    shape(); c.fillStyle = color + (active ? '38' : '13'); c.fill();
+    c.strokeStyle = color + (active ? 'ee' : '88'); c.lineWidth = active ? 4 : 2;
+    if (!active) c.setLineDash([7, 6]); shape(); c.stroke(); c.setLineDash([]);
+    if (r.type === 'thrust') {
+      // Directional spearheads also identify a thrust when color is hard to see.
+      for (let i = 1; i <= 3; i++) { const dx = radius * (.26 + i * .17); path(c, [[dx-9,-8],[dx,0],[dx-9,8]], color + (active ? 'ed' : '99'), active ? 3 : 2); }
+    } else if (r.type === 'sweep') {
+      for (const scale of [.52, .76]) { c.strokeStyle = color + '60'; c.lineWidth = 2; c.beginPath(); c.arc(0,0,radius*scale,-arc/2,arc/2); c.stroke(); }
+      const tip = arc / 2; const tx = Math.cos(tip) * radius * .76, ty = Math.sin(tip) * radius * .76;
+      path(c, [[tx-10,ty-5],[tx,ty],[tx+4,ty-10]], color + 'c0', 2);
+    } else if (r.type === 'quake') {
+      c.strokeStyle = color + (active ? 'a0' : '48'); c.lineWidth = 2; c.beginPath(); c.arc(0,0,radius*.66,0,Math.PI*2); c.stroke();
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; path(c, [[Math.cos(a)*radius*.72,Math.sin(a)*radius*.72],[Math.cos(a+.03)*radius*.86,Math.sin(a+.03)*radius*.86],[Math.cos(a)*radius,Math.sin(a)*radius]], color + '66', 2); }
+    }
+    if (!active) {
+      // The contracting ring meets the fixed target ring exactly at the beat.
+      const target = num(e.r, 20) + 12, contracting = target + (1 - progress) * 48;
+      c.strokeStyle = '#e6d9b360'; c.lineWidth = 2; c.beginPath(); c.arc(0,0,target,0,Math.PI*2); c.stroke();
+      c.strokeStyle = color; c.lineWidth = progress > .8 ? 3 : 2; c.beginPath(); c.arc(0,0,contracting,0,Math.PI*2); c.stroke();
+    }
+    c.restore();
+    if (!active) {
+      const glyph = { combo: '刃', thrust: '突', sweep: '扫', quake: '震' }[r.type];
+      const gy = y - (e.kind === 'boss' ? 108 : 103);
+      c.save(); c.translate(x, gy); c.rotate(Math.PI / 4); rect(c,-10,-10,20,20,'#142c2be8'); c.strokeStyle=color;c.lineWidth=2;c.strokeRect(-10,-10,20,20);c.restore();
+      label(c, glyph, x, gy, color, 13);
+      const beats = Math.max(1, Math.min(4, Math.floor(num(r.beats, 1)))), beat = Math.max(1, Math.floor(num(r.beat, 1)));
+      if (beats > 1) for (let i = 0; i < beats; i++) rect(c,x-(beats*9-3)/2+i*9,gy+22,6,3,i<beat?color:'#566e62');
+    }
+  }
+  function combatEvents(state) {
+    const source = Array.isArray(state.combatEvents) ? state.combatEvents : values(state.events);
+    // A retained history can arrive again in every network snapshot. Rendering is
+    // a pure function of simulation age: it never restarts an effect on receipt.
+    return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
+      .filter(({ event, age }) => age >= 0 && age <= .62 && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break'].includes(event.type));
+  }
+  function combatMotion(events, disabled) {
+    if (disabled) return { x:0, y:0, flash:0 };
+    let x = 0, y = 0, flash = 0;
+    for (const {event:e, age} of events) {
+      const success = ['perfect-parry','mikiri','counterattack'].includes(e.type), beat = e.type === 'rhythm-beat';
+      if (!success && !beat) continue;
+      const duration = beat ? .16 : .13;
+      if (age > duration) continue;
+      const amplitude = (beat ? 1.8 : 2.5) * (1 - age / duration), phase = (hash(e.id || e.type) % 17) + age * 175;
+      x += Math.sin(phase) * amplitude; y += Math.cos(phase * 1.3) * amplitude * .7;
+      if (success || beat) flash = Math.max(flash, (success ? .07 : .035) * Math.max(0, 1 - age / .09));
+    }
+    return { x:Math.max(-3, Math.min(3, x)), y:Math.max(-2, Math.min(2, y)), flash:Math.min(.07,flash) };
+  }
+  function combatEffects(c, events) {
+    for (const {event:e, age} of events) {
+      if (e.type === 'rhythm-windup') continue;
+      const beat = e.type === 'rhythm-beat', broken = e.type === 'guard-break';
+      const life = beat ? .24 : .55;
+      if (age > life) continue;
+      const ratio = age / life, x = num(e.x), y = num(e.y), color = broken ? '#e39b83' : e.type === 'perfect-dodge' ? '#b4e1da' : '#ffe0a2';
+      alpha(c, 1-ratio, () => {
+        c.strokeStyle = color; c.lineWidth = beat ? 2 : 3 * (1-ratio) + 1;
+        c.beginPath(); c.arc(x,y,11+ratio*(beat?36:49),0,Math.PI*2); c.stroke();
+        if (!beat) {
+          for (let i=0; i<8; i++) { const a=i*Math.PI/4+(hash(e.id)%7)*.1, inner=7+ratio*12, outer=inner+9+ratio*15;
+            path(c,[[x+Math.cos(a)*inner,y+Math.sin(a)*inner],[x+Math.cos(a)*outer,y+Math.sin(a)*outer]],color,i%2?2:3); }
+          const name = { 'perfect-parry':'铮', 'perfect-dodge':'闪', mikiri:'看破', counterattack:'反击', 'guard-break':'破防' }[e.type];
+          if (name) label(c,name,x,y-45-ratio*12,color,e.type==='counterattack'?17:14);
+        }
+      });
+    }
+  }
+  function practiceStatus(c, state) {
+    if (!state.practice) return;
+    const e = values(state.enemies).find(enemy => enemy.hp > 0 && enemy.maxPosture > 0);
+    if (!e) return;
+    const x = W / 2;
+    rect(c,x-128,18,256,66,'#102523e8'); c.strokeStyle='#a58d5f70';c.lineWidth=1;c.strokeRect(x-127.5,18.5,255,65);
+    label(c,e.kind==='boss'?'炉心守卫':'听刃试炼',x,32,'#e5cd99',12);
+    bar(c,x,46,222,num(e.hp)/Math.max(1,num(e.maxHp,1)),'#b79a6d',4);
+    label(c,'架势',x-111,66,'#b9b692',9,'left');
+    bar(c,x+16,64,188,num(e.posture)/Math.max(1,num(e.maxPosture,1)),e.stagger>0?'#ffedb3':'#dfa576',5);
+  }
   function minimap(c, state) {
-    if (state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
+    if (state.practice || state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
     const bossIndex = state.bossIndex, current = state.room && state.room.index, progress = state.exploration || {};
@@ -469,7 +608,9 @@
   function draw(c, state, options = {}) {
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
+    const events = combatEvents(state), motion = combatMotion(events, !!(options.paused || options.reducedMotion));
     c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H);
+    rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
     values(state.walls).forEach(w => wall(c, w));
     values(state.doors).forEach(d => door(c, d, time));
@@ -481,6 +622,7 @@
     const torchList = values(state.torches || state.lanterns);
     if (torchList.length) torchList.forEach(t => lantern(c, t.x, t.y, time));
     else { lantern(c, 77, 53, time); lantern(c, W - 77, 53, time); lantern(c, 77, H - 47, time); lantern(c, W - 77, H - 47, time); }
+    values(state.enemies).forEach(e => rhythmArea(c, e));
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
@@ -491,8 +633,12 @@
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b));
     values(state.particles).forEach(p => particle(c, p, time));
+    combatEffects(c, events);
     aimReticle(c, state.players && state.players[localId], time);
     ambient(c, state, time);
+    c.restore();
+    if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
+    practiceStatus(c,state);
     minimap(c, state);
     c.restore();
   }

@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#101c23">
   <title>遗迹小队 · 随机探险</title>
   <meta name="description" content="每次出发，遗迹都有新的岔路。自由穿过房间，挑战精英收集遗物，唤醒藏在迷雾深处的守卫。独自探索，也能邀请朋友同行。">
-  <link rel="stylesheet" href="style.css?v=5">
-  <script defer src="engine.js?v=5"></script>
-  <script defer src="renderer.js?v=5"></script>
-  <script defer src="vendor/peerjs.min.js?v=5"></script>
-  <script defer src="net.js?v=5"></script>
-  <script defer src="campaign.js?v=5"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=5"></script>
-  <script defer src="cloud-config.js?v=5"></script>
-  <script defer src="cloud.js?v=5"></script>
-  <script defer src="account.js?v=5"></script>
-  <script defer src="app.js?v=5"></script>
+  <link rel="stylesheet" href="style.css?v=6">
+  <script defer src="engine.js?v=6"></script>
+  <script defer src="renderer.js?v=6"></script>
+  <script defer src="vendor/peerjs.min.js?v=6"></script>
+  <script defer src="net.js?v=6"></script>
+  <script defer src="campaign.js?v=6"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=6"></script>
+  <script defer src="cloud-config.js?v=6"></script>
+  <script defer src="cloud.js?v=6"></script>
+  <script defer src="account.js?v=6"></script>
+  <script defer src="app.js?v=6"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -34,7 +34,7 @@
 
     <section class="game-stage" aria-label="遗迹探险游戏">
       <div id="game-wrap" class="game-wrap" data-mode="random">
-        <canvas id="game" width="960" height="600" tabindex="0" aria-label="遗迹探险游戏画面，使用 WASD 移动，鼠标瞄准并攻击，空格闪避，E 互动。"></canvas>
+        <canvas id="game" width="960" height="600" tabindex="0" aria-label="遗迹探险游戏画面，使用 WASD 移动，J 或鼠标左键攻击，K 或鼠标右键防守，空格闪避，E 互动。"></canvas>
         <div class="game-grain" aria-hidden="true"></div>
         <div class="hud">
           <div class="hud-location"><span class="eyebrow">探索中</span><strong id="hud-stage">遗迹入口</strong><span id="hud-objective">唤醒并击败炉心守卫</span><span id="route-progress" class="route-progress"></span></div>
@@ -53,7 +53,7 @@
             <div class="mission-picker"><div class="mode-select-field"><label for="mode-select">探险模式</label><select id="mode-select"><option value="random" selected>随机探索</option><option value="story">故事任务</option></select></div><div id="story-mission-field" class="mission-select-field" hidden><label for="mission-select">故事任务</label><select id="mission-select"><option value="ember">01 · 熄灭炉心</option><option value="salvage" disabled>02 · 物资回收 · 待解锁</option><option value="holdout" disabled>03 · 信标守夜 · 待解锁</option></select></div><div class="difficulty-select-field"><label for="difficulty-select">难度</label><select id="difficulty-select"><option value="1">普通</option><option value="2" disabled>险境 · 待解锁</option></select></div></div>
             <section class="mission-card" aria-labelledby="mission-name"><div class="mission-card-heading"><span class="mission-mark" aria-hidden="true">◇</span><h2 id="mission-name">迷雾遗迹</h2><span id="mission-reward" class="mission-reward">探险奖励 · 星屑</span></div><p id="mission-description">岔路、精英与遗物，每次出发重新组合。</p><p id="mission-goal" class="mission-goal">目标：探索遗迹，唤醒并击败炉心守卫。</p><div class="mission-card-foot"><span id="mission-lock">自由选择路线</span><span id="mission-progress">每局生成新地图</span></div></section>
             <div class="start-buttons"><button id="solo-start" class="button button-primary"><span>独自探险</span><span aria-hidden="true">↗</span></button><button id="open-coop" class="button button-secondary"><span class="duo-icon" aria-hidden="true">♧</span>邀请朋友</button></div>
-            <div class="loadout-row"><label for="start-loadout">出发装备</label><select id="start-loadout"><option value="pistol">旅人手枪</option><option value="scatter" disabled>散射枪 · 待解锁</option></select><span class="loadout-dot" aria-hidden="true"></span></div>
+            <button id="practice-start" class="practice-entry" type="button"><span class="practice-mark" aria-hidden="true">✧</span><span><strong>招架试炼</strong><small>听准一拍，接住重击</small></span><span aria-hidden="true">→</span></button><div class="loadout-row"><label for="start-loadout">出发装备</label><select id="start-loadout"><option value="blade" selected>旅人短刃 · 招架反击</option><option value="pistol">旅人手枪</option><option value="scatter" disabled>散射枪 · 待解锁</option></select><span class="loadout-dot" aria-hidden="true"></span></div>
             <p id="campaign-status" class="campaign-status">带回星屑与收获，下一次再走一条新路。</p>
             <p id="account-status" class="account-status" role="status" aria-live="polite">游客探险 · 进度保存在这台设备</p>
           </div>
@@ -68,17 +68,17 @@
           <section class="screen-card end-card"><span class="dialog-kicker">A LIGHT TO BRING HOME</span><span class="card-emblem relic-emblem" aria-hidden="true">◆</span><h2 id="end-title">带着火光归来</h2><p id="end-copy">这一次探索，让营地离重新亮起又近一步。</p><p id="end-goal" class="end-goal"></p><div id="end-reward" class="reward-box">获得星屑</div><p id="end-unlocks" class="end-feedback"></p><p id="end-badges" class="end-feedback end-badges"></p><div class="stack-actions"><button id="end-restart" class="button button-primary">再探一次 <span aria-hidden="true">↗</span></button><button id="end-camp" class="button button-secondary">返回营地</button></div></section>
         </div>
 
-        <aside id="tutorial-panel" class="tutorial-panel" aria-labelledby="tutorial-title" hidden><div><span class="eyebrow">初次出发</span><strong id="tutorial-title">先试试手，再走进遗迹</strong></div><p><span class="tutorial-desktop">WASD 移动 · 鼠标射击 · 空格闪避 · E 互动</span><span class="tutorial-touch">左侧摇杆移动，右侧按钮射击、闪避和互动。</span></p><p>房间自由进出；击杀唤醒守卫，精英掉落遗物。</p><button id="tutorial-dismiss" class="text-button" type="button">知道了，出发 →</button></aside>
+        <aside id="tutorial-panel" class="tutorial-panel" aria-labelledby="tutorial-title" hidden><div><span class="eyebrow">初次出发</span><strong id="tutorial-title">先试试手，再走进遗迹</strong></div><p><span id="tutorial-controls-desktop" class="tutorial-desktop">WASD 移动 · J / 左键攻击 · K / 右键防守 · 空格闪避 · E 互动</span><span id="tutorial-controls-touch" class="tutorial-touch">左侧摇杆移动，右侧按钮攻击、防守、闪避和互动。</span></p><p id="tutorial-detail">房间自由进出；击杀唤醒守卫，精英掉落遗物。</p><button id="tutorial-dismiss" class="text-button" type="button">知道了，出发 →</button></aside>
         <div id="interaction-hint" class="interaction-hint" role="status" hidden></div>
         <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-        <div id="touch-controls" class="touch-controls" hidden><div id="joystick" class="joystick" aria-label="移动摇杆"><div id="joystick-stick" class="joystick-stick"></div></div><div class="touch-actions"><button id="touch-interact" class="touch-button touch-interact" aria-label="互动">E</button><button id="touch-dash" class="touch-button touch-dash" aria-label="闪避">↯</button><button id="touch-shoot" class="touch-button touch-shoot" aria-label="射击">＋</button></div></div>
+        <div id="touch-controls" class="touch-controls" hidden><div id="joystick" class="joystick" aria-label="移动摇杆"><div id="joystick-stick" class="joystick-stick"></div></div><div class="touch-actions"><button id="touch-interact" class="touch-button touch-interact" aria-label="互动">E</button><button id="touch-dash" class="touch-button touch-dash" aria-label="闪避">↯</button><button id="touch-guard" class="touch-button touch-guard" aria-label="防守与招架">◇</button><button id="touch-shoot" class="touch-button touch-shoot" aria-label="攻击与反击">斩</button></div></div>
       </div>
       <footer class="game-footer"><span class="footer-note">迷雾之下，每次都有新的归途</span></footer>
     </section>
     <div class="page-caption"><span>一个可以和朋友分享的小小冒险</span><span>耳机就绪，勇气装满。<span class="tiny-star" aria-hidden="true">✦</span></span></div>
   </main>
 
-  <dialog id="help-dialog" class="modal" aria-labelledby="help-title"><div class="dialog-heading"><span class="dialog-kicker">FIELD NOTES</span><button id="close-help" class="icon-button close-dialog" aria-label="关闭指南">×</button></div><h2 id="help-title">探险家的口袋手册</h2><p class="dialog-intro">自己选择路线，也自己决定什么时候迎战守卫。</p><div class="help-grid"><div><span class="help-key">W A S D</span><strong>自由移动</strong><p>也可以使用方向键。房间无需清场，靠近门口按 E 就能穿行。</p></div><div><span class="help-key">鼠标左键</span><strong>瞄准并攻击</strong><p>指向目标，按住左键持续射击。</p></div><div><span class="help-key">SPACE</span><strong>翻滚闪避</strong><p>闪避期间短暂无敌，能穿过弹幕。</p></div><div><span class="help-key">E</span><strong>与身边互动</strong><p>搬起或投掷道具、拿取遗物、救起队友。</p></div></div><div class="field-tip"><span aria-hidden="true">◇</span><p>随机探索中，击杀达到本局门槛后守卫苏醒。金色精英掉落遗物，全队选择后在本局生效。右上角地图会随探索揭开；守卫位置始终可见。</p></div><div class="field-tip help-environment"><span aria-hidden="true">✦</span><p>木箱挡弹，炸药桶清场，水桶灭火。盾卫可绕后攻击，冲锋兽出红线时准备闪避。故事任务按各自目标完成。</p></div><div class="help-bottom"><span><kbd>ESC</kbd> 暂停 / 继续</span><span>手机端使用屏幕摇杆与按钮</span></div></dialog>
+  <dialog id="help-dialog" class="modal" aria-labelledby="help-title"><div class="dialog-heading"><span class="dialog-kicker">FIELD NOTES</span><button id="close-help" class="icon-button close-dialog" aria-label="关闭指南">×</button></div><h2 id="help-title">探险家的口袋手册</h2><p class="dialog-intro">自己选择路线，也自己决定什么时候迎战守卫。</p><div class="help-grid"><div><span class="help-key">W A S D</span><strong>自由移动</strong><p>也可以使用方向键。房间无需清场，靠近门口按 E 就能穿行。</p></div><div><span class="help-key">J / 左键</span><strong>攻击与反击</strong><p>短刃近身挥砍；成功化解关键招式后，攻击可打出反击。手枪、散射枪仍可选择。</p></div><div><span class="help-key">K / 右键</span><strong>防守与精准招架</strong><p>按住防守普通斩击；在落刀前按下，触发精准招架。连续硬挡会被破防。</p></div><div><span class="help-key">SPACE</span><strong>闪避与迎刺</strong><p>突刺时迎着敌人闪进可截住攻势；横扫与震地要在落点前闪避。听声音、看蓄势，抓住那一拍。</p></div><div><span class="help-key">E</span><strong>与身边互动</strong><p>搬起或投掷道具、拿取遗物、救起队友。</p></div></div><div class="field-tip"><span aria-hidden="true">◇</span><p>随机探索中，击杀达到本局门槛后守卫苏醒。金色精英掉落遗物，全队选择后在本局生效。右上角地图会随探索揭开；守卫位置始终可见。</p></div><div class="field-tip help-environment"><span aria-hidden="true">✦</span><p>首页可进入招架试炼，单独挑战持刃守卫，随时重试。试炼不结算营地成长。精英与 Boss 也会使用节奏招式。木箱挡弹，炸药桶清场，水桶灭火。</p></div><div class="help-bottom"><span><kbd>ESC</kbd> 暂停 / 继续</span><span>手机端使用屏幕摇杆与按钮</span></div></dialog>
 
   <dialog id="coop-dialog" class="modal coop-modal"><div class="dialog-heading"><span class="dialog-kicker">BETTER TOGETHER</span><button id="close-coop" class="icon-button close-dialog" aria-label="关闭联机面板">×</button></div><h2>给朋友留一个位置</h2><p class="dialog-intro">创建一间营地，分享房间码，就能一起出发。</p><button id="host-room" class="button button-primary full-width">创建双人房间 <span aria-hidden="true">＋</span></button><div class="or-divider"><span>或加入朋友的房间</span></div><div class="join-form"><label class="sr-only" for="room-code">房间码</label><input id="room-code" type="text" maxlength="12" placeholder="输入房间码" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="join-room" class="button button-secondary">加入</button></div><div class="room-ticket"><span class="eyebrow">你的房间码</span><div class="room-code-row"><strong id="room-id">— — — — — —</strong><button id="copy-room" class="text-button">复制</button></div><p id="room-message" role="status">两个人，一起把故事带回来。</p></div><div class="room-bottom"><button id="leave-room" class="text-button">离开房间</button><button id="start-room" class="button button-primary" disabled>等待伙伴 <span aria-hidden="true">→</span></button></div><p class="quiet-note">房主选择任务和难度；双方刷新到最新页面后再联机。</p></dialog>
 
