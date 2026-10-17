@@ -5,7 +5,7 @@
   const canvas = $('game'), ctx = canvas.getContext('2d');
   const STORE = 'ruins-squad-camp-v2', LEGACY_STORE = 'ruins-squad-camp-v1';
   const TUTORIAL_STORE = 'ruins-squad-tutorial-v1';
-  const RHYTHM_TUTORIAL_STORE = 'ruins-squad-rhythm-tutorial-v1';
+  const RHYTHM_TUTORIAL_STORE = 'ruins-squad-rhythm-tutorial-v2';
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let account = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'blade';
@@ -104,13 +104,13 @@
     // Read the live windup, so a staggered or defeated attacker leaves no scheduled warning behind.
     for (const enemy of state.enemies || []) {
       const attack = enemy.rhythm;
-      if (!attack || attack.phase !== 'windup' || attack.remaining <= 0 || attack.remaining > .15 || enemy.stagger > 0 || enemy.hp <= 0) continue;
+      if (!attack || attack.phase !== 'windup' || attack.remaining <= 0 || attack.remaining > .30 || enemy.stagger > 0 || enemy.hp <= 0) continue;
       const windup = [...(state.combatEvents || [])].reverse().find(event => event.type === 'rhythm-windup' && event.enemyId === enemy.id && event.attack === attack.type && event.beat === attack.beat);
       if (!windup) continue;
       const cueId = 'cue:' + windup.id;
       if (heardEvents.has(cueId)) continue;
       heardEvents.add(cueId);
-      tone(attack.type === 'sweep' ? 790 : 990, .045, .028, 'sine');
+      tone(attack.type === 'sweep' ? 790 : 1180, .075, .04, 'triangle');
     }
   }
   function selectedWeapon() { return $('start-loadout').value === 'blade' ? 'blade' : camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
@@ -122,10 +122,10 @@
   function startTutorial() {
     rhythmTutorial = !!(state && state.practice);
     try { tutorialPending = localStorage.getItem(rhythmTutorial ? RHYTHM_TUTORIAL_STORE : TUTORIAL_STORE) !== '1'; } catch (_) { tutorialPending = true; }
-    $('tutorial-title').textContent = rhythmTutorial ? '先看动作，再接住那一拍' : '先试试手，再走进遗迹';
+    $('tutorial-title').textContent = rhythmTutorial ? '先接住一刀，再练连续招架' : '先试试手，再走进遗迹';
     $('tutorial-controls-desktop').textContent = rhythmTutorial ? 'K / 右键防守 · 空格闪避 · J / 左键反击' : 'WASD 移动 · J / 左键攻击 · K / 右键防守 · 空格闪避 · E 互动';
-    $('tutorial-controls-touch').textContent = rhythmTutorial ? '按住盾牌防守；闪避避开横扫，攻击打出反击。' : '左侧摇杆移动，右侧按钮攻击、防守、闪避和互动。';
-    $('tutorial-detail').textContent = rhythmTutorial ? '斩击落下前按防守可招架；突刺时迎面闪进，横扫时踩点闪避。此刻暂停，准备好再迎战。' : '房间自由进出；击杀唤醒守卫，精英掉落遗物。';
+    $('tutorial-controls-touch').textContent = rhythmTutorial ? '圈快合拢时点盾牌；防守会自动面向来招。' : '左侧摇杆移动，右侧按钮攻击、防守、闪避和互动。';
+    $('tutorial-detail').textContent = rhythmTutorial ? '看到两圈快合拢或听到清脆提示时，按 K / 右键；会自动面向来招。先练连斩，熟悉后再加入突刺和横扫。' : '房间自由进出；击杀唤醒守卫，精英掉落遗物。';
     $('tutorial-dismiss').textContent = rhythmTutorial ? '准备好了，迎战 →' : '知道了，出发 →';
     $('tutorial-panel').hidden = !tutorialPending;
   }
@@ -253,11 +253,12 @@
     if (!state || state.status === 'playing' || finished === runId) return;
     finished = runId; clearInput(); paused = false; $('pause-screen').hidden = true; $('tutorial-panel').hidden = true;
     if (state.practice) {
-      $('end-title').textContent = state.status === 'won' ? '接住了，轮到你出手' : '再听一遍它的节奏';
-      $('end-copy').textContent = state.status === 'won' ? `击败试炼守卫 · 用时 ${Math.floor(state.elapsed)} 秒` : '下一次，你已经知道它会怎样出招。';
+      const parries = Math.max(0, Math.floor(state.practiceParries || 0));
+      $('end-title').textContent = state.status === 'won' ? '接住了，轮到你出手' : parries ? `这一轮接住了 ${parries} 次` : '先听提示，接住第一刀';
+      $('end-copy').textContent = `本轮招架 ${parries} 次 · 用时 ${Math.floor(state.elapsed)} 秒${state.status === 'won' ? ' · 击败试炼守卫' : ''}`;
       $('end-reward').hidden = true;
       $('end-goal').textContent = '招架试炼';
-      $('end-unlocks').textContent = '可以立即重试，或回营地继续探险。';
+      $('end-unlocks').textContent = parries ? '已经接住了它的攻击，下一轮试着连起来。' : '下一轮可以先不攻击，看到圈快合拢或听到提示就按防守。';
       $('end-badges').textContent = '';
       $('end-restart').disabled = false; $('end-restart').textContent = '再试一轮 ↗';
       $('end-screen').hidden = false;
@@ -434,8 +435,13 @@
     let my = (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) + touch.my;
     const length = Math.hypot(mx, my); if (length > 1) { mx /= length; my /= length; }
     let aimX = mouse.x, aimY = mouse.y;
-    if (p && (!mouse.active || touch.shoot || keys.has('KeyJ'))) {
-      const nearest = state.enemies.reduce((best, enemy) => !best || Math.hypot(enemy.x - p.x, enemy.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? enemy : best, null);
+    const defending = guardPulse || mouse.guard || touch.guard || keys.has('KeyK') || p && p.guardWindow > 0;
+    if (p && (defending || !mouse.active || touch.shoot || keys.has('KeyJ'))) {
+      const enemies = state.enemies.filter(enemy => enemy.hp > 0);
+      // Defence follows the imminent blade instead of a stale mouse position.
+      const incoming = defending && enemies.filter(enemy => enemy.rhythm && enemy.rhythm.type === 'combo' && enemy.rhythm.phase === 'windup' && enemy.stagger <= 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= enemy.rhythm.range + p.r)
+        .sort((a, b) => a.rhythm.remaining - b.rhythm.remaining)[0];
+      const nearest = incoming || enemies.reduce((best, enemy) => !best || Math.hypot(enemy.x - p.x, enemy.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? enemy : best, null);
       aimX = nearest ? nearest.x : p.x + Math.cos(p.facing || 0) * 100;
       aimY = nearest ? nearest.y : p.y + Math.sin(p.facing || 0) * 100;
     }

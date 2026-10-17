@@ -464,13 +464,17 @@
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
   const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b' };
-  function rhythmArea(c, e) {
+  function rhythmArea(c, e, state, localId) {
     const r = e && e.rhythm;
     if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
     const x = num(e.x), y = num(e.y), radius = Math.max(1, Math.min(1100, num(r.range, 100)));
     const angle = num(r.angle), arc = Math.max(.03, Math.min(Math.PI * 2, num(r.arc, Math.PI / 2)));
     const progress = 1 - Math.max(0, Math.min(1, num(r.remaining) / Math.max(.01, num(r.duration, 1))));
     const active = r.phase === 'active', color = rhythmColors[r.type];
+    // Reach the target at the start of the usable parry window, so players do
+    // not wait for the impact flash before pressing. The cue is slightly inside
+    // the simulation's 0.38s window to leave room for input/frame timing.
+    const parryReady = !active && r.type === 'combo' && num(r.remaining) <= .32;
     const circle = r.type === 'quake' || arc >= Math.PI * 2 - .01;
     c.save(); c.translate(x, y); c.rotate(angle);
     const shape = () => { c.beginPath(); if (!circle) c.moveTo(0, 0); c.arc(0, 0, radius, circle ? 0 : -arc / 2, circle ? Math.PI * 2 : arc / 2); c.closePath(); };
@@ -489,10 +493,16 @@
       for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; path(c, [[Math.cos(a)*radius*.72,Math.sin(a)*radius*.72],[Math.cos(a+.03)*radius*.86,Math.sin(a+.03)*radius*.86],[Math.cos(a)*radius,Math.sin(a)*radius]], color + '66', 2); }
     }
     if (!active) {
-      // The contracting ring meets the fixed target ring exactly at the beat.
-      const target = num(e.r, 20) + 12, contracting = target + (1 - progress) * 48;
-      c.strokeStyle = '#e6d9b360'; c.lineWidth = 2; c.beginPath(); c.arc(0,0,target,0,Math.PI*2); c.stroke();
-      c.strokeStyle = color; c.lineWidth = progress > .8 ? 3 : 2; c.beginPath(); c.arc(0,0,contracting,0,Math.PI*2); c.stroke();
+      const target = num(e.r, 20) + 12;
+      const arrival = r.type === 'combo' ? Math.max(0, num(r.remaining) - .32) / Math.max(.01, num(r.duration, 1) - .32) : 1 - progress;
+      const contracting = target + Math.min(1, arrival) * 48;
+      c.strokeStyle = parryReady ? '#c6f2cb' : '#e6d9b360'; c.lineWidth = parryReady ? 5 : 2; c.beginPath(); c.arc(0,0,target,0,Math.PI*2); c.stroke();
+      c.strokeStyle = parryReady ? '#efffe4' : color; c.lineWidth = parryReady ? 3 : progress > .8 ? 3 : 2; c.beginPath(); c.arc(0,0,contracting,0,Math.PI*2); c.stroke();
+      if (parryReady) {
+        // Four steady notches mark an interval, rather than another flash that
+        // can be confused with the attack's impact.
+        for (let i=0;i<4;i++) { const a=i*Math.PI/2;path(c,[[Math.cos(a)*(target+6),Math.sin(a)*(target+6)],[Math.cos(a)*(target+13),Math.sin(a)*(target+13)]],'#c6f2cb',3); }
+      }
     }
     c.restore();
     if (!active) {
@@ -502,6 +512,14 @@
       label(c, glyph, x, gy, color, 13);
       const beats = Math.max(1, Math.min(4, Math.floor(num(r.beats, 1)))), beat = Math.max(1, Math.floor(num(r.beat, 1)));
       if (beats > 1) for (let i = 0; i < beats; i++) rect(c,x-(beats*9-3)/2+i*9,gy+22,6,3,i<beat?color:'#566e62');
+      const p = state && state.players && state.players[localId];
+      if (state && state.practice && parryReady && p && !p.downed && !p.carry && num(p.guardAttackLock) <= 0 && num(p.dashTime) <= 0 && num(p.invuln) <= .3) {
+        const direction = Math.atan2(num(p.y)-y,num(p.x)-x);
+        const delta = Math.atan2(Math.sin(direction-angle),Math.cos(direction-angle));
+        if (Math.hypot(num(p.x)-x,num(p.y)-y) <= radius+num(p.r,14) && Math.abs(delta) <= arc/2+.08) {
+          label(c,'招架',num(p.x),num(p.y)-63,'#dcffd2',13);
+        }
+      }
     }
   }
   function combatEvents(state) {
@@ -549,11 +567,12 @@
     const e = values(state.enemies).find(enemy => enemy.hp > 0 && enemy.maxPosture > 0);
     if (!e) return;
     const x = W / 2;
-    rect(c,x-128,18,256,66,'#102523e8'); c.strokeStyle='#a58d5f70';c.lineWidth=1;c.strokeRect(x-127.5,18.5,255,65);
+    rect(c,x-128,18,256,84,'#102523e8'); c.strokeStyle='#a58d5f70';c.lineWidth=1;c.strokeRect(x-127.5,18.5,255,83);
     label(c,e.kind==='boss'?'炉心守卫':'听刃试炼',x,32,'#e5cd99',12);
     bar(c,x,46,222,num(e.hp)/Math.max(1,num(e.maxHp,1)),'#b79a6d',4);
     label(c,'架势',x-111,66,'#b9b692',9,'left');
     bar(c,x+16,64,188,num(e.posture)/Math.max(1,num(e.maxPosture,1)),e.stagger>0?'#ffedb3':'#dfa576',5);
+    label(c,`成功招架 ${Math.max(0,Math.floor(num(state.practiceParries)))} 次`,x,88,'#c7dfb0',10);
   }
   function minimap(c, state) {
     if (state.practice || state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
@@ -622,7 +641,7 @@
     const torchList = values(state.torches || state.lanterns);
     if (torchList.length) torchList.forEach(t => lantern(c, t.x, t.y, time));
     else { lantern(c, 77, 53, time); lantern(c, W - 77, 53, time); lantern(c, 77, H - 47, time); lantern(c, W - 77, H - 47, time); }
-    values(state.enemies).forEach(e => rhythmArea(c, e));
+    values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),

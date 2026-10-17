@@ -153,8 +153,9 @@
     if (options.players === 2) addPlayer(s, 'p2');
     if (s.practice) {
       s.mode = 'story';
+      s.practiceParries = 0;
       s.rooms = [{ index: 0, id: 'blade-trial', name: '听刃试炼', kind: 'practice', cleared: false, visited: false, discovered: true }];
-      var master = enemy(s, 'duelist', 590, 300); master.elite = true; master.hp = master.maxHp = 48;
+      var master = enemy(s, 'duelist', 590, 300); master.elite = true; master.hp = master.maxHp = 36;
       s.roomData[0] = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28), rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
         doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
@@ -912,10 +913,23 @@
       (r.arc >= TAU - 0.01 || Math.abs(angleDelta(Math.atan2(point.y - e.y, point.x - e.x), r.angle)) <= r.arc / 2 + 0.08) &&
       lineClear(s, e, point, 3);
   }
+  function faceGuardThreat(s, p) {
+    // The cue identifies the attack to answer. Mouse position should not silently
+    // turn a correctly timed guard away from that close, unobstructed strike.
+    var threats = s.enemies.filter(function (e) {
+      return e.hp > 0 && e.rhythm && e.rhythm.type === 'combo' && e.rhythm.phase === 'windup' &&
+        strikeContains(s, e, e.rhythm, p);
+    }).sort(function (a, b) { return a.rhythm.remaining - b.rhythm.remaining || dist(a, p) - dist(b, p); });
+    if (threats.length) p.facing = Math.atan2(threats[0].y - p.y, threats[0].x - p.x);
+  }
   function grantCounter(s, p, e, kind) {
     p.counterTime = 1.25; p.counterEnemy = e.id; p.counterKind = kind;
     p.guardWindow = 0; p.dashWindow = 0; p.guardStrain = 0; p.guardLoad = 0;
     p.guardCd = Math.min(p.guardCd, 0.12);
+    if (s.practice) {
+      if (kind === 'parry') s.practiceParries = (s.practiceParries || 0) + 1;
+      p.hp = Math.min(p.maxHp, p.hp + 1);
+    }
     e.posture = Math.min(e.maxPosture, e.posture + (kind === 'mikiri' ? 2 : 1));
     if (e.posture >= e.maxPosture) {
       e.posture = 0; e.stagger = 1.15; e.rhythm = null;
@@ -955,7 +969,7 @@
         p.guarding = false; p.guardWindow = 0; p.guardCd = 0.7; p.guardLoad = 0;
         event(s, 'guard-break', { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
       }
-      damagePlayer(s, p, s.practice || r.type === 'quake' ? 2 : 1, r.type);
+      damagePlayer(s, p, !s.practice && r.type === 'quake' ? 2 : 1, r.type);
     });
   }
   function rhythmWindup(s, e, type, beat, beats, target) {
@@ -986,11 +1000,15 @@
     e.attackCd -= dt;
     var distance = dist(e, target), boss = e.kind === 'boss';
     var type = ['combo', 'thrust', boss ? 'quake' : 'sweep'][e.rhythmCycle % 3];
-    var engageRange = type === 'combo' ? 170 : type === 'thrust' ? 250 : boss ? 460 : 230;
+    if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
+    // A telegraph must start within the strike's reach. Previously a stationary
+    // beginner saw slashes at ~168px even though they could only connect at 159px.
+    var engageRange = type === 'combo' ? 128 : type === 'thrust' ? 250 : boss ? 460 : 230;
     if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
       e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? 2 : 1, target); return true;
     }
-    if (distance > (boss ? 150 : 118) || !lineClear(s, e, target, e.r + 1)) {
+    var approachRange = type === 'combo' ? 118 : boss ? 150 : 118;
+    if (distance > approachRange || !lineClear(s, e, target, e.r + 1)) {
       e.navTime -= dt;
       if (e.navTime <= 0) { var wp = waypoint(s, e, target); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.35; }
       var dx = e.navX - e.x, dy = e.navY - e.y, length = len(dx, dy) || 1;
@@ -1280,15 +1298,15 @@
       var magnitude = len(mx, my);
       if (magnitude > 1) { mx /= magnitude; my /= magnitude; }
       if (guardEdge && p.guardCd <= 0 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry) {
-        p.guardWindow = Math.max(0.055, 0.18 - p.guardStrain * 0.065);
-        p.guardStrain = Math.min(3, p.guardStrain + 1); p.guardCd = 0.34;
+        p.guardWindow = 0.38; p.guardStrain = 0; p.guardCd = 0.2;
       }
+      if (p.guardWindow > 0) faceGuardThreat(s, p);
       p.guarding = (!!input.guard || p.guardWindow > 0) && p.guardCd < 0.5 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry;
       if (dashEdge && p.dashCd <= 0) {
         p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(p.facing);
         p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(p.facing);
-        p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.25);
-        p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.18; p.guarding = false; p.guardWindow = 0;
+        p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.3);
+        p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.28; p.guarding = false; p.guardWindow = 0;
         event(s, 'dash', { playerId: key, x: p.x, y: p.y });
       }
       if (p.dashTime > 0) {
