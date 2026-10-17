@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#101c23">
   <title>遗迹小队 · 随机探险</title>
   <meta name="description" content="每次出发，遗迹都有新的岔路。自由穿过房间，挑战精英收集遗物，唤醒藏在迷雾深处的守卫。独自探索，也能邀请朋友同行。">
-  <link rel="stylesheet" href="style.css?v=4">
-  <script defer src="engine.js?v=4"></script>
-  <script defer src="renderer.js?v=4"></script>
-  <script defer src="vendor/peerjs.min.js?v=4"></script>
-  <script defer src="net.js?v=4"></script>
-  <script defer src="campaign.js?v=4"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=4"></script>
-  <script defer src="cloud-config.js?v=4"></script>
-  <script defer src="cloud.js?v=4"></script>
-  <script defer src="account.js?v=4"></script>
-  <script defer src="app.js?v=4"></script>
+  <link rel="stylesheet" href="style.css?v=5">
+  <script defer src="engine.js?v=5"></script>
+  <script defer src="renderer.js?v=5"></script>
+  <script defer src="vendor/peerjs.min.js?v=5"></script>
+  <script defer src="net.js?v=5"></script>
+  <script defer src="campaign.js?v=5"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=5"></script>
+  <script defer src="cloud-config.js?v=5"></script>
+  <script defer src="cloud.js?v=5"></script>
+  <script defer src="account.js?v=5"></script>
+  <script defer src="app.js?v=5"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -94,14 +94,43 @@
     <div id="account-message" class="account-message" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <div id="account-login-panel" class="account-login-panel">
-      <div class="account-field"><label for="account-email">你的邮箱</label><div class="account-input-row"><input id="account-email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="name@example.com" maxlength="254" required><button id="send-login-code" class="button button-secondary" type="button">发送验证码</button></div></div>
-      <div class="account-field"><label for="account-code">邮箱验证码</label><div class="account-input-row"><input id="account-code" class="account-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" minlength="6" maxlength="8" placeholder="输入收到的验证码" aria-describedby="account-code-note"><button id="verify-login-code" class="button button-primary" type="button">验证并登录</button></div><p id="account-code-note" class="account-field-note">首次验证邮箱即创建账号，无需设置密码。</p></div>
+      <div class="auth-tabs" role="tablist" aria-label="登录方式">
+        <button id="auth-tab-password" class="auth-tab" type="button" role="tab" aria-selected="true" aria-controls="auth-password-panel">密码登录</button>
+        <button id="auth-tab-register" class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="auth-register-panel">邮箱注册</button>
+        <button id="auth-tab-code" class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="auth-code-panel">验证码登录</button>
+      </div>
+      <div class="account-field"><label for="account-email">你的邮箱</label><div class="account-input-row"><input id="account-email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="name@example.com" maxlength="254" required></div></div>
+
+      <div id="auth-password-panel" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-password">
+        <div class="account-field"><label for="login-password">密码</label><div class="account-input-row"><input id="login-password" type="password" autocomplete="current-password" maxlength="128" placeholder="输入密码"></div></div>
+        <button id="password-login" class="button button-primary auth-submit" type="button">登录，继续探险 <span aria-hidden="true">↗</span></button>
+        <button id="forgot-password" class="text-button auth-forgot" type="button">忘记密码？</button>
+      </div>
+
+      <div id="auth-register-panel" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-register" hidden>
+        <p class="auth-method-note">注册：验证邮箱并设置密码；下次邮箱+密码登录。</p>
+        <div class="account-field"><label for="register-password">设置密码</label><div class="account-input-row"><input id="register-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="8–128 个字符" aria-describedby="register-password-note"></div><p id="register-password-note" class="account-field-note">至少 8 个字符，请使用不易猜到的密码。</p></div>
+        <div class="account-field"><label for="register-password-confirm">确认密码</label><div class="account-input-row"><input id="register-password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="再次输入密码"></div></div>
+        <button id="register-account" class="button button-primary auth-submit" type="button">注册并验证邮箱 <span aria-hidden="true">→</span></button>
+      </div>
+
+      <div id="auth-code-panel" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-code" hidden>
+        <button id="send-login-code" class="button button-secondary auth-submit" type="button">发送邮箱验证码</button>
+        <div id="auth-code-input-wrap" class="account-field"><label for="account-code">邮箱验证码</label><div class="account-input-row"><input id="account-code" class="account-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" minlength="6" maxlength="8" placeholder="输入收到的验证码" aria-describedby="account-code-note"><button id="verify-login-code" class="button button-primary" type="button">验证并登录</button></div><p id="account-code-note" class="account-field-note">输入邮箱收到的验证码，继续你的探险。</p></div>
+      </div>
     </div>
 
     <div id="account-user-panel" class="account-user-panel" hidden>
       <div class="account-identity"><span class="account-identity-mark" aria-hidden="true">◈</span><div><span class="eyebrow">当前账号</span><strong id="account-email-display"></strong></div></div>
       <div class="cloud-save-status"><span class="eyebrow">营地存档</span><p id="cloud-status" role="status" aria-live="polite">正在检查云端进度…</p></div>
       <div class="account-user-actions"><button id="sync-cloud" class="button button-primary" type="button">同步存档 <span aria-hidden="true">↗</span></button><button id="logout-account" class="text-button" type="button">退出账号</button></div>
+      <section id="set-password-panel" class="set-password-panel" aria-labelledby="set-password-title">
+        <h3 id="set-password-title">设置或修改密码</h3>
+        <p class="auth-method-note">原验证码账号可在这里设置密码，以后直接登录。</p>
+        <div class="account-field"><label for="new-password">新密码</label><div class="account-input-row"><input id="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="8–128 个字符"></div></div>
+        <div class="account-field"><label for="new-password-confirm">确认新密码</label><div class="account-input-row"><input id="new-password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="再次输入新密码"></div></div>
+        <button id="save-password" class="button button-secondary auth-submit" type="button">保存密码</button>
+      </section>
     </div>
 
     <div id="cloud-choice-panel" class="cloud-choice-panel" aria-labelledby="choice-title" hidden>

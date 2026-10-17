@@ -17,8 +17,9 @@
     } catch (_) { tabId = String(Date.now()) + '-' + Math.random().toString(36).slice(2); }
     var user = null, profile = C.normalize(options.initialProfile), revision = 0, dirty = false;
     var loaded = false, busy = false, sending = false, verifying = false, signingOut = false;
-    var epoch = 0, mutation = 0, upload = null, choice = null, timer = null, resendAt = 0;
+    var epoch = 0, mutation = 0, upload = null, choice = null, timer = null, resendAt = 0, resendTimer = null;
     var lastStatus = '游客模式 · 进度保存在本机', disposed = false, deferredUser;
+    var authMode = 'password', codePurpose = 'login', codeEmail = null;
 
     function copy(value) { return C.normalize(value); }
     function cacheKey(id) { return 'ruins-squad-cloud-v1:' + namespace + ':' + id; }
@@ -72,6 +73,33 @@
       $('account-message').textContent = text || '';
       $('account-message').setAttribute('data-state', error ? 'error' : 'normal');
     }
+    function clearPasswords() {
+      ['login-password', 'register-password', 'register-password-confirm', 'new-password', 'new-password-confirm'].forEach(function (id) { $(id).value = ''; });
+    }
+    function gameBusy() { return !!(options.isBusy && options.isBusy()); }
+    function authLocked() { return disposed || !cloud.available || busy || sending || verifying || signingOut || gameBusy(); }
+    function authAllowed() {
+      if (gameBusy()) { clearPasswords(); message('请先返回营地并结束联机，再操作账号。', true); render(); return false; }
+      if (authLocked()) { clearPasswords(); return false; }
+      return true;
+    }
+    function emailValue() { return String($('account-email').value || '').trim(); }
+    function sameEmail(left, right) { return String(left || '').toLowerCase() === String(right || '').toLowerCase(); }
+    function resetCode() { codeEmail = null; codePurpose = 'login'; $('account-code').value = ''; }
+    function invalidateCode() {
+      var purpose = codePurpose; resetCode();
+      if (purpose === 'recovery') codePurpose = 'recovery';
+      if (purpose === 'register') authMode = 'register';
+    }
+    function setMode(mode, purpose) {
+      clearPasswords(); resetCode(); authMode = mode; codePurpose = purpose || 'login'; message(''); render();
+    }
+    function startCooldown() {
+      resendAt = Date.now() + 60000;
+      if (resendTimer) root.clearTimeout(resendTimer);
+      resendTimer = root.setTimeout(function () { resendTimer = null; render(); }, 60010);
+    }
+    function noteRateLimit(error) { if (error && error.code === 'rate_limit') startCooldown(); }
     function status(text, kind) {
       lastStatus = text;
       $('account-status').textContent = text;
@@ -81,16 +109,33 @@
       render();
     }
     function render() {
+      var locked = authLocked(), cooling = Date.now() < resendAt;
       $('account-login-panel').hidden = !!user;
       $('account-user-panel').hidden = !user;
       $('account-email-display').textContent = user ? user.email : '';
       $('cloud-choice-panel').hidden = !choice;
       $('account-setup-note').hidden = cloud.available;
       $('account-setup-note').textContent = cloud.available ? '' : '云存档正在开通。你可以继续游客试玩，已有本机存档会保留。';
-      $('send-login-code').disabled = !cloud.available || sending || verifying || busy || Date.now() < resendAt;
-      $('verify-login-code').disabled = !cloud.available || sending || verifying || busy;
+      ['password', 'register', 'code'].forEach(function (mode) {
+        var selected = mode === authMode, tab = $('auth-tab-' + mode);
+        tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tab.disabled = locked;
+        $('auth-' + mode + '-panel').hidden = !selected;
+      });
+      $('account-email').disabled = locked;
+      ['login-password', 'register-password', 'register-password-confirm', 'new-password', 'new-password-confirm', 'account-code'].forEach(function (id) { $(id).disabled = locked; });
+      $('password-login').disabled = locked;
+      $('register-account').disabled = locked || cooling;
+      $('forgot-password').disabled = locked;
+      $('send-login-code').disabled = locked || cooling;
+      $('send-login-code').textContent = cooling ? '请在一分钟后重新发送' : codePurpose === 'register' ? '重新发送注册验证码' : codePurpose === 'recovery' ? '发送找回密码验证码' : '发送登录验证码';
+      $('verify-login-code').disabled = locked || !codeEmail;
+      $('auth-code-input-wrap').hidden = !codeEmail;
+      $('account-code-note').textContent = codePurpose === 'register' ? '验证码用于确认注册；请查看刚才注册的邮箱。' : codePurpose === 'recovery' ? '验证已有账号的邮箱后，可在当前账号设置新密码。' : '请输入刚才发送到该邮箱的验证码。';
+      $('set-password-panel').hidden = !user;
+      $('save-password').disabled = !user || locked;
       $('sync-cloud').disabled = !user || busy || !!upload || !!choice;
-      $('logout-account').disabled = !user || busy || signingOut;
+      $('logout-account').disabled = !user || locked;
       $('use-cloud-save').disabled = busy;
       $('use-local-save').disabled = busy;
     }
@@ -150,6 +195,7 @@
       if (disposed) return;
       if (verifying) { deferredUser = next; return; }
       if ((next && next.id) === (user && user.id)) { if (next) user = next; render(); return; }
+      clearPasswords(); resetCode(); authMode = 'password';
       if (user && dirty) persist();
       cancelTimer(); choice = null; epoch++; mutation++; upload = null;
       if (options.onIdentityChange) options.onIdentityChange();
@@ -264,35 +310,114 @@
       } catch (_) { message('这不是有效的遗迹小队备份文件，当前存档没有改变。', true); }
     }
 
-    $('open-account').onclick = function () { options.openDialog(); render(); };
-    $('close-account').onclick = function () { $('account-dialog').close(); };
+    async function runAuth(operation, onSuccess) {
+      verifying = true; deferredUser = undefined; render();
+      try {
+        var pending = operation(); clearPasswords();
+        var result = await pending;
+        if (disposed) return;
+        verifying = false; await onSuccess(result);
+      } catch (error) { if (!disposed) { noteRateLimit(error); message(error.message, true); } }
+      finally {
+        verifying = false; clearPasswords();
+        if (!disposed && deferredUser !== undefined) {
+          var next = deferredUser; deferredUser = undefined;
+          if ((next && next.id) !== (user && user.id)) await handleAuth(next);
+        }
+        if (!disposed) render();
+      }
+    }
+    function passwordPair(first, second) {
+      var value = $(first).value;
+      if (value.length < 8 || value.length > 128) { clearPasswords(); message('密码请使用 8–128 个字符。', true); return false; }
+      if (value !== $(second).value) { clearPasswords(); message('两次输入的密码不一致，请重新输入。', true); return false; }
+      return true;
+    }
+    $('open-account').onclick = function () { clearPasswords(); options.openDialog(); render(); };
+    $('close-account').onclick = function () { clearPasswords(); $('account-dialog').close(); };
+    $('account-dialog').addEventListener('close', clearPasswords);
+    $('account-dialog').addEventListener('cancel', clearPasswords);
+    ['password', 'register', 'code'].forEach(function (mode) {
+      $('auth-tab-' + mode).onclick = function () { if (!authAllowed()) return; setMode(mode); };
+    });
+    $('account-email').addEventListener('input', function () {
+      clearPasswords();
+      if (codeEmail && !sameEmail(emailValue(), codeEmail)) {
+        invalidateCode(); message('邮箱已修改，请为这个邮箱重新发送验证码；注册请重新填写密码。'); render();
+      }
+    });
+    $('password-login').onclick = async function () {
+      if (!authAllowed() || user) return;
+      if (!$('login-password').value) { clearPasswords(); message('请输入密码。', true); return; }
+      var email = emailValue(); message('正在登录…');
+      return runAuth(function () { return cloud.signInWithPassword(email, $('login-password').value); }, async function (next) {
+        await handleAuth(next); message('登录成功，已读取当前账号的存档。');
+      });
+    };
+    $('register-account').onclick = async function () {
+      if (!authAllowed() || user) return;
+      if (Date.now() < resendAt) { clearPasswords(); message('请在一分钟后再发送注册验证码。', true); return; }
+      if (!passwordPair('register-password', 'register-password-confirm')) return;
+      var email = emailValue(); message('正在注册并发送确认邮件…');
+      return runAuth(function () { return cloud.signUp(email, $('register-password').value); }, async function (result) {
+        startCooldown();
+        if (result.requiresEmailVerification) {
+          authMode = 'code'; codePurpose = 'register'; codeEmail = email; $('account-code').value = '';
+          message('请检查邮箱，输入验证码完成注册验证；如果已注册，请改用密码登录或找回密码。');
+        } else {
+          await handleAuth(result.user); message('注册成功，已登录。');
+        }
+      });
+    };
+    $('forgot-password').onclick = function () {
+      if (!authAllowed() || user) return;
+      setMode('code', 'recovery');
+      message('请输入已有账号的邮箱并发送验证码；验证成功后可设置新密码。');
+    };
     $('send-login-code').onclick = async function () {
-      if (sending || verifying || Date.now() < resendAt) return;
-      if (options.isBusy && options.isBusy()) { message('请先返回营地，再登录或切换账号。', true); return; }
-      sending = true; message('正在发送登录邮件…'); render();
-      try { await cloud.requestCode($('account-email').value); resendAt = Date.now() + 60000; message('验证码已发送，请检查邮箱（也看看垃圾邮件）。'); root.setTimeout(render, 60010); }
-      catch (error) { message(error.message, true); }
-      finally { sending = false; render(); }
+      if (!authAllowed() || user || Date.now() < resendAt) return;
+      var email = emailValue(), purpose = codePurpose;
+      if (codeEmail && !sameEmail(email, codeEmail)) {
+        invalidateCode(); clearPasswords(); message('邮箱已修改，请重新确认邮箱后发送验证码；注册请重新填写密码。', true); render(); return;
+      }
+      sending = true; clearPasswords(); message('正在发送邮箱验证码…'); render();
+      try {
+        if (purpose === 'register') await cloud.resendSignup(email);
+        else await cloud.requestCode(email, purpose === 'recovery' ? { shouldCreateUser: false } : undefined);
+        if (disposed) return;
+        codeEmail = email; codePurpose = purpose; $('account-code').value = ''; startCooldown();
+        message(purpose === 'recovery' ? '验证码已发送。验证已有邮箱后，请设置新密码。' : '验证码已发送，请检查邮箱（也看看垃圾邮件）。');
+      } catch (error) { if (!disposed) { noteRateLimit(error); message(error.message, true); } }
+      finally { sending = false; clearPasswords(); if (!disposed) render(); }
     };
     $('verify-login-code').onclick = async function () {
-      if (verifying || sending) return;
-      if (options.isBusy && options.isBusy()) { message('请先返回营地，再登录或切换账号。', true); return; }
-      verifying = true; deferredUser = undefined; message('正在验证邮箱…'); render();
-      try {
-        var next = await cloud.verifyCode($('account-email').value, $('account-code').value);
-        $('account-code').value = ''; verifying = false; await handleAuth(next); message('邮箱验证成功。');
-      } catch (error) { message(error.message, true); }
-      finally {
-        verifying = false;
-        if (deferredUser !== undefined && (deferredUser && deferredUser.id) !== (user && user.id)) { var pending = deferredUser; deferredUser = undefined; await handleAuth(pending); }
-        render();
+      if (!authAllowed() || user) return;
+      if (!codeEmail || !sameEmail(emailValue(), codeEmail)) {
+        invalidateCode(); clearPasswords(); message('邮箱已修改或尚未发送验证码，请先重新发送；注册请重新填写密码。', true); render(); return;
       }
+      var email = codeEmail, purpose = codePurpose; message('正在验证邮箱…');
+      return runAuth(function () { return cloud.verifyCode(email, $('account-code').value); }, async function (next) {
+        $('account-code').value = ''; await handleAuth(next);
+        message(purpose === 'recovery' ? '邮箱验证成功。请在下方输入并保存新密码；账号和营地进度会保留。' : purpose === 'register' ? '邮箱确认成功，注册已完成。' : '邮箱验证成功。');
+      });
     };
+    $('save-password').onclick = async function () {
+      if (!authAllowed() || !user) return;
+      if (!passwordPair('new-password', 'new-password-confirm')) return;
+      var owner = user.id; message('正在保存密码…');
+      return runAuth(function () { return cloud.setPassword($('new-password').value); }, async function (next) {
+        if (!next || next.id !== owner) throw new Error('账号状态已变化，请重新登录后设置密码。');
+        await handleAuth(next); message('密码已保存。下次可用邮箱和密码登录，原有账号和进度均已保留。');
+      });
+    };
+    ['login-password', 'register-password-confirm', 'new-password-confirm'].forEach(function (id, index) {
+      $(id).addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); $(['password-login', 'register-account', 'save-password'][index]).click(); } });
+    });
     $('account-code').addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); $('verify-login-code').click(); } });
     $('sync-cloud').onclick = function () { return sync(); };
     $('logout-account').onclick = async function () {
-      if (signingOut || busy) return;
-      if (options.isBusy && options.isBusy()) { message('请先返回营地再退出账号。', true); return; }
+      if (!authAllowed() || !user) return;
+      clearPasswords(); resetCode(); authMode = 'password';
       signingOut = true; cancelTimer(); if (user && dirty) persist(); render();
       try { await cloud.signOut(); await handleAuth(null); message('已退出账号，游客存档仍单独保留。'); }
       catch (error) { message(error.message, true); }
@@ -318,9 +443,9 @@
     if (root.addEventListener) { root.addEventListener('online', online); root.addEventListener('storage', storageChanged); }
     render();
     return Object.freeze({ init: init, handleAuth: handleAuth, readLocal: readLocal, writeLocal: writeLocal, sync: sync,
-      importSave: importSave, exportSave: exportSave, get user() { return user; }, get busy() { return busy || verifying; },
+      importSave: importSave, exportSave: exportSave, get user() { return user; }, get busy() { return busy || sending || verifying || signingOut; },
       get status() { return lastStatus; }, get needsChoice() { return !!choice; },
-      dispose: function () { disposed = true; cancelTimer(); if (user && dirty) persist(); if (root.removeEventListener) { root.removeEventListener('online', online); root.removeEventListener('storage', storageChanged); } }
+      dispose: function () { disposed = true; cancelTimer(); if (resendTimer) root.clearTimeout(resendTimer); clearPasswords(); if (user && dirty) persist(); if (root.removeEventListener) { root.removeEventListener('online', online); root.removeEventListener('storage', storageChanged); } }
     });
   }
   return Object.freeze({ create: create });

@@ -129,6 +129,17 @@
 .account-message[data-state="error"],.account-message.error{border-color:#d49c7355;color:#edc1a0;background:#c8805a0a}
 .account-notice{margin-bottom:15px;padding:12px 14px;background:#d8b26a0b;color:#d9c593;border:1px solid #c7a66836;border-radius:6px;font-size:11px;line-height:1.9;overflow-wrap:anywhere}
 .account-login-panel{display:grid;gap:20px}
+.auth-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border:1px solid #8da67b2b;border-radius:7px;background:#0e222680}
+.auth-tab{min-height:39px;min-width:0;padding:9px 7px;background:transparent;color:#8fa58c;border:1px solid transparent;border-radius:4px;font-size:11px;line-height:1.5;transition:background .2s,color .2s,border-color .2s}
+.auth-tab:hover:not(:disabled){background:#9ebc830b;color:#c8d6b7}
+.auth-tab[aria-selected="true"]{color:#ecd096;border-color:#d4b36c45;background:linear-gradient(135deg,#bda06024,#8b914b13);box-shadow:inset 0 -2px 0 #d6b57855}
+.auth-panel{display:grid;gap:16px;min-width:0}
+.auth-submit{width:100%;height:auto;min-height:43px;padding:10px 15px;justify-content:center;font-size:11px;letter-spacing:0;line-height:1.6}
+.auth-forgot{justify-self:end;margin-top:-8px;min-height:32px;padding:6px 0;font-size:10px;color:#b3c49d}
+.auth-method-note{margin:0;color:#96ae90;font-size:10px;line-height:1.9;overflow-wrap:anywhere}
+.set-password-panel{display:grid;gap:15px;margin-top:23px;padding-top:20px;border-top:1px solid #91ad7d25}
+.set-password-panel h3{margin:0;color:#d5dfbb;font-size:13px;font-weight:600;line-height:1.6}
+.set-password-panel .auth-method-note{margin-top:-8px}
 .account-field{min-width:0}
 .account-field>label{display:block;color:#c2d0b2;font-size:11px;margin-bottom:8px;font-weight:600}
 .account-input-row{display:flex;gap:9px;align-items:stretch;min-width:0}
@@ -177,6 +188,11 @@
   .account-input-row input{padding:0 10px;font-size:12px}
   .account-input-row .button{min-width:98px;padding:10px;font-size:10px}
   .account-login-panel{gap:18px}
+  .auth-tabs{gap:3px;padding:3px}
+  .auth-tab{padding:9px 4px;min-height:39px;font-size:10px}
+  .auth-panel,.set-password-panel{gap:14px}
+  .auth-submit{font-size:11px}
+  .set-password-panel{margin-top:21px;padding-top:18px}
   .cloud-choice-panel{padding:14px}
   .cloud-choice-actions{gap:7px}
   .cloud-choice-actions .button{font-size:10px;padding-inline:8px}

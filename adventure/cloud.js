@@ -9,12 +9,18 @@
   var messages = Object.freeze({
     unavailable: '云存档服务尚未接通，当前仍可使用游客存档。',
     config: '云存档配置未就绪，请联系游戏维护者。',
-    auth: '登录已过期，请重新输入邮箱验证码。',
+    auth: '登录已过期，请重新登录。',
     rate_limit: '操作太频繁，请稍等一分钟再试。',
     network: '暂时连不上云服务，请检查网络后重试。',
     conflict: '云端存档已有新进度，请先读取并选择要保留的存档。',
     invalid_email: '请输入有效的邮箱地址。',
     invalid_code: '验证码不正确或已过期，请检查后重试。',
+    invalid_password: '请输入密码，且不要超过128个字符。',
+    password_too_long: '新密码超过云服务的72字节上限，请缩短密码；中文等字符会占用多个字节。',
+    invalid_credentials: '邮箱或密码不正确，请重试，或使用邮箱验证码找回。',
+    email_unconfirmed: '邮箱尚未验证，请先输入邮件中的验证码。',
+    weak_password: '新密码需为8至128个字符，并符合云服务的密码要求。',
+    same_password: '新密码不能与当前密码相同。',
     invalid_profile: '存档数据格式不正确，请保留本地存档并联系游戏维护者。',
     unknown: '云服务暂时无法完成操作，请稍后重试。'
   });
@@ -28,17 +34,22 @@
 
   // Do not return SDK error text: it may contain email addresses or request data.
   function translate(error, operation) {
-    if (error && error.name === 'AdventureCloudError') return error;
+    if (error && error.name === 'AdventureCloudError') return failure(error.code);
     var code = String(error && error.code || '').toLowerCase();
     var text = String(error && error.message || '').toLowerCase();
     var status = Number(error && error.status || 0);
     if (code === 'p0001' && text.includes('save_conflict')) return failure('conflict');
     if (status === 429 || /rate_limit|over_email_send_rate_limit|over_request_rate_limit/.test(code) || /rate limit|too many requests/.test(text)) return failure('rate_limit');
+    if (code === 'invalid_credentials') return failure('invalid_credentials');
+    if (code === 'email_not_confirmed' || code === 'email_unconfirmed') return failure('email_unconfirmed');
+    if (code === 'validation_failed' && /password.*(?:longer than 72|72 bytes)/.test(text)) return failure('password_too_long');
+    if (code === 'weak_password' || /password.*(?:too long|too short|at least)/.test(text)) return failure('weak_password');
+    if (code === 'same_password') return failure('same_password');
     if (code === '22023' || text.includes('invalid_profile')) return failure('invalid_profile');
     if (code === 'otp_expired' || code === 'otp_disabled' || /token.*expired|invalid.*token|token.*invalid/.test(text) && operation === 'verify') return failure('invalid_code');
     if (status === 401 || code === '42501' || /session_not_found|refresh_token_not_found|refresh_token_already_used|bad_jwt|user_not_found|no_authorization/.test(code) || /auth_required|jwt expired|auth session missing|invalid refresh token/.test(text)) return failure('auth');
-    if (/email_address_invalid|validation_failed/.test(code) && operation === 'request') return failure('invalid_email');
-    if (status === 403 && /email_address_not_authorized|signup_disabled|email_provider_disabled/.test(code)) return failure('config');
+    if (code === 'email_address_invalid' || code === 'validation_failed' && operation === 'request') return failure('invalid_email');
+    if (/email_address_not_authorized|signup_disabled|email_provider_disabled/.test(code)) return failure('config');
     if (/pgrst20[25]|42p01|42883/.test(code) || /invalid api key|api key.*invalid|relation .*does not exist|function .*does not exist|schema cache|email.*not.*authorized|smtp/.test(text)) return failure('config');
     if (error && (error.name === 'TypeError' || error.name === 'AbortError') || /fetch|network|timed? ?out|failed to connect|load failed/.test(text) || status >= 500) return failure('network');
     if (operation === 'verify' && status === 403) return failure('invalid_code');
@@ -77,6 +88,14 @@
     return clean;
   }
 
+  function passwordValue(password, isNew) {
+    if (typeof password !== 'string' || password.length > 128 || password.length < (isNew ? 8 : 1)) throw failure(isNew ? 'weak_password' : 'invalid_password');
+    // Auth's current bcrypt limit is measured in UTF-8 bytes, not JS characters.
+    if (isNew && new TextEncoder().encode(password).length > 72) throw failure('password_too_long');
+    // Spaces and every other character are part of the credential.
+    return password;
+  }
+
   function profileCopy(profile) {
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw failure('invalid_profile');
     try {
@@ -95,7 +114,7 @@
     options = options || {};
     var checked = validateConfig(config), sdk = root.supabase;
     var disabled = checked.error || (!sdk || typeof sdk.createClient !== 'function' ? 'unavailable' : null);
-    var client = null, user = null, subscription = null, initialized = false, initializing = null, generation = 0, disposed = false;
+    var client = null, user = null, subscription = null, initialized = false, initializing = null, generation = 0, disposed = false, requestFetch = null;
     if (!disabled) {
       try {
         var network = { headers: { 'X-Client-Info': 'ruins-squad-cloud/1' } };
@@ -109,6 +128,7 @@
             try { return await root.fetch(input, Object.assign({}, init, { signal: controller.signal })); }
             finally { root.clearTimeout(timeout); if (original) original.removeEventListener('abort', abort); }
           };
+          requestFetch = network.fetch;
         }
         client = sdk.createClient(checked.url, checked.key, {
           auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false,
@@ -166,14 +186,56 @@
       return initializing;
     }
 
-    async function requestCode(email) {
+    async function requestCode(email, requestOptions) {
       ready();
       var clean = emailAddress(email);
       try {
-        var response = await client.auth.signInWithOtp({ email: clean, options: { shouldCreateUser: true } });
+        var response = await client.auth.signInWithOtp({ email: clean, options: { shouldCreateUser: !requestOptions || requestOptions.shouldCreateUser !== false } });
         if (response.error) throw response.error;
         return { sent: true };
       } catch (error) { throw translate(error, 'request'); }
+    }
+
+    async function resendSignup(email) {
+      ready();
+      var clean = emailAddress(email);
+      try {
+        // OTP's MagicLink fallback can replace an unconfirmed user's password.
+        var response = await client.auth.resend({ type: 'signup', email: clean });
+        if (response.error) throw response.error;
+        return { sent: true };
+      } catch (error) { throw translate(error, 'request'); }
+    }
+
+    function acceptSession(data) {
+      var sessionUser = safeUser(data && data.session && data.session.user);
+      var verified = safeUser(data && (data.user || data.session && data.session.user));
+      if (!verified || !sessionUser || verified.id !== sessionUser.id) throw failure('auth');
+      if (!user || user.id !== verified.id) generation += 1;
+      user = verified; initialized = true;
+      return user;
+    }
+
+    async function signUp(email, password) {
+      ready();
+      var clean = emailAddress(email), credential = passwordValue(password, true);
+      try {
+        var response = await client.auth.signUp({ email: clean, password: credential });
+        if (response.error) throw response.error;
+        // With confirmations enabled, a user object alone is not a login.
+        if (!response.data || !response.data.session) return { user: null, requiresEmailVerification: true };
+        return { user: acceptSession(response.data), requiresEmailVerification: false };
+      } catch (error) { throw translate(error, 'signup'); }
+    }
+
+    async function signInWithPassword(email, password) {
+      ready();
+      var clean = emailAddress(email), credential = passwordValue(password, false);
+      try {
+        var response = await client.auth.signInWithPassword({ email: clean, password: credential });
+        if (response.error) throw response.error;
+        return acceptSession(response.data);
+      } catch (error) { throw translate(error, 'password'); }
     }
 
     async function verifyCode(email, token) {
@@ -202,12 +264,13 @@
       } catch (error) { throw translate(error, 'signOut'); }
     }
 
-    async function signedIn() {
+    async function signedIn(boundRequest) {
       ready();
       if (!initialized) await init();
       if (!user) throw failure('auth');
-      var request = { id: user.id, generation: generation };
+      var request = boundRequest || { id: user.id, generation: generation };
       try {
+        sameAccount(request);
         var response = await client.auth.getSession();
         if (response.error) throw response.error;
         sameAccount(request);
@@ -222,6 +285,35 @@
 
     function sameAccount(request) {
       if (!user || user.id !== request.id || generation !== request.generation) throw failure('auth');
+    }
+
+    async function setPassword(password) {
+      ready();
+      var credential = passwordValue(password, true);
+      if (!user) throw failure('auth');
+      // Capture identity before any await. Never let the SDK resolve a later
+      // account's token while a password change is waiting for its auth lock.
+      var request = { id: user.id, generation: generation };
+      try {
+        request = await signedIn(request);
+        sameAccount(request);
+        if (!requestFetch) throw failure('network');
+        // Official Auth REST endpoint: PUT /user, with public apikey + user JWT.
+        var response = await requestFetch(checked.url + '/auth/v1/user', {
+          method: 'PUT',
+          headers: { apikey: checked.key, Authorization: 'Bearer ' + request.token,
+            'Content-Type': 'application/json', 'X-Client-Info': 'ruins-squad-cloud/1' },
+          body: JSON.stringify({ password: credential })
+        });
+        var body = null;
+        try { body = await response.json(); } catch (_) { /* Non-JSON service failures are translated below. */ }
+        if (!response.ok) throw { code: body && (body.code || body.error_code), message: body && (body.message || body.msg), status: response.status };
+        sameAccount(request);
+        var updated = safeUser(body);
+        if (!updated || updated.id !== request.id) throw failure('auth');
+        user = updated;
+        return user;
+      } catch (error) { throw translate(error, 'setPassword'); }
     }
 
     async function load() {
@@ -259,7 +351,8 @@
     }
 
     return Object.freeze({ available: !disabled, reason: disabled ? messages[disabled] : '',
-      init: init, requestCode: requestCode, verifyCode: verifyCode, signOut: signOut, load: load, save: save, dispose: dispose });
+      init: init, requestCode: requestCode, resendSignup: resendSignup, verifyCode: verifyCode, signUp: signUp, signInWithPassword: signInWithPassword,
+      setPassword: setPassword, signOut: signOut, load: load, save: save, dispose: dispose });
   }
 
   return Object.freeze({ create: create });

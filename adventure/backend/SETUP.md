@@ -10,7 +10,7 @@
 
 ## 2. 配置邮箱验证码
 
-在 Authentication 中启用 Email 登录和新用户注册。游戏使用邮箱验证码，不收集用户密码，也不读取邮箱内容。
+在 Authentication 中启用 Email 登录和新用户注册，并保留邮箱确认。游戏默认使用邮箱和密码登录；首次注册设置密码后，输入邮箱验证码确认账号。旧验证码账号可登录后直接设置密码。密码仅提交给 Supabase Auth，不进入游戏档案、备份和本机进度缓存，游戏不读取邮箱内容。
 
 **新建 Free 项目需要先配置自定义 SMTP，才能使用这版验证码表单。** 自 2026 年 6 月 3 日起，新 Free 项目使用 Supabase 默认邮件服务时不能修改认证邮件模板；默认 Magic Link 模板与验证码界面不同。配置自定义 SMTP 后可以修改模板。[官方变更说明](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier)
 
@@ -25,7 +25,9 @@
    ```
 
 4. 设置游戏地址为 Site URL：`https://q1262437767-dotcom.github.io/reaction-game/adventure/`。若以后另加跳转登录，只允许自己实际使用的完整回调地址。
-5. 先用自己的邮箱做一次“发送验证码 → 输入验证码 → 登录”测试，再邀请朋友。
+5. 使用自己的邮箱测试“填写邮箱和密码注册 → 输入注册验证码 → 退出 → 密码登录”。已有验证码账号请先登录，在账号面板设置密码，再退出并测试密码登录；应继续读取同一个账号的原存档。
+
+找回密码复用已有的邮箱验证码登录：对已有账号请求验证码，验证后设置新密码，不需要新增 Recovery 邮件模板或跳转链接。设置密码始终由已登录用户自己的会话授权，绑定当前账号；不会使用管理员密钥替玩家修改密码。
 
 Supabase 默认 SMTP 只允许向项目组织团队预授权邮箱发送，官方文档当前写明限制为每小时 2 封，且不保证送达或可用性。它不适合直接向朋友开放注册。自定义 SMTP 也有自身额度、发件域名和送达要求，需要实际测试国内常用邮箱。[SMTP 官方说明](https://supabase.com/docs/guides/auth/auth-smtp)、[邮箱验证码流程](https://supabase.com/docs/guides/auth/auth-email-passwordless)
 
