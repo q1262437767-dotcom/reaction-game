@@ -198,7 +198,7 @@
     if (!item || (item.kind === 'relic' && item.used)) return;
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
-    const color = kind === 'cache' || kind === 'supply-cache' ? '#9ac9c3' : kind === 'relic' ? relicColors[item.buff] || relicColors.pierce : kind === 'extraction' ? '#bed6a3' : '#e9c780';
+    const color = kind === 'cache' || kind === 'supply-cache' ? '#9ac9c3' : kind === 'relic' ? relicColors[item.buff] || relicColors.pierce : kind === 'extraction' || kind === 'relay-extraction' ? '#bed6a3' : '#e9c780';
     shadow(c, x, y, kind === 'beacon' ? 28 : 19, .3);
     if (active) {
       glow(c, x, y - 8, nearby ? 66 : 44, kind === 'cache' ? '#a6d8cc1c' : '#d3d8a51c');
@@ -229,6 +229,19 @@
       label(c, waveText, x, y - 74, lit ? '#f1d78e' : '#a9bd93', 10);
       if (lit) { bar(c, x, y + 28, 58, num(mission.progress) / Math.max(1, num(mission.total, 3)), '#d9bd77', 3); }
       label(c, nearby && active ? 'E · ' + (item.label || '启动信标') : item.label || '守夜信标', x, y + 43, nearby && active ? '#f3dfaa' : color, 9);
+      return;
+    } else if (kind === 'relay-extraction') {
+      const delivered = !!(state.relay && state.relay.delivered), carrying = !!(p && state.relay && p.carry === state.relay.coreId);
+      ellipse(c,0,8,40,20,'#112b2b');ellipse(c,0,3,37,19,'#77936e');ellipse(c,0,0,31,15,'#24483e');
+      c.strokeStyle=carrying||delivered?'#ddedb8':'#8aaf92';c.lineWidth=2;c.beginPath();c.ellipse(0,0,25,12,0,0,Math.PI*2);c.stroke();
+      for(let i=0;i<6;i++){const a=i*Math.PI/3;rect(c,Math.cos(a)*32-3,Math.sin(a)*16-2,6,4,'#c2ce9a');}
+      for(const side of [-1,1]){rect(c,side*35-4,-43,8,47,'#33584b');rect(c,side*35-3,-43,3,42,'#a2b787');crystal(c,side*35,-46,.65,'#d0dfad');}
+      glow(c,0,-21,73,carrying||delivered?'#d2e9ac30':'#a2d4bd1a');
+      path(c,[[0,-4],[0,-90]],carrying||delivered?'#d8edb518':'#aedcc014',35);
+      path(c,[[0,-8],[0,-91]],carrying||delivered?'#e1efbf55':'#c0dfc433',2);
+      if(delivered){crystal(c,0,-34,1.4,'#ffe2a0');path(c,[[-8,-67],[-1,-60],[12,-74]],'#e1efbf',3);}
+      c.restore();
+      label(c,delivered?'炉芯已归位':nearby&&carrying?'E · 交付炉芯':'炉芯撤离台',x,y+39,carrying||delivered?'#e1edb8':'#a5c3a4',10);
       return;
     } else if (kind === 'extraction') {
       ellipse(c, 0, 6, 31, 14, '#16342d'); ellipse(c, 0, 3, 27, 12, active ? '#6a8c61' : '#4c6250'); ellipse(c, 0, 1, 21, 9, '#254837');
@@ -278,6 +291,25 @@
   function prop(c, p, time, held = false) {
     const x = num(p.x), y = num(p.y), kind = p.kind || p.type || 'crate';
     if (p.carriedBy && !held) return;
+    if (kind === 'core') {
+      // The furnace core is unmistakable beside brown crates and red barrels.
+      // Its trail follows simulation velocity, so paused/repeated snapshots stay stable.
+      if (!held) shadow(c, x, y, 19, p.thrown ? .2 : .36);
+      if (p.thrown && Math.hypot(num(p.vx), num(p.vy)) > 1) {
+        const a = Math.atan2(num(p.vy), num(p.vx));
+        for (let i = 3; i > 0; i--) alpha(c, .25 / i, () => crystal(c, x - Math.cos(a) * i * 13, y - Math.sin(a) * i * 13 - 4, .8 - i * .12, '#ffc56e'));
+      }
+      c.save(); c.translate(Math.round(x), Math.round(y - 7));
+      glow(c, 0, 0, held ? 48 : 62, '#f1ae482d');
+      c.strokeStyle = '#9d7b4c'; c.lineWidth = 3; c.beginPath(); c.ellipse(0, 0, 18, 10, -.3, 0, Math.PI * 2); c.stroke();
+      crystal(c, 0, -1, 1.65, '#f9bd68');
+      path(c, [[-10,-12],[-17,-7],[-14,8],[-7,12]], '#dca65f', 3);
+      path(c, [[10,-12],[17,-7],[14,8],[7,12]], '#dca65f', 3);
+      rect(c,-2,-12,4,19,'#fff0ba'); rect(c,-6,-4,12,3,'#ffe0a0');
+      c.restore();
+      if (!held && !p.thrown) label(c, '炉芯', x, y + 26, '#f0d299', 10);
+      return;
+    }
     const bob = p.thrown ? Math.sin(time * .022) * 3 : 0;
     if (!held) shadow(c, x, y, num(p.r, 15), p.thrown ? .2 : .36);
     c.save(); c.translate(Math.round(x), Math.round(y - bob)); if (p.thrown) c.rotate(time * .009);
@@ -390,11 +422,19 @@
       c.strokeStyle='#d5ddab80';c.lineWidth=1;c.beginPath();c.arc(x,y-6,23,Math.PI*.12,Math.PI*.87);c.stroke();
       c.save();c.translate(x+19,y-25);c.rotate(Math.PI/4);rect(c,-4,-4,8,8,'#dce8b2');rect(c,-2,-2,4,4,'#758e70');c.restore();
     }
+    if (num(p.relayBoost) > 0 && state.mode === 'relay') {
+      const ratio = Math.min(1, num(p.relayBoost) / 3);
+      c.strokeStyle='#f8d696';c.lineWidth=2;c.beginPath();c.ellipse(x,y+9,25,11,0,-Math.PI/2,-Math.PI/2+Math.PI*2*ratio);c.stroke();
+      for(const side of [-1,1])path(c,[[x+side*24,y-2],[x+side*29,y-8],[x+side*24,y-14]],'#f8d696',2);
+    }
     if (p.hp < p.maxHp) bar(c, x, y - 39, 28, p.hp / Math.max(1, p.maxHp), p.hp / p.maxHp < .3 ? '#df8e73' : '#adc98d');
     if (values(state.players).length > 1) label(c, second ? '伙伴' : isLocal ? '你' : '队长', x, y - 48, second ? '#e0ae93' : '#bdcf9f', 8);
     if (p.carry) {
-      const heldProp = values(state.props).find(v => v.id === p.carry) || { kind: 'crate' };
-      const ang = num(p.facing); prop(c, { ...heldProp, x: x + Math.cos(ang) * 22, y: y + Math.sin(ang) * 17 - 9, thrown: false }, time, true);
+      const heldProp = values(state.props).find(v => v.id === p.carry);
+      if (!heldProp && state.mode === 'relay' && state.relay && p.carry === state.relay.coreId) return;
+      const carried = heldProp || { kind: 'crate' };
+      if (carried.kind === 'core' && state.relay && (state.relay.delivered || state.relay.coreRoom !== (state.room && state.room.index))) return;
+      const ang = num(p.facing); prop(c, { ...carried, x: x + Math.cos(ang) * 22, y: y + Math.sin(ang) * 17 - 9, thrown: false }, time, true);
     }
   }
 
@@ -630,7 +670,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' ? 1 : /^event-|^supply-collected$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' ? 1 : /^event-|^supply-collected$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -649,6 +689,18 @@
   function combatEffects(c, events) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (/^core-/.test(e.type)) {
+        const delivered=e.type==='core-deliver',caught=e.type==='core-catch',perfect=caught&&e.perfect,life=delivered?1:.58;
+        if(age>life)continue;
+        const ratio=age/life,x=num(e.x),y=num(e.y),color=delivered?'#c9e5b5':perfect?'#ffe4a6':'#eac17e';
+        alpha(c,1-ratio,()=>{
+          c.strokeStyle=color;c.lineWidth=delivered||perfect?3:1;c.beginPath();c.ellipse(x,y,16+ratio*(delivered?88:36),(16+ratio*(delivered?88:36))*.55,0,0,Math.PI*2);c.stroke();
+          if(perfect)for(let i=0;i<6;i++){const a=i*Math.PI/3,inner=20+ratio*17,outer=inner+8;path(c,[[x+Math.cos(a)*inner,y+Math.sin(a)*inner],[x+Math.cos(a)*outer,y+Math.sin(a)*outer]],color,2);}
+          const name=delivered?'炉芯归位':caught?perfect?'精准接力':'接住了':e.type==='core-knock'?'炉芯掉落':'';
+          if(name)label(c,name,x,y-52-ratio*12,color,perfect||delivered?15:12);
+        });
+        continue;
+      }
       if (e.type === 'boss-phase' || e.type === 'event-start' || e.type === 'event-complete' || e.type === 'supply-collected' || e.type === 'decoy') {
         const phase=e.type==='boss-phase',supplied=e.type==='supply-collected',ghost=e.type==='decoy',life=phase?1:ghost?.48:.85;
         if(age>life)continue;
@@ -689,7 +741,42 @@
     bar(c,x+16,64,188,num(e.posture)/Math.max(1,num(e.maxPosture,1)),e.stagger>0?'#ffedb3':'#dfa576',5);
     label(c,`成功招架 ${Math.max(0,Math.floor(num(state.practiceParries)))} 次`,x,88,'#c7dfb0',10);
   }
+  function relayMap(c, state) {
+    if (state.practice || !state.relay || !Array.isArray(state.rooms)) return;
+    const rooms=state.rooms.filter(room=>Number.isFinite(room.gx)&&Number.isFinite(room.gy));
+    if(!rooms.length)return;
+    const run=state.relay,current=state.room&&state.room.index,visible=rooms.filter(room=>room.visited||room.discovered||room.index===run.extractionRoom);
+    const left=752,top=18,width=190,height=126,minX=Math.min(...rooms.map(room=>room.gx)),maxX=Math.max(...rooms.map(room=>room.gx)),minY=Math.min(...rooms.map(room=>room.gy)),maxY=Math.max(...rooms.map(room=>room.gy));
+    const spacing=Math.min(54,144/Math.max(1,maxX-minX),52/Math.max(1,maxY-minY));
+    const points=new Map(rooms.map(room=>[room.index,{x:left+width/2+(room.gx-(minX+maxX)/2)*spacing,y:top+66+(room.gy-(minY+maxY)/2)*spacing,room}]));
+    c.save();rect(c,left,top,width,height,'#102523e8');c.strokeStyle='#71886865';c.lineWidth=1;c.strokeRect(left+.5,top+.5,width-1,height-1);
+    label(c,'接力路线',left+12,top+14,'#d7c498',10,'left');
+    if(num(run.perfectCatches)>0)label(c,`精准 ${Math.floor(num(run.perfectCatches))}`,left+width-12,top+14,'#eacb91',8,'right');
+    for(const room of visible){
+      if(!room.visited)continue;
+      const point=points.get(room.index);
+      for(const adjacent of values(room.neighbors)){
+        const next=points.get(adjacent);
+        if(next&&(next.room.visited||next.room.discovered))path(c,[[point.x,point.y],[next.x,next.y]],next.room.visited?'#7b9270aa':'#70866a55',2);
+      }
+    }
+    for(const room of visible){
+      const point=points.get(room.index),isCurrent=room.index===current,isExit=room.index===run.extractionRoom,size=isCurrent?15:12;
+      rect(c,point.x-size/2-2,point.y-size/2-2,size+4,size+4,'#102523');rect(c,point.x-size/2,point.y-size/2,size,size,isCurrent?'#d9dca6':room.visited?'#657f63':'#203a32');
+      c.strokeStyle=isCurrent?'#f2e4ad':isExit?'#b8d1a5':'#7c927466';c.lineWidth=isCurrent?2:1;c.strokeRect(Math.round(point.x-size/2)+.5,Math.round(point.y-size/2)+.5,size,size);
+      if(isExit){path(c,[[point.x-3,point.y+4],[point.x-3,point.y-5],[point.x+4,point.y-2],[point.x-3,point.y]],'#c8dfb4',2);label(c,'撤离',point.x,point.y+21,'#b8cfaa',8);}
+      if(!run.delivered&&room.index===run.coreRoom){
+        c.fillStyle='#ffc66d';c.beginPath();c.moveTo(point.x,point.y-24);c.lineTo(point.x+5,point.y-17);c.lineTo(point.x,point.y-10);c.lineTo(point.x-5,point.y-17);c.closePath();c.fill();
+      }
+    }
+    const known=visible.some(room=>room.index===run.coreRoom),carried=values(state.players).some(p=>p.carry===run.coreId),flying=values(state.props).some(p=>p.id===run.coreId&&p.thrown);
+    const status=run.delivered?'炉芯已交付':carried?'炉芯搬运中':known?flying?'炉芯飞行中':'炉芯已定位':'寻找炉芯';
+    label(c,status,left+12,top+height-12,run.delivered?'#c9dfaf':'#dec695',9,'left');
+    label(c,`${rooms.filter(room=>room.visited).length} / ${rooms.length}`,left+width-12,top+height-12,'#92a38a',8,'right');
+    c.restore();
+  }
   function minimap(c, state) {
+    if (state.mode === 'relay') { relayMap(c, state); return; }
     if (state.practice || state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
@@ -764,7 +851,7 @@
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
-      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
+      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time) })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))

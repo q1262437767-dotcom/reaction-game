@@ -95,6 +95,22 @@
     // A guest can accompany a host on a mission not yet unlocked in their own camp.
     // Selection locks belong to canPlay; a valid completed expedition still counts.
     if (!mission || (difficulty !== 1 && difficulty !== 2)) return result;
+    // The relay prototype shares the existing save format, but has its own reward.
+    // Its completion never lights story lamps or unlocks later story missions.
+    if (state.mode === 'relay') {
+      var relay = object(state.relay);
+      if (missionId !== 'salvage' || difficulty !== 1 || typeof relay.coreId !== 'string' || !relay.coreId ||
+          typeof relay.delivered !== 'boolean' || relay.delivered !== (state.status === 'won')) return result;
+      p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80);
+      p.runs = Math.min(LIMIT, p.runs + 1);
+      if (state.status === 'won') {
+        var relayCoins = object(state.reward).coins;
+        result.reward = typeof relayCoins === 'number' && Number.isFinite(relayCoins) ? Math.min(24, count(relayCoins)) : 24;
+        p.coins = Math.min(LIMIT, p.coins + result.reward);
+        p.wins = Math.min(LIMIT, p.wins + 1);
+      }
+      return result;
+    }
     p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80); p.runs = Math.min(LIMIT, p.runs + 1);
     var buffs = Array.isArray(state.runBuffs) ? state.runBuffs : Object.keys(object(state.runBuffs)).filter(function (key) { return state.runBuffs[key]; });
     buffs.forEach(function (buff) {
