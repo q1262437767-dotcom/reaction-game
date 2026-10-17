@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 2;
+  const VERSION = 3;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -27,6 +27,13 @@
 
   function isRecord(value) {
     return value !== null && Object.prototype.toString.call(value) === '[object Object]';
+  }
+
+  function validMessage(message) {
+    if (!isRecord(message) || !TYPES.has(message.type)) return false;
+    // A v3 lobby always identifies its mode. Never interpret an old or altered
+    // lobby as the default mode; the app validates mission/difficulty and state.
+    return message.type !== 'lobby' || message.mode === 'random' || message.mode === 'story';
   }
 
   // Bound both JSON size and nesting. Ignore no fields and accept no binary,
@@ -293,7 +300,7 @@
       }
       if (frame.kind === 'pong') return;
       const incomingTypes = role === 'host' ? GUEST_TYPES : HOST_TYPES;
-      if (frame.kind !== 'message' || !isRecord(frame.body) || !TYPES.has(frame.body.type) || !incomingTypes.has(frame.body.type)) {
+      if (frame.kind !== 'message' || !validMessage(frame.body) || !incomingTypes.has(frame.body.type)) {
         failure('invalid-message', '收到不符合游戏协议的数据，连接已停止。');
         return;
       }
@@ -427,7 +434,7 @@
       join: function (code) { return begin('guest', normalizeCode(code)); },
       send: function (message) {
         const outgoingTypes = role === 'host' ? HOST_TYPES : GUEST_TYPES;
-        if (!connected || !connection || !isRecord(message) || !TYPES.has(message.type) || !outgoingTypes.has(message.type) || !validJSON(message)) return false;
+        if (!connected || !connection || !validMessage(message) || !outgoingTypes.has(message.type) || !validJSON(message)) return false;
         // Drop stale application updates rather than build an unbounded queue.
         const dc = connection.dataChannel;
         if (connection.bufferSize > 8 || (dc && dc.bufferedAmount > 256 * 1024)) return false;

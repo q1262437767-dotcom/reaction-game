@@ -122,9 +122,10 @@
   function create(options) {
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
-    var missionId = MISSIONS[options.mission] ? options.mission : 'ember';
+    var mode = options.mode === 'random' ? 'random' : 'story';
+    var missionId = mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
-    var s = { version: 1, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
+    var s = { version: 1, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.loadout === 'scatter' ? 'scatter' : 'pistol',
       difficulty: Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
@@ -142,8 +143,131 @@
     if (missionId === 'holdout') { s.rooms[1].name = '长夜信标庭院'; s.rooms[1].kind = 'holdout'; }
     addPlayer(s, 'p1');
     if (options.players === 2) addPlayer(s, 'p2');
+    if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
     return s;
+  }
+  function createExploration(s) {
+    // A small polyomino begins with one loop, then grows in a different shape
+    // for each seed. Every touching pair of cells has a two-way doorway.
+    var cells = [[0, 0], [1, 0], [1, 1], [0, 1]], occupied = {};
+    var vectors = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+    cells.forEach(function (c) { occupied[c.join(',')] = true; });
+    while (cells.length < 12) {
+      var candidates = [];
+      cells.forEach(function (c) {
+        vectors.forEach(function (v) {
+          var n = [c[0] + v[0], c[1] + v[1]];
+          if (!occupied[n.join(',')] && Math.abs(n[0]) <= 3 && Math.abs(n[1]) <= 3) candidates.push(n);
+        });
+      });
+      var selected = candidates[Math.floor(random(s) * candidates.length)];
+      occupied[selected.join(',')] = true; cells.push(selected);
+    }
+    var lookup = {};
+    cells.forEach(function (c, i) { lookup[c.join(',')] = i; });
+    s.rooms = cells.map(function (c, i) {
+      var neighbors = [];
+      vectors.forEach(function (v) {
+        var n = lookup[[c[0] + v[0], c[1] + v[1]].join(',')];
+        if (n !== undefined) neighbors.push(n);
+      });
+      return { index: i, id: 'ruin-' + i, name: i ? '迷雾遗迹' : '远征入口', kind: i ? 'battle' : 'camp',
+        gx: c[0], gy: c[1], neighbors: neighbors, cleared: !i, visited: false, discovered: !i, elite: false };
+    });
+    var distances = { 0: 0 }, queue = [0];
+    for (var head = 0; head < queue.length; head += 1) {
+      s.rooms[queue[head]].neighbors.forEach(function (n) {
+        if (distances[n] === undefined) { distances[n] = distances[queue[head]] + 1; queue.push(n); }
+      });
+    }
+    s.bossIndex = queue.reduce(function (best, n) { return distances[n] >= distances[best] ? n : best; }, 0);
+    s.rooms[s.bossIndex].kind = 'boss'; s.rooms[s.bossIndex].name = '沉眠炉心';
+    var battleRooms = s.rooms.filter(function (r) { return r.kind === 'battle'; });
+    for (var i = battleRooms.length - 1; i > 0; i -= 1) {
+      var j = Math.floor(random(s) * (i + 1)), swap = battleRooms[i]; battleRooms[i] = battleRooms[j]; battleRooms[j] = swap;
+    }
+    battleRooms.slice(0, 3).forEach(function (r, index) { r.elite = true; r.eliteBuff = Object.keys(BUFFS)[index]; });
+    s.exploration = { kills: 0, target: 0, totalEnemies: 0, bossAwake: false, bossSpawned: false, bossDefeated: false };
+    s.rooms.forEach(function (r) {
+      var data = randomRoomContent(s, r);
+      s.roomData[r.index] = data;
+      s.exploration.totalEnemies += data.enemies.length;
+    });
+    s.exploration.target = Math.ceil(s.exploration.totalEnemies * 0.6);
+    s.mission.name = '迷雾远征'; s.mission.goal = '探索遗迹，唤醒并击败炉心守卫';
+    s.mission.total = s.exploration.target; s.mission.phase = 'explore';
+  }
+  function randomRoomContent(s, room) {
+    var data = { walls: [],
+      doors: [], portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
+    var exits = { north: false, east: false, south: false, west: false };
+    room.neighbors.forEach(function (index) {
+      var next = s.rooms[index], dx = next.gx - room.gx, dy = next.gy - room.gy;
+      var direction = dx > 0 ? 'east' : dx < 0 ? 'west' : dy > 0 ? 'south' : 'north';
+      exits[direction] = true;
+      var x = dx > 0 ? 884 : dx < 0 ? 76 : 480, y = dy > 0 ? 524 : dy < 0 ? 76 : 300;
+      data.portals.push({ id: 'path-' + room.index + '-' + index, x: x, y: y, r: 27,
+        target: index, direction: direction, active: true, label: next.kind === 'boss' ? '炉心' : '遗迹通道' });
+      data.doors.push({ id: 'door-' + direction, x: dx ? dx > 0 ? 916 : 28 : 436,
+        y: dy ? dy > 0 ? 556 : 28 : 256, w: dx ? 16 : 88, h: dy ? 16 : 88, locked: false, label: '通道' });
+    });
+    // The visible wall is genuinely interrupted at each connected doorway.
+    ['north', 'south'].forEach(function (edge) {
+      var y = edge === 'north' ? 0 : H - 28;
+      if (exits[edge]) data.walls.push(rect(0, y, 424, 28), rect(536, y, W - 536, 28));
+      else data.walls.push(rect(0, y, W, 28));
+    });
+    ['west', 'east'].forEach(function (edge) {
+      var x = edge === 'west' ? 0 : W - 28;
+      if (exits[edge]) data.walls.push(rect(x, 0, 28, 244), rect(x, 356, 28, H - 356));
+      else data.walls.push(rect(x, 0, 28, H));
+    });
+    if (!room.index) {
+      data.props.push(prop(s, 'crate', 320, 230), prop(s, 'barrel', 650, 380), prop(s, 'water', 320, 380));
+      data.fountains.push({ id: id(s, 'spring-'), x: 320, y: 380, r: 25 });
+      return data;
+    }
+    if (room.kind === 'boss') {
+      data.walls.push(rect(290, 150, 66, 70), rect(604, 380, 66, 70));
+      data.props.push(prop(s, 'barrel', 340, 400), prop(s, 'barrel', 640, 200));
+      return data;
+    }
+    var variant = Math.floor(random(s) * 4);
+    room.template = variant;
+    var layouts = [[], [rect(305, 140, 62, 90), rect(593, 370, 62, 90)],
+      [rect(260, 150, 130, 45), rect(570, 405, 130, 45)],
+      [rect(295, 380, 70, 85), rect(595, 135, 70, 85)]];
+    data.walls = data.walls.concat(layouts[variant]);
+    data.props.push(prop(s, 'crate', 330, 345), prop(s, 'barrel', 640, 345));
+    if (variant === 2) {
+      data.props.push(prop(s, 'water', 330, 425));
+      data.fountains.push({ id: id(s, 'spring-'), x: 330, y: 425, r: 25 });
+      data.fires.push({ id: id(s, 'fire-'), x: 690, y: 215, r: 27, active: true });
+      room.name = '漏水工坊';
+    } else room.name = ['回声庭院', '破碎回廊', '余烬工坊', '交叉军械库'][variant];
+    var spots = [[690, 140], [740, 435], [235, 400], [230, 170]];
+    var kinds = ['chaser', 'shooter', 'shield', 'charger'];
+    var count = 3 + (random(s) < 0.5 ? 1 : 0);
+    for (var n = 0; n < count; n += 1) {
+      var foe = enemy(s, kinds[Math.floor(random(s) * kinds.length)], spots[n][0], spots[n][1]);
+      if (room.elite && !n) {
+        foe.elite = true; foe.relicBuff = room.eliteBuff;
+        foe.hp = foe.maxHp = foe.maxHp + 5; foe.r += 4; foe.speed *= 1.08;
+      }
+      data.enemies.push(foe);
+    }
+    return data;
+  }
+  function awakenBoss(s) {
+    var run = s.exploration;
+    if (!run || run.bossAwake || run.kills < run.target) return;
+    run.bossAwake = true; run.bossSpawned = true;
+    var boss = enemy(s, 'boss', 640, 300);
+    if (s.room && s.room.index === s.bossIndex) s.enemies.push(boss);
+    else s.roomData[s.bossIndex].enemies.push(boss);
+    s.message = '炉心守卫已苏醒'; s.messageTime = 3;
+    event(s, 'boss-awakened', { room: s.bossIndex });
   }
   function prop(s, kind, x, y) {
     return { id: id(s, 'prop-'), kind: kind, x: x, y: y,
@@ -263,19 +387,36 @@
   }
   function enterRoom(s, index, initial) {
     index = Number(index);
-    if (!Number.isInteger(index) || !ROOM_DEFS[index] || s.status !== 'playing') return false;
+    if (!Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
+    var previous = s.room;
+    if (s.mode === 'random' && !initial) {
+      if (!previous || previous.neighbors.indexOf(index) < 0) return false;
+      // A carried object belongs to its original room. Place it safely before
+      // saving, rather than duplicating it at the next room's entrance.
+      var carriers = Object.keys(s.players).map(function (key) { return s.players[key]; }).filter(function (p) { return p.carry; });
+      for (var c = 0; c < carriers.length; c += 1) {
+        if (!releaseCarry(s, carriers[c], false, false)) return false;
+      }
+    }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     if (!initial) saveRoom(s);
-    var data = s.roomData[index] ? clone(s.roomData[index]) : roomContent(s, index);
+    var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
     carried.forEach(function (p) { if (!s.props.some(function (q) { return q.id === p.id; })) s.props.push(p); });
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
+    if (s.mode === 'random') s.rooms[index].neighbors.forEach(function (n) { s.rooms[n].discovered = true; });
     s.room = clone(s.rooms[index]);
     s.bullets = []; s.particles = []; s.travelCd = 0.9;
     Object.keys(s.players).forEach(function (key, i) {
       var p = s.players[key]; p.x = 130; p.y = 275 + i * 52;
+      if (s.mode === 'random') {
+        var dx = previous ? s.rooms[index].gx - previous.gx : 0;
+        var dy = previous ? s.rooms[index].gy - previous.gy : 0;
+        p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
+        p.y = dy ? dy > 0 ? 132 : H - 132 : H / 2 + (i ? 28 : -24);
+      }
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
     updateCarries(s); refreshProgress(s);
@@ -285,6 +426,11 @@
   }
   function setHint(s) {
     if (s.status !== 'playing') return;
+    if (s.mode === 'random') {
+      s.objective = s.exploration.bossAwake ? '炉心守卫已苏醒' : '守卫 ' + s.exploration.kills + ' / ' + s.exploration.target;
+      s.hint = '';
+      return;
+    }
     var i = s.room.index;
     if (s.mission.id === 'holdout' && i === 1) {
       if (s.mission.phase === 'ready') {
@@ -373,6 +519,11 @@
     s.interactables.forEach(function (q) {
       if (q.kind === 'relic' && s.runBuffs.indexOf(q.buff) >= 0) { q.used = true; q.active = false; }
     });
+    if (s.mode === 'random') {
+      m.progress = Math.min(s.exploration.kills, s.exploration.target);
+      m.total = s.exploration.target; m.phase = s.exploration.bossAwake ? 'defend' : 'explore';
+      return;
+    }
     if (m.id === 'salvage') {
       m.progress = m.caches.length;
       m.phase = m.progress >= 3 ? 'extract' : s.room.index ? 'search' : 'travel';
@@ -428,6 +579,20 @@
     }
   }
   function refreshProgress(s) {
+    if (s.mode === 'random') {
+      var clearRandom = s.room.kind === 'boss' ? s.exploration.bossDefeated : !s.enemies.some(function (e) { return e.hp > 0; });
+      if (clearRandom && !s.rooms[s.room.index].cleared) {
+        s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
+        event(s, 'room-clear', { room: s.room.index });
+        if (s.room.kind === 'battle') s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 300, r: 14, amount: 2 });
+      }
+      s.room.cleared = s.rooms[s.room.index].cleared;
+      s.portals.forEach(function (p) { p.active = true; });
+      s.doors.forEach(function (d) { d.locked = false; });
+      awakenBoss(s); syncMission(s); setHint(s);
+      if (s.exploration.bossDefeated && s.status === 'playing') finish(s, 'won');
+      return;
+    }
     var clear = s.room.kind === 'holdout' ? s.mission.phase === 'extract' : s.room.kind === 'camp' ||
       (s.room.kind === 'puzzle' ? s.fires.every(function (f) { return !f.active; }) : s.enemies.length === 0);
     if (clear && !s.rooms[s.room.index].cleared) {
@@ -598,6 +763,19 @@
       if (s.players[owner]) s.players[owner].kills += 1;
       burst(s, 'enemy-death', e.x, e.y, e.kind === 'boss' ? '#ffc477' : '#ec9c8d', 12);
       event(s, 'enemy-killed', { enemyId: e.id, kind: e.kind, playerId: owner || null });
+      if (s.mode === 'random') {
+        if (e.kind === 'boss') s.exploration.bossDefeated = true;
+        else {
+          s.exploration.kills += 1;
+          if (e.elite && BUFFS[e.relicBuff] && s.runBuffs.indexOf(e.relicBuff) < 0) {
+            var def = BUFFS[e.relicBuff];
+            s.interactables.push({ id: 'drop-' + e.id, kind: 'relic', buff: e.relicBuff, group: 'elite-' + e.id,
+              x: e.x, y: e.y, r: 18, label: def.label, description: def.description, active: true, used: false });
+            event(s, 'relic-dropped', { enemyId: e.id, buff: e.relicBuff, x: e.x, y: e.y });
+          }
+          awakenBoss(s);
+        }
+      }
     }
   }
   function explode(s, barrel, owner) {
@@ -843,7 +1021,7 @@
         event(s, 'secret-open'); burst(s, 'secret', 814, 163, '#f9d77f', 20);
       }
     });
-    if (s.room.index === 4 && s.secretOpened) {
+    if (s.mode !== 'random' && s.room.index === 4 && s.secretOpened) {
       s.portals.forEach(function (p) { if (p.secret) p.active = true; });
       s.doors.forEach(function (d) { if (d.secret) d.locked = false; });
     }
@@ -875,7 +1053,7 @@
     if (special) {
       if (!special.active) return special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
         special.kind === 'extraction' ? '补给尚未齐全：返回前 3 间房搜索蓝箱' : '守住当前波次后可操作信标';
-      return 'E · ' + special.label + (special.kind === 'relic' ? '（同组只能选一件）' : '');
+      return 'E · ' + special.label + (special.kind === 'relic' && s.mode !== 'random' ? '（同组只能选一件）' : '');
     }
     var near = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown &&
       dist(p, q) < 74; })
@@ -883,7 +1061,7 @@
     if (near) return 'E · 搬起' + ({ crate: '木箱', barrel: '炸药桶', water: '水桶' })[near.kind];
     var gate = s.portals.find(function (g) { return g.active && dist(p, g) < 85; });
     if (gate) return '踏入光门 / E · ' + gate.label;
-    return s.hint;
+    return s.mode === 'random' ? '' : s.hint;
   }
   function step(s, inputs, dt) {
     if (!s || s.status !== 'playing') return s;

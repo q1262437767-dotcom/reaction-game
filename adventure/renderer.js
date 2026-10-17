@@ -124,6 +124,19 @@
   }
   function portal(c, p, time) {
     const x = num(p.x), y = num(p.y), r = num(p.r, 22), active = p.active !== false;
+    if (p.direction) {
+      const angle = { north: -Math.PI / 2, east: 0, south: Math.PI / 2, west: Math.PI }[p.direction];
+      if (Number.isFinite(angle)) {
+        c.save(); c.translate(x, y); c.rotate(angle);
+        rect(c, -18, -19, 36, 38, '#132d2a80');
+        if (active) {
+          glow(c, 0, 0, 34, '#b9d38b20');
+          path(c, [[-8,-8],[0,0],[-8,8]], '#c9d8a4', 3);
+          path(c, [[1,-8],[9,0],[1,8]], '#9ab68a', 2);
+        }
+        c.restore(); return;
+      }
+    }
     c.save(); c.translate(x, y);
     ellipse(c, 0, 5, r + 8, (r + 8) * .48, '#0d252999');
     ellipse(c, 0, 1, r + 5, (r + 5) * .55, '#546b53'); ellipse(c, 0, -1, r + 1, (r + 1) * .55, '#263e38');
@@ -304,6 +317,11 @@
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15), step = Math.sin(time * .012 + x) * 1.5;
     shadow(c, x, y, r, .43);
+    if (e.elite && !boss) {
+      glow(c, x, y - 12, 47, '#e4b96b1f');
+      c.strokeStyle = '#dbb66c90'; c.lineWidth = 2;
+      c.beginPath(); c.ellipse(x, y + 6, r + 7, (r + 7) * .47, 0, 0, Math.PI * 2); c.stroke();
+    }
     if (e.windup > 0) {
       if (e.attack === 'ring') {
         const rr = boss ? 104 : 38;
@@ -351,7 +369,12 @@
     if (e.hitFlash > 0 || e.flash > 0) { c.globalCompositeOperation = 'screen'; rect(c, boss ? -21 : -10, boss ? -43 : -24, boss ? 42 : 20, boss ? 55 : 31, '#d9d69c60'); }
     c.restore();
     if (kind === 'shield') { if(e.shieldOpen>0||e.stun>0)label(c,'破绽',x,y-46,'#eac891',8);else{c.strokeStyle='#d3c38b88';c.lineWidth=2;c.beginPath();c.arc(x,y,num(e.r,18)+10,num(e.facing)-Math.PI/3,num(e.facing)+Math.PI/3);c.stroke();} }
-    if (e.hp < e.maxHp || boss) bar(c, x, y - (boss ? 60 : 36), boss ? 64 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss ? '#d5b46d' : '#d08d6f', boss ? 4 : 3);
+    if (e.hp < e.maxHp || boss || e.elite) bar(c, x, y - (boss ? 60 : e.elite ? 51 : 36), boss ? 64 : e.elite ? 43 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss || e.elite ? '#e2bb70' : '#d08d6f', boss || e.elite ? 4 : 3);
+    if (e.elite && !boss) {
+      const crownY = y - 64;
+      path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
+      label(c, '精英', x, crownY - 15, '#ebcf8e', 8);
+    }
     if (boss) label(c, '炉心守卫', x, y - 72, '#ddca97', 9);
   }
   function bullet(c, b) {
@@ -393,6 +416,56 @@
     }
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
+  function minimap(c, state) {
+    if (state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
+    const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
+    if (!rooms.length) return;
+    const bossIndex = state.bossIndex, current = state.room && state.room.index, progress = state.exploration || {};
+    const visible = rooms.filter(room => room.visited || room.discovered || room.index === bossIndex);
+    // Concealed rooms and their connections never reach the drawing pass.
+    const points = new Map(), left = 752, top = 18, width = 190, height = 150;
+    const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
+    const minY = Math.min(...rooms.map(room => room.gy)), maxY = Math.max(...rooms.map(room => room.gy));
+    const spacing = Math.min(30, 152 / Math.max(1, maxX - minX), 92 / Math.max(1, maxY - minY));
+    const centerX = left + width / 2, centerY = top + 77;
+    rooms.forEach(room => points.set(room.index, { x: centerX + (room.gx - (minX + maxX) / 2) * spacing, y: centerY + (room.gy - (minY + maxY) / 2) * spacing, room }));
+    c.save();
+    rect(c, left, top, width, height, '#102523e8');
+    c.strokeStyle = '#71886865'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, '遗迹地图', left + 12, top + 13, '#a9ba97', 9, 'left');
+    const wakeColor = progress.bossDefeated ? '#b8d8a0' : progress.bossAwake ? '#e9bc78' : '#879c8b';
+    label(c, progress.bossDefeated ? '已击败' : progress.bossAwake ? '已苏醒' : '沉睡', left + width - 12, top + 13, wakeColor, 8, 'right');
+    for (const room of visible) {
+      if (!room.visited) continue;
+      const point = points.get(room.index);
+      for (const adjacent of values(room.neighbors)) {
+        const next = points.get(adjacent);
+        if (!next || !(next.room.visited || next.room.discovered)) continue;
+        path(c, [[point.x, point.y],[next.x, next.y]], next.room.visited ? '#7b9270aa' : '#70866a55', 2);
+      }
+    }
+    for (const room of visible) {
+      const point = points.get(room.index), isCurrent = room.index === current, isBoss = room.index === bossIndex;
+      const size = isCurrent ? 13 : 10, half = size / 2;
+      rect(c, point.x - half - 2, point.y - half - 2, size + 4, size + 4, '#102523');
+      rect(c, point.x - half, point.y - half, size, size, isCurrent ? '#d9dca6' : room.visited ? '#657f63' : '#203a32');
+      c.strokeStyle = isCurrent ? '#f2e4ad' : isBoss ? wakeColor : '#7c927466'; c.lineWidth = isCurrent || isBoss ? 2 : 1;
+      c.strokeRect(Math.round(point.x - half) + .5, Math.round(point.y - half) + .5, size, size);
+      // Content symbols only appear after visiting. The boss is the sole known landmark.
+      if (isBoss) {
+        c.fillStyle = progress.bossAwake ? '#f2c77c' : '#8fa295';
+        c.beginPath(); c.moveTo(point.x, point.y - 5); c.lineTo(point.x + 4, point.y); c.lineTo(point.x, point.y + 5); c.lineTo(point.x - 4, point.y); c.closePath(); c.fill();
+      } else if (room.visited && room.elite) {
+        rect(c, point.x - 2, point.y - 2, 4, 4, '#e5bc70');
+      }
+      if (isCurrent) rect(c, point.x - 1, point.y - 1, 2, 2, '#20372e');
+    }
+    const kills = Math.min(num(progress.target), num(progress.kills)), target = num(progress.target);
+    label(c, progress.bossDefeated ? '归途已开启' : progress.bossAwake ? '◆  炉心守卫' : `唤醒 ${kills} / ${target}`, left + 12, top + height - 12, wakeColor, 9, 'left');
+    const discovered = rooms.filter(room => room.visited).length;
+    label(c, `${discovered} / ${rooms.length}`, left + width - 12, top + height - 12, '#92a38a', 8, 'right');
+    c.restore();
+  }
   function draw(c, state, options = {}) {
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
@@ -420,6 +493,7 @@
     values(state.particles).forEach(p => particle(c, p, time));
     aimReticle(c, state.players && state.players[localId], time);
     ambient(c, state, time);
+    minimap(c, state);
     c.restore();
   }
 

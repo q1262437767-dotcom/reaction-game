@@ -183,3 +183,56 @@
 }
 @media(max-height:650px) and (min-width:700px){.account-status{font-size:8px;margin-top:2px}}
 @media(pointer:coarse) and (orientation:landscape) and (max-height:500px){.site-header{flex-wrap:nowrap;height:48px;min-height:0;padding-block:0}.account-status{font-size:7px;margin-top:2px}.account-modal{max-height:calc(100dvh - 16px)}}
+
+/* A quiet expedition HUD leaves the top-right corner to the fog map. */
+.mode-select-field{flex:1}
+.mission-picker:has(#story-mission-field:not([hidden])){gap:9px}
+.mission-picker:has(#story-mission-field:not([hidden])) .mode-select-field{flex:0 0 112px}
+.mission-picker:has(#story-mission-field:not([hidden])) .difficulty-select-field{flex-basis:85px}
+.game-wrap[data-mode="random"] .hud{right:24%;align-items:flex-start;gap:12px;flex-direction:column}
+.game-wrap[data-mode="random"] .hud-location{max-width:100%}
+.game-wrap[data-mode="random"] .hud-stats{max-width:100%;flex-wrap:wrap;justify-content:flex-start;gap:5px}
+.game-wrap[data-mode="random"] .hud-location>#hud-objective{max-width:420px}
+.game-footer{justify-content:center;height:31px}
+.game-footer .footer-note{display:block;color:#627c6b;font-size:9px}
+.tutorial-panel{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:6;width:min(430px,calc(100% - 40px));padding:17px 20px 12px;background:linear-gradient(135deg,#233e33f5,#142b2af5);border:1px solid #c9b67670;border-radius:8px;box-shadow:0 12px 36px #0005;text-align:center;color:#bdcba9;pointer-events:auto}
+.tutorial-panel .eyebrow{display:block;color:#c9b579;font-size:8px;letter-spacing:1.6px;margin-bottom:6px}
+.tutorial-panel strong{font-size:14px;line-height:1.5;color:#e0dfb9;font-weight:600}
+.tutorial-panel p{font-size:10px;line-height:1.8;margin:7px 0;color:#a7bea0}
+.tutorial-panel .text-button{font-size:11px;color:#edcf8c;padding:7px 14px;margin-top:1px}
+.tutorial-touch{display:none}
+.help-environment{margin-top:10px}
+@media(max-width:650px){
+  .mission-picker:has(#story-mission-field:not([hidden])){gap:7px;flex-wrap:wrap}
+  .mission-picker:has(#story-mission-field:not([hidden])) .mode-select-field{flex:0 0 calc(50% - 4px)}
+  .mission-picker:has(#story-mission-field:not([hidden])) .mission-select-field{flex:1 1 calc(50% - 4px)}
+  .mission-picker:has(#story-mission-field:not([hidden])) .difficulty-select-field{flex:0 0 98px}
+  .game-wrap[data-mode="random"] .hud{right:24%;top:10px;left:12px;gap:6px}
+  .game-wrap[data-mode="random"] .hud-location{max-width:100%;gap:2px}
+  .game-wrap[data-mode="random"] .hud-location strong{font-size:10px}
+  .game-wrap[data-mode="random"] .hud-location .eyebrow{display:none}
+  .game-wrap[data-mode="random"] .hud-location>#hud-objective{font-size:7px}
+  .game-wrap[data-mode="random"] .hud-location>span.route-progress{font-size:7px;line-height:1.4}
+  .game-wrap[data-mode="random"] .stat{height:20px;font-size:7px;padding:0 5px}
+  .game-wrap[data-mode="random"] .stat-symbol{font-size:9px}
+  .game-wrap[data-mode="random"] .stat-dash{display:none}
+  .game-footer{height:26px}.game-footer .footer-note{font-size:8px}
+  .tutorial-panel{bottom:14px;padding:13px 14px 9px;width:min(370px,calc(100% - 30px))}
+  .tutorial-panel strong{font-size:12px}.tutorial-panel p{font-size:9px;line-height:1.7;margin:5px 0}
+  .tutorial-panel .text-button{font-size:10px;padding:6px 10px}
+}
+@media(pointer:coarse){
+  .tutorial-desktop{display:none}.tutorial-touch{display:inline}
+  .tutorial-panel{bottom:107px}
+}
+@media(pointer:coarse) and (orientation:landscape) and (max-height:500px){
+  .game-wrap[data-mode="random"] .hud{top:8px;left:12px;gap:5px}
+  .game-wrap[data-mode="random"] .hud-location .eyebrow{display:none}
+  .game-wrap[data-mode="random"] .hud-location strong{font-size:10px}
+  .game-wrap[data-mode="random"] .hud-location>#hud-objective{font-size:7px}
+  .game-wrap[data-mode="random"] .stat{height:20px;font-size:7px}
+  .tutorial-panel{bottom:16px;left:50%;width:330px;padding:10px 14px 7px}
+  .tutorial-panel .eyebrow{display:none}.tutorial-panel strong{font-size:11px}
+  .tutorial-panel p{font-size:8px;margin:4px 0}.tutorial-panel .text-button{font-size:9px;padding:5px 10px}
+  .mission-picker:has(#story-mission-field:not([hidden])){flex-wrap:nowrap}
+}
