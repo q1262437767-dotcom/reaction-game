@@ -44,9 +44,15 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
+      // A shotgun can land five pellets at once. Routine damage feedback may
+      // never evict every precision cue before a slower guest snapshot arrives.
+      if (type === 'enemy-hit') {
+        var hits = s.combatEvents.filter(function (entry) { return entry.type === 'enemy-hit'; });
+        if (hits.length > 6) s.combatEvents = s.combatEvents.filter(function (entry) { return entry !== hits[0]; });
+      }
       if (s.combatEvents.length > 24) s.combatEvents.shift();
     }
     return e;
@@ -139,7 +145,7 @@
     var mode = options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
     var missionId = mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
-    var s = { version: 1, combatVersion: 1, contentVersion: 1, weaponVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
+    var s = { version: 1, combatVersion: 1, contentVersion: 1, weaponVersion: 1, tacticsVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       rangedLoadout: options.rangedLoadout === 'scatter' ? 'scatter' : options.rangedLoadout === 'pistol' ? 'pistol' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       difficulty: mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
@@ -312,7 +318,7 @@
       target.x = oldX; target.y = oldY; return false;
     }
     source.enemies = source.enemies.filter(function (e) { return e.id !== target.id; });
-    target.rhythm = null; target.windup = 0; target.chargeTime = 0; target.stagger = 0;
+    target.rhythm = null; target.windup = 0; target.chargeTime = 0; target.stagger = 0; target.weakTime = 0;
     target.attackCd = 1.25; target.navTime = 0; target.navX = target.x; target.navY = target.y;
     destination.enemies.push(target);
     run.previousRoom = from; run.targetRoom = to; run.roamTimer = 6; run.arrival = null;
@@ -545,7 +551,8 @@
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
       aimX: 0, aimY: 0, phase: 0, flash: 0, stun: 0, navTime: 0, navX: x, navY: y,
       chargeTime: 0, chargeX: 0, chargeY: 0, shieldOpen: 0,
-      rhythm: null, rhythmCycle: 0, stagger: 0, posture: 0, stage: 1, maxPosture: kind === 'boss' ? 7 : 4 };
+      rhythm: null, rhythmCycle: 0, stagger: 0, posture: 0, stage: 1, maxPosture: kind === 'boss' ? 7 : 4,
+      weakTime: 0, lastScatterVolley: '', scatterVolleys: [], rushHitIds: [] };
   }
   function roomContent(s, index) {
     var data = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28),
@@ -671,7 +678,7 @@
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     // Do not cache a pending strike and resume it on a later room visit.
-    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.attackCd = Math.max(e.attackCd, 0.8); });
+    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
@@ -1178,10 +1185,11 @@
       event(s, 'ward-block', { playerId: p.id, x: p.x, y: p.y });
       particle(s, 'counter', p.x, p.y, { r: 35, ttl: 0.3, life: 0.3, color: '#9ed8ff' }); return true;
     }
+    var oldHp = p.hp;
     p.hp = Math.max(0, p.hp - amount); p.invuln = 0.85; s.stats.damage += amount;
     if (s.mode === 'relay' && p.carry === s.relay.coreId) releaseCarry(s, p, false, true);
     p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
-    event(s, 'player-hit', { playerId: p.id, hp: p.hp, source: source });
+    event(s, 'player-hit', { playerId: p.id, hp: p.hp, source: source, damage: oldHp - p.hp, x: p.x, y: p.y });
     burst(s, 'hit', p.x, p.y, '#ff8d83', 7);
     if (p.hp <= 0) {
       releaseCarry(s, p, false, true); p.downed = true; resetCombat(p);
@@ -1203,10 +1211,10 @@
   function guardBlock(s, p, attacker, amount, source, perfect) {
     if (!p || p.downed || p.invuln > 0 || !p.guarding || p.carry || !facingEnemy(p, attacker) || s.status !== 'playing') return false;
     if (p.activeSlot === 'ranged') {
-      var weapon = p.weapons.ranged, broken = random(s) < 0.1, chip = amount * 0.5;
+      var weapon = p.weapons.ranged, broken = random(s) < 0.1, chip = amount * 0.5, oldHp = p.hp;
       damagePlayer(s, p, chip, source);
       event(s, 'ranged-block', { playerId: p.id, enemyId: attacker.id || null, x: p.x, y: p.y,
-        weapon: weapon, slot: 'ranged', perfect: !!perfect, broken: broken, damage: chip });
+        weapon: weapon, slot: 'ranged', perfect: !!perfect, broken: broken, damage: oldHp - p.hp });
       if (broken) {
         p.rangedBroken = true; p.activeSlot = 'melee'; p.weapon = p.weapons.melee;
         p.guardWindow = 0; p.switchCd = Math.max(p.switchCd, 0.25);
@@ -1215,12 +1223,40 @@
       }
     } else {
       event(s, 'guard', { playerId: p.id, enemyId: attacker.id || null, x: p.x, y: p.y });
+      event(s, 'melee-block', { playerId: p.id, enemyId: attacker.id || null, weapon: 'blade', damage: 0, x: p.x, y: p.y });
     }
     particle(s, 'spark', p.x, p.y, { r: 17, ttl: 0.18, life: 0.18, color: p.activeSlot === 'ranged' ? '#efc389' : '#b5cbd3' });
     return true;
   }
-  function damageEnemy(s, e, amount, owner) {
+  function hitFeedback(s, e, amount, owner, weapon) {
+    var recent = (s.combatEvents || []).filter(function (entry) {
+      return entry.type === 'enemy-hit' && entry.enemyId === e.id && entry.playerId === (s.players[owner] ? owner : null) &&
+        entry.weapon === weapon && s.time - entry.time < 0.075;
+    }).pop();
+    if (recent) {
+      recent.amount += amount; recent.x = e.x; recent.y = e.y;
+      var fresh = s.events.find(function (entry) { return entry.id === recent.id; });
+      if (fresh) { fresh.amount = recent.amount; fresh.x = e.x; fresh.y = e.y; }
+    } else event(s, 'enemy-hit', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+      weapon: weapon || null, amount: amount, x: e.x, y: e.y });
+  }
+  function openWeakpoint(s, e, owner, source) {
     if (e.hp <= 0) return;
+    e.weakTime = 1.6;
+    event(s, 'weakpoint-open', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+      weapon: null, source: source, x: e.x, y: e.y });
+  }
+  function breakPosture(s, e, owner) {
+    e.posture = 0; e.stagger = Math.max(e.stagger, 1); e.rhythm = null; e.windup = 0; e.chargeTime = 0;
+    if (!/^(duelist|brute|pyromancer|boss)$/.test(e.kind)) e.stun = Math.max(e.stun, 1);
+    e.attackCd = Math.max(e.attackCd, 0.8); e.shieldOpen = Math.max(e.shieldOpen, 1.6);
+    event(s, 'posture-break', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+      weapon: 'blade', x: e.x, y: e.y });
+    openWeakpoint(s, e, owner, 'posture');
+  }
+  function damageEnemy(s, e, amount, owner, weapon, quietHit) {
+    if (e.hp <= 0) return;
+    if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
     e.hp -= amount; e.flash = 0.12;
     if (s.mode === 'random' && e.kind === 'boss' && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
       e.stage = 2; e.rhythm = null; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0;
@@ -1264,36 +1300,53 @@
       }
     }
   }
-  function explode(s, barrel, owner) {
+  function clearPropCarrier(s, q) {
+    Object.keys(s.players).forEach(function (key) { if (s.players[key].carry === q.id) s.players[key].carry = null; });
+    q.carriedBy = null;
+  }
+  function destroyCrate(s, q) {
+    if (q.destroyed) return;
+    q.hp = 0; q.destroyed = true; clearPropCarrier(s, q);
+    burst(s, 'wood', q.x, q.y, '#d6a971', 12);
+  }
+  function explode(s, barrel, owner, source) {
     if (barrel.destroyed) return;
-    barrel.destroyed = true; barrel.carriedBy = null;
-    Object.keys(s.players).forEach(function (key) { if (s.players[key].carry === barrel.id) s.players[key].carry = null; });
+    barrel.destroyed = true; clearPropCarrier(s, barrel);
     s.stats.barrels += 1;
     particle(s, 'explosion', barrel.x, barrel.y, { r: 112, ttl: 0.48, life: 0.48, color: '#ffb256' });
     burst(s, 'spark', barrel.x, barrel.y, '#ffbd69', 22);
     event(s, 'explosion', { x: barrel.x, y: barrel.y });
+    event(s, 'environment-hit', { enemyId: null, playerId: s.players[owner] ? owner : null,
+      weapon: null, source: source || 'explosion', target: 'prop', propId: barrel.id, x: barrel.x, y: barrel.y });
     huntNoise(s, 3, barrel.x, barrel.y);
     s.enemies.forEach(function (e) {
-      if (dist(e, barrel) >= 112 + e.r) return;
-      damageEnemy(s, e, 8, owner);
+      if (e.hp <= 0 || dist(e, barrel) >= 112 + e.r) return;
+      damageEnemy(s, e, 8, owner, null);
+      event(s, 'environment-hit', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+        weapon: null, source: 'explosion', target: 'enemy', amount: 8, propId: barrel.id, x: e.x, y: e.y });
       if (e.huntTarget && e.hp > 0) { e.stagger = 1.2; e.rhythm = null; e.chargeTime = 0; e.attackCd = 1; }
     });
     s.props.forEach(function (p) {
       if (p !== barrel && p.kind === 'barrel' && !p.destroyed && dist(p, barrel) < 110) {
         p.lit = true; p.fuse = p.fuse > 0 ? Math.min(p.fuse, 0.15) : 0.15;
+        p.thrower = s.players[owner] ? owner : null;
       }
     });
     // The blast consumes hostile projectiles as a useful emergency tool.
     s.bullets.forEach(function (b) { if (!b.friendly && dist(b, barrel) < 115) b.dead = true; });
   }
   function shoot(s, p) {
-    var scatter = p.weapon === 'scatter', n = scatter ? 5 : 1;
+    var scatter = p.weapon === 'scatter', n = scatter ? 5 : 1, volley = id(s, 'volley-');
+    // A precision defence offers either a sword counter or a ranged follow-up.
+    // Firing a gun spends that choice; it never teleports the gunner into a slash.
+    p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     for (var i = 0; i < n; i += 1) {
       var a = p.facing + (scatter ? (i - 2) * 0.115 : 0);
       s.bullets.push({ id: id(s, 'bullet-'), x: p.x + Math.cos(a) * 23,
         y: p.y + Math.sin(a) * 23, r: scatter ? 4 : 4.5,
         vx: Math.cos(a) * (scatter ? 550 : 650), vy: Math.sin(a) * (scatter ? 550 : 650),
         friendly: true, owner: p.id, damage: 1, ttl: scatter ? 0.65 : 1.3,
+        weapon: scatter ? 'scatter' : 'pistol', volleyId: volley, originX: p.x, originY: p.y,
         color: s.runBuffs.indexOf('pierce') >= 0 ? '#d8bcff' : scatter ? '#ffe6a0' : '#c4fff0',
         hitsLeft: s.runBuffs.indexOf('pierce') >= 0 ? 2 : 1, hitIds: [], dead: false });
     }
@@ -1306,7 +1359,8 @@
     s.bullets.push({ id: id(s, 'bullet-'), x: e.x + Math.cos(a) * (e.r + 9),
       y: e.y + Math.sin(a) * (e.r + 9), r: radius || 6,
       vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-      friendly: false, owner: e.id, damage: 1, ttl: 4.2, color: '#ff927e', dead: false });
+      friendly: false, owner: e.id, damage: 1, ttl: 4.2, color: '#ff927e', dead: false,
+      weapon: null, volleyId: null, originX: e.x, originY: e.y });
   }
   function lineClear(s, a, b, radius) {
     var d = dist(a, b), n = Math.max(1, Math.ceil(d / 20));
@@ -1396,8 +1450,9 @@
     }
     e.posture = Math.min(e.maxPosture, e.posture + (kind === 'mikiri' ? 2 : 1));
     if (e.posture >= e.maxPosture) {
-      e.posture = 0; e.stagger = 1.15; e.rhythm = null;
+      breakPosture(s, e, p.id); e.stagger = Math.max(e.stagger, 1.15);
     } else if (kind !== 'parry') { e.stagger = 0.65; e.rhythm = null; }
+    openWeakpoint(s, e, p.id, kind);
     var type = kind === 'parry' ? 'perfect-parry' : kind === 'mikiri' ? 'mikiri' : 'perfect-dodge';
     event(s, type, { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
     particle(s, 'counter', p.x, p.y, { r: 45, ttl: 0.3, life: 0.3, color: '#bfffee' });
@@ -1415,7 +1470,7 @@
     particle(s, r.type === 'quake' ? 'shockwave' : 'slash', e.x, e.y,
       { r: r.range, angle: r.angle, arc: r.arc, ttl: 0.24, life: 0.24, color: '#ffd28f' });
     if (r.type === 'rush') {
-      e.chargeX = Math.cos(r.angle); e.chargeY = Math.sin(r.angle); e.chargeTime = 0.85;
+      e.chargeX = Math.cos(r.angle); e.chargeY = Math.sin(r.angle); e.chargeTime = 0.85; e.rushHitIds = [];
       return;
     }
     if (r.targetId) s.decoys = s.decoys.filter(function (d) { return d.id !== r.targetId; });
@@ -1459,15 +1514,50 @@
     e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
     event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
   }
+  function rushMove(s, e, distance) {
+    var count = Math.max(1, Math.ceil(distance / 9)), stopped = false;
+    e.rushHitIds = e.rushHitIds || [];
+    for (var i = 0; i < count; i += 1) {
+      var dx = e.chargeX * distance / count, dy = e.chargeY * distance / count;
+      // Only a prop on the actual forward path can be crushed; a nearby box
+      // behind a wall or behind the beast cannot be hit by a proximity check.
+      var wall = collides(s, e.x + dx, e.y + dy, e.r, e.id, true);
+      var block = !wall && s.props.find(function (q) {
+        return solidProp(q) && !q.thrown && len(q.x - e.x - dx, q.y - e.y - dy) < q.r + e.r - 1;
+      });
+      if (block) {
+        event(s, 'environment-hit', { enemyId: null, playerId: null, weapon: null, source: 'rush',
+          target: 'prop', propId: block.id, x: block.x, y: block.y });
+        if (block.kind === 'barrel') explode(s, block, null, 'rush');
+        else destroyCrate(s, block);
+        stopped = true; break;
+      }
+      var beforeX = e.x, beforeY = e.y;
+      move(s, e, dx, dy, false);
+      s.enemies.forEach(function (other) {
+        if (other === e || other.hp <= 0 || e.rushHitIds.indexOf(other.id) >= 0 ||
+            dist(e, other) >= e.r + other.r + 3 || !lineClear(s, e, other, 3)) return;
+        e.rushHitIds.push(other.id);
+        damageEnemy(s, other, 3, null, null);
+        move(s, other, e.chargeX * 70, e.chargeY * 70, false);
+        other.stun = Math.max(other.stun, 0.6);
+        event(s, 'environment-hit', { enemyId: other.id, playerId: null, weapon: null, source: 'rush',
+          target: 'enemy', amount: 3, x: other.x, y: other.y });
+      });
+      if (len(e.x - beforeX, e.y - beforeY) < distance / count * 0.45) { stopped = true; break; }
+      if (e.chargeTime <= 0 || e.hp <= 0) break;
+    }
+    return stopped;
+  }
   function updateRhythm(s, e, target, dt) {
     e.stagger = Math.max(0, e.stagger - dt);
     if (e.stagger > 0) return true;
     var r = e.rhythm;
     if (r) {
       if (r.type === 'rush' && r.phase === 'active' && e.chargeTime > 0) {
-        var oldX = e.x, oldY = e.y, speed = 430;
+        var speed = 430;
         e.chargeTime = Math.max(0, e.chargeTime - dt);
-        move(s, e, e.chargeX * speed * dt, e.chargeY * speed * dt, false);
+        var blocked = rushMove(s, e, speed * dt);
         particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#efaa72' });
         var decoy = s.decoys.find(function (d) { return dist(e, d) < e.r + d.r + 8; });
         if (decoy) { s.decoys = s.decoys.filter(function (d) { return d.id !== decoy.id; }); e.chargeTime = 0; }
@@ -1477,7 +1567,6 @@
             grantCounter(s, p, e, 'dodge'); e.chargeTime = 0;
           } else if (dist(e, p) < e.r + p.r + 3 && damagePlayer(s, p, 1, 'rush')) e.chargeTime = 0;
         });
-        var blocked = len(e.x - oldX, e.y - oldY) < speed * dt * 0.45;
         if (blocked || e.chargeTime <= 0) {
           e.chargeTime = 0; e.stagger = blocked ? 1.7 : 0.85; e.rhythm = null; e.attackCd = 1;
           if (blocked) {
@@ -1531,7 +1620,8 @@
           foe.stagger = 0.7; foe.rhythm = null; foe.attackCd = 0.8;
           var counterKind = p.counterKind;
           p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
-          damageEnemy(s, foe, 6, p.id);
+          damageEnemy(s, foe, 6, p.id, 'blade');
+          openWeakpoint(s, foe, p.id, 'counter');
           var resonance = s.runBuffs.indexOf('resonance') >= 0;
           var riposte = s.runBuffs.indexOf('riposte') >= 0 && p.parryChain >= 2;
           if (resonance || riposte) {
@@ -1540,7 +1630,7 @@
               { r: radius, angle: p.facing, arc: TAU, ttl: 0.32, life: 0.32, color: riposte ? '#d9bdff' : '#a8efe0' });
             s.enemies.forEach(function (other) {
               if (other.hp <= 0 || dist(p, other) > radius + other.r || !meleeLineClear(s, p, other, 3)) return;
-              damageEnemy(s, other, (resonance ? 2 : 0) + (riposte ? 3 : 0), p.id);
+              damageEnemy(s, other, (resonance ? 2 : 0) + (riposte ? 3 : 0), p.id, 'blade');
               if (resonance) {
                 var knock = Math.atan2(other.y - p.y, other.x - p.x);
                 move(s, other, Math.cos(knock) * 55, Math.sin(knock) * 55, false);
@@ -1559,12 +1649,18 @@
     s.enemies.forEach(function (e) {
       if (e.hp <= 0 || dist(p, e) > 74 + e.r || Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), p.facing)) > 1.1 || !meleeLineClear(s, p, e, 5)) return;
       var shielded = e.kind === 'shield' && e.shieldOpen <= 0 && e.stun <= 0 && Math.cos(Math.atan2(p.y - e.y, p.x - e.x) - e.facing) > 0.5;
-      if (!shielded) damageEnemy(s, e, s.runBuffs.indexOf('pierce') >= 0 ? 3 : 2, p.id);
+      if (!shielded) {
+        damageEnemy(s, e, s.runBuffs.indexOf('pierce') >= 0 ? 3 : 2, p.id, 'blade');
+        if (e.hp > 0) {
+          e.posture = Math.min(e.maxPosture, e.posture + 0.5);
+          if (e.posture >= e.maxPosture) breakPosture(s, e, p.id);
+        }
+      }
     });
     s.props.forEach(function (q) {
       if (!solidProp(q) || q.carriedBy === p.id || dist(p, q) > 74 + q.r || Math.abs(angleDelta(Math.atan2(q.y - p.y, q.x - p.x), p.facing)) > 1.1 || !meleeLineClear(s, p, q, 4)) return;
       if (q.kind === 'barrel') explode(s, q, p.id);
-      else { q.hp -= 3; if (q.hp <= 0) q.destroyed = true; }
+      else { q.hp -= 3; if (q.hp <= 0) destroyCrate(s, q); }
     });
     event(s, 'shoot', { playerId: p.id, weapon: 'blade', x: p.x, y: p.y });
     huntNoise(s, 2, p.x, p.y);
@@ -1576,6 +1672,7 @@
     s.enemies.forEach(function (e) {
       if (e.hp <= 0) return;
       e.flash = Math.max(0, e.flash - dt); e.stun = Math.max(0, e.stun - dt);
+      e.weakTime = Math.max(0, (e.weakTime || 0) - dt);
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
       if (e.stun > 0) return;
       var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < 600 && lineClear(s, e, d, 4); });
@@ -1590,7 +1687,7 @@
         if (hit) { damagePlayer(s, hit, 1, 'charge'); e.chargeTime = 0; }
         var block = s.props.find(function (q) { return solidProp(q) && dist(e, q) < e.r + q.r + 10; });
         if (block) {
-          if (block.kind === 'barrel') explode(s, block, 'p1');
+          if (block.kind === 'barrel') explode(s, block, null, 'rush');
           else {
             block.hp -= 3;
             if (block.hp <= 0) {
@@ -1670,6 +1767,7 @@
     });
   }
   function updateBullets(s, dt) {
+    var pushes = [];
     s.bullets.forEach(function (b) {
       if (b.dead) return;
       b.ttl -= dt;
@@ -1685,14 +1783,12 @@
           dist(p, b) < p.r + b.r; });
         if (hitProp) {
           b.dead = true;
-          if (hitProp.kind === 'barrel') explode(s, hitProp, b.owner);
+          if (hitProp.kind === 'barrel') explode(s, hitProp, b.owner, b.fireball ? 'fireball' : 'explosion');
           else {
             hitProp.hp -= b.damage;
             burst(s, 'wood', b.x, b.y, '#d6a971', 4);
             if (hitProp.hp <= 0) {
-              hitProp.destroyed = true;
-              if (hitProp.carriedBy && s.players[hitProp.carriedBy]) s.players[hitProp.carriedBy].carry = null;
-              hitProp.carriedBy = null;
+              destroyCrate(s, hitProp);
             }
           }
           break;
@@ -1704,7 +1800,18 @@
               Math.cos(Math.atan2(b.y - foe.y, b.x - foe.x) - foe.facing) > 0.5;
             if (front) { b.dead = true; burst(s, 'spark', b.x, b.y, '#a9d7ff', 3); }
             else {
-              damageEnemy(s, foe, b.damage, b.owner);
+              var weakShot = b.weapon === 'pistol' && foe.weakTime > 0, amount = b.damage + (weakShot ? 2 : 0);
+              if (weakShot) {
+                foe.weakTime = 0;
+                event(s, 'weakpoint-hit', { enemyId: foe.id, playerId: s.players[b.owner] ? b.owner : null,
+                  weapon: 'pistol', amount: amount, source: 'pistol', x: foe.x, y: foe.y });
+              }
+              damageEnemy(s, foe, amount, b.owner, b.weapon || null, weakShot);
+              if (b.weapon === 'scatter' && foe.hp > 0 && len(foe.x - b.originX, foe.y - b.originY) <= 190 &&
+                  (foe.scatterVolleys || []).indexOf(b.volleyId) < 0) {
+                foe.lastScatterVolley = b.volleyId; foe.scatterVolleys = (foe.scatterVolleys || []).concat(b.volleyId).slice(-8);
+                pushes.push({ enemy: foe, bullet: b });
+              }
               b.hitIds = b.hitIds || []; b.hitIds.push(foe.id);
               b.hitsLeft = (b.hitsLeft || 1) - 1; b.dead = b.hitsLeft <= 0;
             }
@@ -1735,6 +1842,19 @@
         }
       }
       if (b.ttl <= 0) b.dead = true;
+    });
+    // Resolve knockback after this tick's pellet collisions, so one pellet's
+    // impact does not erase damage from the rest of its simultaneous volley.
+    pushes.forEach(function (entry) {
+      var foe = entry.enemy, b = entry.bullet;
+      if (foe.hp <= 0) return;
+      var boss = foe.kind === 'boss' || foe.huntTarget, elite = foe.elite || /^(duelist|brute|pyromancer)$/.test(foe.kind);
+      var amount = boss ? 12 : elite ? 20 : 45, angle = Math.atan2(b.vy, b.vx);
+      var x = foe.x, y = foe.y;
+      move(s, foe, Math.cos(angle) * amount, Math.sin(angle) * amount, false);
+      if (!boss && !elite) foe.stun = Math.max(foe.stun, 0.2);
+      event(s, 'scatter-push', { enemyId: foe.id, playerId: s.players[b.owner] ? b.owner : null, weapon: 'scatter',
+        volleyId: b.volleyId, amount: len(foe.x - x, foe.y - y), x: foe.x, y: foe.y });
     });
     s.bullets = s.bullets.filter(function (b) { return !b.dead; });
     if (s.bullets.length > 160) s.bullets.splice(0, s.bullets.length - 160);
@@ -1791,7 +1911,7 @@
       if (foe) {
         core.hitIds.push(foe.id); foe.stun = Math.max(foe.stun, 0.8); foe.stagger = Math.max(foe.stagger, 0.8);
         foe.rhythm = null; foe.windup = 0; foe.chargeTime = 0;
-        if (core.thrower) damageEnemy(s, foe, 2, core.thrower);
+        if (core.thrower) damageEnemy(s, foe, 2, core.thrower, null);
         core.vx *= -0.32; core.vy *= -0.32; core.knockCd = 1.2;
         core.flightTime = Math.min(core.flightTime, 0.5);
         event(s, 'core-knock', { enemyId: foe.id, propId: core.id, x: core.x, y: core.y });
@@ -1813,11 +1933,11 @@
         var collided = Math.abs(p.x - oldX - fullX) > 0.1 || Math.abs(p.y - oldY - fullY) > 0.1;
         var hit = s.enemies.some(function (e) { return e.hp > 0 && dist(e, p) < e.r + p.r; });
         p.vx *= Math.pow(0.45, dt); p.vy *= Math.pow(0.45, dt);
-        if (collided || hit) explode(s, p, p.thrower || 'p1');
+        if (collided || hit) explode(s, p, p.thrower || null);
       }
       if (p.lit && !p.destroyed) {
         p.fuse -= dt;
-        if (p.fuse <= 0) explode(s, p, p.thrower || 'p1');
+        if (p.fuse <= 0) explode(s, p, p.thrower || null);
       }
     });
     s.props = s.props.filter(function (p) { return !p.destroyed; });
@@ -1944,7 +2064,7 @@
         if (p.sneaking) speed *= 0.55;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
-      var usedCounter = shootEdge && p.counterTime > 0 && !p.carry && meleeAttack(s, p, true);
+      var usedCounter = shootEdge && p.activeSlot === 'melee' && p.counterTime > 0 && !p.carry && meleeAttack(s, p, true);
       if (!usedCounter && input.shoot && p.fireCd <= 0 && !p.guarding && !p.carry) {
         if (p.weapon === 'blade') meleeAttack(s, p, false); else shoot(s, p);
       }

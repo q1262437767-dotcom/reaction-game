@@ -419,6 +419,10 @@
     if (p.weapon !== 'blade' && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
       c.save(); c.translate(Math.cos(facing) * (p.weapon === 'scatter' ? 31 : 25), -3 + Math.sin(facing) * (p.weapon === 'scatter' ? 31 : 25)); c.rotate(facing);
       rect(c,-2,-4,10,8,'#f3d496');rect(c,2,-2,10,4,'#fff3c6');rect(c,2,-7,4,14,'#f3d496');c.restore();
+      if(p.weapon==='scatter')for(const side of [-1,1]){
+        const angle=facing+side*.24;
+        path(c,[[Math.cos(angle)*34,-3+Math.sin(angle)*34],[Math.cos(angle)*53,-3+Math.sin(angle)*53]],'#edc89090',2);
+      }
     }
     c.restore();
     if (p.guarding) {
@@ -461,7 +465,7 @@
     }
   }
 
-  function enemy(c, e, time) {
+  function enemy(c, e, time, events = [], still = false) {
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15), step = Math.sin(time * .012 + x) * 1.5;
     shadow(c, x, y, r, .43);
@@ -481,7 +485,12 @@
       }
     }
     if ((kind === 'charger' || kind==='brute') && (e.chargeTime > 0 || e.rhythm && e.rhythm.type==='rush' && e.rhythm.phase==='active')) { const a = e.rhythm ? num(e.rhythm.angle) : Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', kind==='brute'?28:18); }
+    const impact = events.find(({ event, age }) => event.enemyId === e.id && age <= .13 && ['enemy-hit','weakpoint-hit','environment-hit'].includes(event.type));
     c.save(); c.translate(Math.round(x), Math.round(y));
+    if (impact && !still) {
+      const recoil = (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
+      c.translate(Math.cos(num(e.facing)) * -recoil, Math.sin(num(e.facing)) * -recoil);
+    }
     if (boss) {
       const awakened = e.stage >= 2;
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
@@ -565,10 +574,25 @@
     }
     if (e.hitFlash > 0 || e.flash > 0) { c.globalCompositeOperation = 'screen'; rect(c, boss ? -21 : -10, boss ? -43 : -24, boss ? 42 : 20, boss ? 55 : 31, '#d9d69c60'); }
     c.restore();
+    if (num(e.weakTime) > 0) {
+      // The mark sits on the body, away from its name and health/posture bars.
+      // Its remaining arc is simulation state, so repeated snapshots cannot
+      // restart the opportunity or make a consumed weak point look available.
+      const radius = boss ? 13 : kind === 'brute' ? 12 : 9, cy = y - (boss ? 10 : 7);
+      const ratio = Math.min(1, num(e.weakTime) / 1.6);
+      glow(c,x,cy,radius*2.6,'#e9bd6628');
+      for(const side of [-1,1]){
+        path(c,[[x+side*(radius+4),cy-5],[x+side*radius,cy-5],[x+side*radius,cy+5],[x+side*(radius+4),cy+5]],'#f9d68e',2);
+      }
+      path(c,[[x,cy-5],[x+4,cy],[x,cy+5],[x-4,cy],[x,cy-5]],'#fff0bb',2);
+      c.strokeStyle='#edbf73';c.lineWidth=1;c.beginPath();c.arc(x,cy,radius+7,-Math.PI/2,-Math.PI/2+Math.PI*2*ratio);c.stroke();
+    }
     if (kind === 'shield') { if(e.shieldOpen>0||e.stun>0)label(c,'破绽',x,y-46,'#eac891',8);else{c.strokeStyle='#d3c38b88';c.lineWidth=2;c.beginPath();c.arc(x,y,num(e.r,18)+10,num(e.facing)-Math.PI/3,num(e.facing)+Math.PI/3);c.stroke();} }
     if (e.hp < e.maxHp || boss || e.elite) bar(c, x, y - (boss ? 60 : e.elite ? 51 : 36), boss ? 64 : e.elite ? 43 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss || e.elite ? '#e2bb70' : '#d08d6f', boss || e.elite ? 4 : 3);
-    if (e.maxPosture > 0 && (kind === 'duelist' || boss || e.elite && e.rhythm)) {
-      bar(c, x, y - (boss ? 53 : e.elite ? 44 : 30), boss ? 64 : 43, num(e.posture) / e.maxPosture, e.stagger > 0 ? '#fff0b5' : '#d99c69', 3);
+    if (e.maxPosture > 0 && (num(e.posture) > 0 || kind === 'duelist' || boss || e.elite && e.rhythm)) {
+      const ratio=num(e.posture)/e.maxPosture, width=boss?64:e.elite?43:25, by=y-(boss?53:e.elite?44:30), nearBreak=ratio>=.75;
+      bar(c, x, by, width, ratio, e.stagger > 0 ? '#fff0b5' : nearBreak ? '#f7d18d' : '#d99c69', 3);
+      if(nearBreak)for(const side of [-1,1])path(c,[[x+side*(width/2+7),by-3],[x+side*(width/2+4),by],[x+side*(width/2+7),by+3]],'#f7d18d',1);
       if (e.stagger > 0) label(c, '失衡', x, y - (boss ? 91 : 87), '#ffe2a4', 10);
     }
     if (e.elite && !boss) {
@@ -590,7 +614,8 @@
       if(friendly)path(c,[[x-dx*(r+7)-dy*5,y-dy*(r+7)+dx*5],[x-dx*(r+2),y-dy*(r+2)],[x-dx*(r+7)+dy*5,y-dy*(r+7)-dx*5]],'#d8f5db',2);
       return;
     }
-    c.lineCap = 'round'; path(c, [[x - dx * (friendly ? 11 : 7), y - dy * (friendly ? 11 : 7)], [x, y]], friendly ? '#efd89b60' : '#d98c7066', friendly ? 3 : 4); c.lineCap = 'butt';
+    const scatter=friendly&&b.weapon==='scatter',trail=friendly?(scatter?7:14):7;
+    c.lineCap = 'round'; path(c, [[x - dx * trail, y - dy * trail], [x, y]], friendly ? scatter?'#edc89080':'#efd89b60' : '#d98c7066', friendly ? scatter?4:2 : 4); c.lineCap = 'butt';
     if (friendly) { rect(c, x - r, y - r, r * 2, r * 2, '#efd293'); rect(c, x - 1, y - 1, 3, 3, '#fff4c6'); }
     else { glow(c, x, y, 14, '#e8a67533'); ellipse(c, x, y, r + 1, r + 1, '#8d594c'); ellipse(c, x, y, r, r, '#e4a576'); rect(c, x - 1, y - 1, 2, 2, '#ffe5a5'); }
   }
@@ -699,7 +724,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -715,9 +740,78 @@
     }
     return { x:Math.max(-3, Math.min(3, x)), y:Math.max(-2, Math.min(2, y)), flash:Math.min(.07,flash) };
   }
-  function combatEffects(c, events) {
+  function damageText(amount) { return '-' + String(Math.round(Math.abs(num(amount)) * 100) / 100); }
+  function impactLabel(c,text,x,y,color,size) {
+    // Keep local hit feedback on the playing field. The map and mode status
+    // are painted after these effects and remain completely stationary.
+    label(c,text,Math.max(62,Math.min(W-62,x)),Math.max(112,Math.min(H-24,y)),color,size);
+  }
+  function tacticsEffect(c, e, age, events, state, still) {
+    if(!['melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(e.type))return false;
+    const weak=e.type==='weakpoint-hit',ordinary=e.type==='enemy-hit',opening=e.type==='weakpoint-open',posture=e.type==='posture-break',environment=e.type==='environment-hit',scatter=e.type==='scatter-push',blocked=e.type==='melee-block',hurt=e.type==='player-hit';
+    const life=opening||posture?.58:weak?.6:blocked?.38:.48;
+    if(age>life)return true;
+    // A single physical hit can produce several semantic events. Keep its
+    // strongest useful feedback rather than stacking several damage numbers.
+    if(ordinary&&e.weapon==null&&events.some(other=>other.event!==e&&other.event.enemyId===e.enemyId&&Math.abs(other.age-age)<.09&&other.event.type==='environment-hit'))return true;
+    if(opening&&events.some(other=>other.event!==e&&other.event.enemyId===e.enemyId&&Math.abs(other.age-age)<.09&&other.event.type==='posture-break'))return true;
+    if(hurt&&events.some(other=>other.event.playerId===e.playerId&&Math.abs(other.age-age)<.09&&other.event.type==='ranged-block'))return true;
+    const weakAlongside=ordinary&&events.some(other=>other.event.enemyId===e.enemyId&&Math.abs(other.age-age)<.09&&other.event.type==='weakpoint-hit');
+    const ratio=age/life,motion=still?.25:ratio,x=num(e.x),y=num(e.y),propItem=environment&&values(state.props).find(item=>item.id===e.propId);
+    const wood=environment&&e.target==='prop'&&(e.kind==='crate'||propItem&&propItem.kind==='crate');
+    const color=weak?'#fff0b1':posture?'#f3ce8c':opening?'#f9d68e':blocked?'#b4d8c8':hurt?'#f0a18b':environment?wood?'#c9a673':e.source==='fireball'||e.source==='explosion'?'#f0b078':'#d5c09a':scatter?'#efd1a0':'#dfd5ad';
+    alpha(c,1-ratio,()=>{
+      if(blocked){
+        const actor=state.players&&state.players[e.playerId],facing=num(actor&&actor.facing);
+        c.save();c.translate(x,y);c.rotate(facing);
+        c.strokeStyle=color;c.lineWidth=3;c.beginPath();c.arc(0,0,22+motion*7,-.85,.85);c.stroke();
+        path(c,[[13,-11],[20,-4],[30,-16]],'#e0efcc',2);c.restore();
+        impactLabel(c,'格挡',x,y-55-motion*5,color,10);return;
+      }
+      if(opening){
+        for(const side of [-1,1])path(c,[[x+side*(12+motion*9),y-17],[x+side*(7+motion*9),y-17],[x+side*(7+motion*9),y-3],[x+side*(12+motion*9),y-3]],color,2);
+        impactLabel(c,'破绽',x,y+26+motion*5,color,10);return;
+      }
+      if(scatter){
+        const owner=state.players&&state.players[e.playerId],angle=num(e.angle,owner?Math.atan2(y-num(owner.y),x-num(owner.x)):0);
+        c.save();c.translate(x,y);c.rotate(angle);
+        for(const side of [-1,1]){
+          path(c,[[6+motion*15,side*(5+motion*9)],[18+motion*29,side*(9+motion*14)]],color,2);
+          path(c,[[-4+motion*11,side*(12+motion*10)],[6+motion*23,side*(17+motion*15)]],color,1);
+        }
+        c.strokeStyle='#efd1a066';c.lineWidth=3;c.beginPath();c.arc(0,0,15+motion*24,-.7,.7);c.stroke();c.restore();
+        // Only the shove is illustrated here; its pellet damage is already
+        // coalesced by the engine and shown once by enemy-hit.
+        return;
+      }
+      if(posture){
+        path(c,[[x-22-motion*8,y-17],[x-6,y-9],[x-13-motion*7,y+7]],color,3);
+        path(c,[[x+22+motion*8,y-17],[x+6,y-9],[x+13+motion*7,y+7]],color,3);
+        impactLabel(c,'架势击破',x,y+30+motion*7,color,12);return;
+      }
+      const count=environment?wood?7:8:weak?6:hurt?3:4;
+      for(let i=0;i<count;i++){
+        const angle=i*Math.PI*2/count+(hash(e.id)%13)*.1,inner=weak?7:3,outer=inner+(weak?13:environment?17:7)+motion*(environment?23:12);
+        if(wood){
+          c.save();c.translate(x+Math.cos(angle)*outer,y+Math.sin(angle)*outer*.7+motion*9);c.rotate(angle+motion*2);rect(c,-3,-1,7,3,color);rect(c,-3,-1,4,1,'#e1c195');c.restore();
+        }else path(c,[[x+Math.cos(angle)*inner,y-7+Math.sin(angle)*inner],[x+Math.cos(angle)*outer,y-7+Math.sin(angle)*outer]],color,weak?i%2?2:3:1.5);
+      }
+      if(environment&&e.target==='prop'){
+        if(wood)impactLabel(c,'木箱破裂',x,y+28+motion*5,color,10);
+        return;
+      }
+      const amount=num(e.amount??e.damage);
+      if(amount>0){
+        const prefix=weak?'弱点 ':environment&&e.source==='rush'?'撞击 ':'';
+        impactLabel(c,prefix+damageText(amount),x+(hurt?20:weak?0:environment?-18:weakAlongside?25:15),y+(hurt?25:environment?-13:weakAlongside?18:-25)-motion*(weak?20:13),color,weak?15:hurt?11:12);
+      }
+    });
+    return true;
+  }
+  function combatEffects(c, events, state, still) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if(tacticsEffect(c,e,age,events,state,still))continue;
       if (e.type === 'weapon-switch' || e.type === 'weapon-broken' || e.type === 'ranged-block') {
         const broken=e.type==='weapon-broken',blocked=e.type==='ranged-block',life=broken?1:blocked?.55:.45;
         if(age>life)continue;
@@ -727,6 +821,7 @@
           else if(blocked){c.strokeStyle=color;c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.arc(x,y,22+ratio*10,0,Math.PI*2);c.stroke();c.setLineDash([]);}
           // A break can accompany the same block: show its single useful label.
           if(!blocked||!e.broken){const name=broken?'远程武器损坏':blocked?'半效格挡':e.weapon==='blade'?'近战 · 旅人短刃':e.weapon==='scatter'?'远程 · 散射枪':'远程 · 手枪';label(c,name,x,y-57-ratio*10,color,broken?12:10);}
+          if(blocked&&num(e.damage)>0)impactLabel(c,damageText(e.damage),x+20,y+25-(still?.25:ratio)*9,'#f0a18b',11);
         });
         continue;
       }
@@ -981,7 +1076,7 @@
   function draw(c, state, options = {}) {
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
-    const events = combatEvents(state), motion = combatMotion(events, !!(options.paused || options.reducedMotion));
+    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = combatMotion(events, still);
     c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
@@ -1002,13 +1097,13 @@
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId) })),
-      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time) })),
+      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still) })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b));
     values(state.particles).forEach(p => particle(c, p, time));
-    combatEffects(c, events);
+    combatEffects(c, events, state, still);
     aimReticle(c, state.players && state.players[localId], time);
     ambient(c, state, time);
     c.restore();
