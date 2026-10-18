@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 8;
+  const VERSION = 9;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -31,8 +31,9 @@
 
   function validMessage(message) {
     if (!isRecord(message) || !TYPES.has(message.type)) return false;
-    // A v8 lobby always identifies its mode. Never interpret an old or altered
+    // A current lobby always identifies its mode. Never interpret an old or altered
     // lobby as the default mode; the app validates mission/difficulty and state.
+    if (message.type === 'loadout') return message.weapon === 'pistol' || message.weapon === 'scatter';
     return message.type !== 'lobby' || message.mode === 'random' || message.mode === 'story' || message.mode === 'relay' || message.mode === 'hunt';
   }
 

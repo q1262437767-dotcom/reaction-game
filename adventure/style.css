@@ -299,3 +299,14 @@
 /* Hunt keeps only tracking feedback during play; controls stay in the first-run note. */
 .game-wrap[data-mode="hunt"] .mission-mark{color:#efb988}
 .game-wrap[data-mode="hunt"] .mission-reward{color:#e9d6a4}
+.weapon-hud{display:flex;align-items:center;gap:5px;margin-top:3px;min-height:22px}
+.weapon-slot{padding:3px 7px;border:1px solid #78916b55;background:#112124da;border-radius:4px;color:#829687;font-size:9px;white-space:nowrap}
+.weapon-slot[data-active="true"]{border-color:#e6ba6da6;color:#f1d398;background:#423f2bd9}
+.weapon-slot[data-broken="true"]{border-color:#b66f6266;color:#d18e82;text-decoration:line-through}
+.quiet-status{color:#aac7c0;font-size:9px;padding-left:3px}
+.fixed-melee-slot{color:#c5d1b3;padding-right:8px;border-right:1px solid #8a9f6a44;white-space:nowrap}
+.fixed-melee-slot small{font-size:9px;color:#81978a;margin-right:7px}
+.loadout-guide{font-size:9px;color:#8ba08d;margin:6px 0 0;line-height:1.6}
+.touch-switch{width:34px;height:34px;font-size:16px;left:65px;right:auto;top:5px;background:#263d3bdd;border-color:#a0b59a66}
+@media(max-width:650px){.weapon-hud{gap:3px;min-height:17px;margin-top:1px}.weapon-slot{padding:2px 5px;font-size:7px}.quiet-status{font-size:7px}.loadout-guide{font-size:8px;margin-top:4px}.fixed-melee-slot small{font-size:8px;margin-right:5px}.touch-switch{width:29px;height:29px;left:53px;top:5px;font-size:13px}}
+@media(pointer:coarse) and (orientation:landscape) and (max-height:500px){.touch-switch{width:29px;height:29px;left:48px;top:5px;font-size:13px}}

@@ -44,7 +44,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       if (s.combatEvents.length > 24) s.combatEvents.shift();
@@ -97,9 +97,12 @@
     }
     return moved;
   }
-  function player(idValue, index, weapon) {
+  function player(idValue, index, weapon, rangedWeapon) {
     return { id: idValue, name: index ? '萤火搭档' : '探险队长', x: 128, y: 275 + index * 52,
       r: 14, hp: 6, maxHp: 6, weapon: weapon, color: index ? '#f5b655' : '#72dfc7',
+      weapons: { melee: 'blade', ranged: rangedWeapon === 'scatter' ? 'scatter' : 'pistol' },
+      activeSlot: weapon === 'blade' ? 'melee' : 'ranged', rangedBroken: false,
+      prevSwitch: false, switchCd: 0, sneaking: false,
       facing: 0, vx: 0, vy: 0, moving: false, dashCd: 0, dashTime: 0, dashX: 1, dashY: 0, invuln: 0,
       fireCd: 0, downed: false, carry: null, kills: 0, prevDash: false, prevInteract: false,
       prevGuard: false, prevShoot: false, guarding: false, guardWindow: 0, guardCd: 0, guardStrain: 0,
@@ -111,7 +114,7 @@
     if (s.players[key]) return s.players[key];
     if (Object.keys(s.players).length >= 2) return null;
     var index = Object.keys(s.players).length;
-    var p = player(key, index, s.loadout);
+    var p = player(key, index, s.loadout === 'blade' ? 'blade' : s.rangedLoadout, s.rangedLoadout);
     if (s.runBuffs && s.runBuffs.indexOf('vigor') >= 0) p.hp = p.maxHp = 7;
     var anchor = alivePlayers(s)[0];
     if (anchor) { p.x = anchor.x; p.y = clamp(anchor.y + 40, 50, H - 50); }
@@ -136,8 +139,9 @@
     var mode = options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
     var missionId = mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
-    var s = { version: 1, combatVersion: 1, contentVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
+    var s = { version: 1, combatVersion: 1, contentVersion: 1, weaponVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
+      rangedLoadout: options.rangedLoadout === 'scatter' ? 'scatter' : options.rangedLoadout === 'pistol' ? 'pistol' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       difficulty: mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
@@ -648,7 +652,7 @@
     p.guarding = false; p.guardWindow = 0; p.guardCd = 0; p.guardStrain = 0; p.guardLoad = 0;
     p.dashWindow = 0; p.dashTime = 0; p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     p.meleeTime = 0; p.guardAttackLock = 0; p.prevGuard = false; p.prevShoot = false;
-    p.parryChain = 0;
+    p.parryChain = 0; p.sneaking = false;
   }
   function enterRoom(s, index, initial) {
     index = Number(index);
@@ -1186,6 +1190,35 @@
     }
     return true;
   }
+  function switchWeapon(s, p) {
+    if (p.downed || p.switchCd > 0) return false;
+    var slot = p.activeSlot === 'melee' ? 'ranged' : 'melee';
+    if (slot === 'ranged' && p.rangedBroken) return false;
+    p.activeSlot = slot; p.weapon = p.weapons[slot]; p.switchCd = 0.25;
+    // Switching never refreshes an attack cooldown or a perfect guard window.
+    p.guardWindow = 0;
+    event(s, 'weapon-switch', { playerId: p.id, x: p.x, y: p.y, weapon: p.weapon, slot: slot, broken: false });
+    return true;
+  }
+  function guardBlock(s, p, attacker, amount, source, perfect) {
+    if (!p || p.downed || p.invuln > 0 || !p.guarding || p.carry || !facingEnemy(p, attacker) || s.status !== 'playing') return false;
+    if (p.activeSlot === 'ranged') {
+      var weapon = p.weapons.ranged, broken = random(s) < 0.1, chip = amount * 0.5;
+      damagePlayer(s, p, chip, source);
+      event(s, 'ranged-block', { playerId: p.id, enemyId: attacker.id || null, x: p.x, y: p.y,
+        weapon: weapon, slot: 'ranged', perfect: !!perfect, broken: broken, damage: chip });
+      if (broken) {
+        p.rangedBroken = true; p.activeSlot = 'melee'; p.weapon = p.weapons.melee;
+        p.guardWindow = 0; p.switchCd = Math.max(p.switchCd, 0.25);
+        event(s, 'weapon-broken', { playerId: p.id, x: p.x, y: p.y, weapon: weapon, slot: 'ranged', broken: true });
+        s.message = '远程武器损坏 · 已切换近战，本局无法再使用远程武器'; s.messageTime = 2.5;
+      }
+    } else {
+      event(s, 'guard', { playerId: p.id, enemyId: attacker.id || null, x: p.x, y: p.y });
+    }
+    particle(s, 'spark', p.x, p.y, { r: 17, ttl: 0.18, life: 0.18, color: p.activeSlot === 'ranged' ? '#efc389' : '#b5cbd3' });
+    return true;
+  }
   function damageEnemy(s, e, amount, owner) {
     if (e.hp <= 0) return;
     e.hp -= amount; e.flash = 0.12;
@@ -1347,7 +1380,7 @@
       if (ball) p.facing = Math.atan2(ball.y - p.y, ball.x - p.x);
     }
   }
-  function grantCounter(s, p, e, kind) {
+  function grantCounter(s, p, e, kind, noPracticeHeal) {
     p.counterTime = 1.25; p.counterEnemy = e.id; p.counterKind = kind;
     p.guardWindow = 0; p.dashWindow = 0; p.guardStrain = 0; p.guardLoad = 0;
     p.guardCd = Math.min(p.guardCd, 0.12);
@@ -1359,7 +1392,7 @@
     }
     if (s.practice) {
       if (kind === 'parry') s.practiceParries = (s.practiceParries || 0) + 1;
-      p.hp = Math.min(p.maxHp, p.hp + 1);
+      if (!noPracticeHeal) p.hp = Math.min(p.maxHp, p.hp + 1);
     }
     e.posture = Math.min(e.maxPosture, e.posture + (kind === 'mikiri' ? 2 : 1));
     if (e.posture >= e.maxPosture) {
@@ -1394,7 +1427,9 @@
       // Arrival protection is never converted into an earned perfect action.
       if (p.invuln > 0.3) return;
       if (r.type === 'combo' && p.guardWindow > 0 && p.guarding && facingEnemy(p, e)) {
-        grantCounter(s, p, e, 'parry'); return;
+        var rangedParry = p.activeSlot === 'ranged';
+        if (rangedParry && !guardBlock(s, p, e, 1, 'combo', true)) return;
+        if (!p.downed) grantCounter(s, p, e, 'parry', rangedParry); return;
       }
       if (p.dashWindow > 0) {
         var toward = Math.cos(Math.atan2(e.y - p.dashOriginY, e.x - p.dashOriginX) - Math.atan2(p.dashY, p.dashX)) > 0.55;
@@ -1405,8 +1440,7 @@
       if (r.type === 'combo' && p.guarding && facingEnemy(p, e) && p.guardCd < 0.5) {
         p.guardLoad += 1;
         if (p.guardLoad < 3) {
-          event(s, 'guard', { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
-          particle(s, 'spark', p.x, p.y, { r: 17, ttl: 0.18, life: 0.18, color: '#b5cbd3' }); return;
+          guardBlock(s, p, e, 1, 'combo', false); return;
         }
       }
       if (p.guarding) {
@@ -1578,7 +1612,9 @@
           var angle = Math.atan2(e.aimY - e.y, e.aimX - e.x);
           s.decoys = s.decoys.filter(function (d) { return d.id !== e.targetId; });
           if (e.kind === 'chaser') {
-            targets.forEach(function (q) { if (dist(e, q) < e.r + q.r + 27) damagePlayer(s, q, 1, 'melee'); });
+            targets.forEach(function (q) {
+              if (dist(e, q) < e.r + q.r + 27 && !guardBlock(s, q, e, 1, 'melee', false)) damagePlayer(s, q, 1, 'melee');
+            });
             particle(s, 'slash', e.x + Math.cos(angle) * 24, e.y + Math.sin(angle) * 24,
               { r: 40, ttl: 0.2, life: 0.2, color: '#ffb095' });
             e.attackCd = 0.9;
@@ -1679,16 +1715,22 @@
           var target = !b.dead && alivePlayers(s).find(function (p) { return dist(p, b) < p.r + b.r + (b.fireball ? 9 : 0); });
           if (target) {
             if (b.fireball && target.guardWindow > 0 && target.guarding && target.invuln <= 0.3 && facingEnemy(target, b)) {
+              var rangedReflection = target.activeSlot === 'ranged';
+              if (rangedReflection && !guardBlock(s, target, b, b.damage, 'fireball', true)) { b.dead = true; break; }
+              if (target.downed) { b.dead = true; break; }
               var caster = s.enemies.find(function (e) { return e.id === b.owner && e.hp > 0; });
               var angle = caster ? Math.atan2(caster.y - b.y, caster.x - b.x) : Math.atan2(-b.vy, -b.vx);
               b.friendly = true; b.owner = target.id; b.vx = Math.cos(angle) * 390; b.vy = Math.sin(angle) * 390;
               b.damage = 7; b.color = '#aaffdf'; b.hitsLeft = 1; b.hitIds = []; b.ttl = 3;
-              if (caster) grantCounter(s, target, caster, 'parry');
+              if (caster) grantCounter(s, target, caster, 'parry', rangedReflection);
               else target.guardWindow = 0;
               event(s, 'fireball-reflected', { playerId: target.id, enemyId: caster ? caster.id : null, x: b.x, y: b.y });
               break;
             }
-            if (dist(target, b) < target.r + b.r) { damagePlayer(s, target, b.damage, 'bullet'); b.dead = true; }
+            if (dist(target, b) < target.r + b.r) {
+              if (b.fireball || !guardBlock(s, target, b, b.damage, 'bullet', false)) damagePlayer(s, target, b.damage, 'bullet');
+              b.dead = true;
+            }
           }
         }
       }
@@ -1850,11 +1892,13 @@
       var p = s.players[key], input = inputs[key] || {};
       var dashEdge = !!input.dash && !p.prevDash, interactEdge = !!input.interact && !p.prevInteract;
       var guardEdge = !!input.guardPulse || !!input.guard && !p.prevGuard, shootEdge = !!input.shoot && !p.prevShoot;
+      var switchEdge = !!input.switchPulse || !!input.switchWeapon && !p.prevSwitch;
       p.prevDash = !!input.dash; p.prevInteract = !!input.interact;
-      p.prevGuard = !!input.guard; p.prevShoot = !!input.shoot;
+      p.prevGuard = !!input.guard; p.prevShoot = !!input.shoot; p.prevSwitch = !!input.switchWeapon;
       var oldX = p.x, oldY = p.y;
       p.invuln = Math.max(0, p.invuln - dt); p.dashCd = Math.max(0, p.dashCd - dt);
       p.fireCd = Math.max(0, p.fireCd - dt);
+      p.switchCd = Math.max(0, p.switchCd - dt);
       p.guardWindow = Math.max(0, p.guardWindow - dt); p.guardCd = Math.max(0, p.guardCd - dt);
       p.guardStrain = Math.max(0, p.guardStrain - dt * 0.5);
       p.guardAttackLock = Math.max(0, p.guardAttackLock - dt);
@@ -1866,22 +1910,24 @@
       }
       if (!input.guard) p.guardLoad = Math.max(0, p.guardLoad - dt * 0.7);
       if (p.downed) return;
+      var switched = switchEdge && switchWeapon(s, p);
       var aimX = finite(Number(input.aimX), p.x + Math.cos(p.facing) * 100);
       var aimY = finite(Number(input.aimY), p.y + Math.sin(p.facing) * 100);
       if (len(aimX - p.x, aimY - p.y) > 2) p.facing = Math.atan2(aimY - p.y, aimX - p.x);
       var mx = clamp(finite(Number(input.mx), 0), -1, 1), my = clamp(finite(Number(input.my), 0), -1, 1);
       var magnitude = len(mx, my);
       if (magnitude > 1) { mx /= magnitude; my /= magnitude; }
-      if (guardEdge && p.guardCd <= 0 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry) {
+      if (!switched && guardEdge && p.guardCd <= 0 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry) {
         p.guardWindow = 0.38; p.guardStrain = 0; p.guardCd = 0.2;
       }
       if (p.guardWindow > 0) faceGuardThreat(s, p);
       p.guarding = (!!input.guard || p.guardWindow > 0) && p.guardCd < 0.5 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry;
+      p.sneaking = (!!input.guard || p.guardWindow > 0) && p.dashTime <= 0;
       if (dashEdge && p.dashCd <= 0) {
         p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(p.facing);
         p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(p.facing);
         p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.3);
-        p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.28; p.guarding = false; p.guardWindow = 0;
+        p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.28; p.guarding = false; p.guardWindow = 0; p.sneaking = false;
         event(s, 'dash', { playerId: key, x: p.x, y: p.y });
         huntNoise(s, 2, p.x, p.y);
       }
@@ -1895,16 +1941,16 @@
         var speed = held ? held.kind === 'crate' ? 128 : 155 : 195;
         if (s.runBuffs.indexOf('swift') >= 0) speed *= 1.15;
         if (p.relayBoost > 0) speed *= 1.2;
-        if (p.guarding) speed *= 0.55;
+        if (p.sneaking) speed *= 0.55;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
       var usedCounter = shootEdge && p.counterTime > 0 && !p.carry && meleeAttack(s, p, true);
-      if (!usedCounter && input.shoot && p.fireCd <= 0 && !p.guarding) {
+      if (!usedCounter && input.shoot && p.fireCd <= 0 && !p.guarding && !p.carry) {
         if (p.weapon === 'blade') meleeAttack(s, p, false); else shoot(s, p);
       }
       p.vx = dt > 0 ? (p.x - oldX) / dt : 0; p.vy = dt > 0 ? (p.y - oldY) / dt : 0;
       p.moving = Math.abs(p.vx) + Math.abs(p.vy) > 1;
-      if (s.mode === 'hunt' && p.moving && !p.guarding && p.dashTime <= 0 && s.time - (s.hunt.stepAt[key] || 0) >= 0.85) {
+      if (s.mode === 'hunt' && p.moving && !p.sneaking && p.dashTime <= 0 && s.time - (s.hunt.stepAt[key] || 0) >= 0.85) {
         s.hunt.stepAt[key] = s.time; huntNoise(s, 1, p.x, p.y);
       }
       if (interactEdge) interact(s, key);

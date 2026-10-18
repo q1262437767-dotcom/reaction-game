@@ -8,16 +8,17 @@
   const RHYTHM_TUTORIAL_STORE = 'ruins-squad-rhythm-tutorial-v2';
   const RELAY_TUTORIAL_STORE = 'ruins-squad-relay-tutorial-v1';
   const HUNT_TUTORIAL_STORE = 'ruins-squad-hunt-tutorial-v1';
+  const WEAPONS_TUTORIAL_STORE = 'ruins-squad-weapons-tutorial-v1';
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let account = null;
-  let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'blade';
+  let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol';
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
   let muted = false, audio = null, soundLast = 0;
   const heardEvents = new Set(), soundNodes = new Set();
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, guard: false, active: false };
-  const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false };
-  let dashPulse = false, guardPulse = false, interactPulse = false;
+  const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
+  let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   const blank = () => C.normalize(null);
   function readCamp() {
@@ -43,7 +44,8 @@
   }
   function clearInput() {
     keys.clear(); mouse.down = mouse.guard = false; touch.mx = touch.my = 0;
-    touch.shoot = touch.dash = touch.guard = touch.interact = false; dashPulse = guardPulse = interactPulse = false;
+    touch.shoot = touch.dash = touch.guard = touch.interact = touch.switchWeapon = false;
+    dashPulse = guardPulse = interactPulse = switchPulse = false;
     $('joystick-stick').style.transform = 'translate(0px,0px)';
     remoteInput = {};
   }
@@ -115,6 +117,13 @@
         tone(210, .2, .018, 'triangle', 0, 130);
       } else if (event.type === 'hunt-defeated') {
         tone(520, .25, .03); tone(780, .28, .025, 'sine', .12); tone(1040, .35, .025, 'sine', .25);
+      } else if (event.type === 'weapon-switch') {
+        tone(440, .045, .014, 'triangle', 0, 660);
+      } else if (event.type === 'weapon-broken') {
+        tone(155, .2, .03, 'sawtooth', 0, 45);
+        if (event.playerId === localId()) toast('远程武器已损坏，已切回短刃；下次出发恢复。');
+      } else if (event.type === 'ranged-block') {
+        tone(340, .07, .018, 'triangle', 0, 190);
       } else if (event.type === 'shoot' && performance.now() - soundLast > 170) {
         tone(180 + Math.random() * 70, 0.035, 0.007, 'triangle'); soundLast = performance.now();
       } else if (event.type === 'player-hit') tone(92, 0.13, 0.04, 'sawtooth');
@@ -149,7 +158,7 @@
       tone(attack.type === 'sweep' ? 790 : 1180, .075, .04, 'triangle');
     }
   }
-  function selectedWeapon() { return $('start-loadout').value === 'blade' ? 'blade' : camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
+  function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
   function missionInfo(id) { return C.MISSIONS.find(mission => mission.id === id) || C.MISSIONS[0]; }
   function selectedGameMode() { return ['story', 'relay', 'hunt'].includes($('mode-select').value) ? $('mode-select').value : 'random'; }
   function selectedMission() { return selectedGameMode() === 'random' ? 'ember' : ['relay', 'hunt'].includes(selectedGameMode()) ? 'salvage' : missionInfo($('mission-select').value).id; }
@@ -160,24 +169,26 @@
     rhythmTutorial = !!(state && state.practice);
     relayTutorial = !!(state && state.mode === 'relay');
     huntTutorial = !!(state && state.mode === 'hunt');
-    try { tutorialPending = localStorage.getItem(tutorialStore()) !== '1'; } catch (_) { tutorialPending = true; }
+    let weaponTutorial = true;
+    try { weaponTutorial = localStorage.getItem(WEAPONS_TUTORIAL_STORE) !== '1'; tutorialPending = weaponTutorial || localStorage.getItem(tutorialStore()) !== '1'; } catch (_) { tutorialPending = true; }
     $('tutorial-title').textContent = rhythmTutorial ? '先接住一刀，再练连续招架' : relayTutorial ? '把炉芯，接力带回家' : '先试试手，再走进遗迹';
-    $('tutorial-controls-desktop').textContent = rhythmTutorial ? 'K / 右键防守 · 空格闪避 · J / 左键反击' : relayTutorial ? 'E 拾取 / 投掷 · 鼠标瞄准 · K / 右键接住 · WASD 移动' : 'WASD 移动 · J / 左键攻击 · K / 右键防守 · 空格闪避 · E 互动';
-    $('tutorial-controls-touch').textContent = rhythmTutorial ? '圈快合拢时点盾牌；防守会自动面向来招。' : relayTutorial ? '互动键拾取 / 投掷，摇杆决定投掷方向，盾牌键接住。' : '左侧摇杆移动，右侧按钮攻击、防守、闪避和互动。';
+    $('tutorial-controls-desktop').textContent = rhythmTutorial ? 'K / 右键格挡静步 · 空格闪避 · J / 左键反击 · Q 切换武器' : relayTutorial ? 'E 拾取 / 投掷 · K / 右键接住与静步 · Q 切换武器 · WASD 移动' : 'WASD 移动 · J / 左键攻击 · K / 右键格挡静步 · Q 切换武器 · 空格闪避 · E 互动';
+    $('tutorial-controls-touch').textContent = rhythmTutorial ? '圈快合拢时点盾牌；防守会自动面向来招。Q 键切换短刃与枪。' : relayTutorial ? '互动键拾取 / 投掷，摇杆决定方向，盾牌键接住，Q 键切换武器。' : '左侧摇杆移动，右侧按钮攻击、防守、闪避、互动；Q 键切换短刃与枪。';
     $('tutorial-detail').textContent = rhythmTutorial ? '看到两圈快合拢或听到清脆提示时，按 K / 右键；会自动面向来招。先练连斩，熟悉后再加入突刺和横扫。' : relayTutorial ? '取走炉芯后，回程会出现追兵。带回入口撤离台，按 E 交付。按住防守可稳接，临近时按下可精准接住、短暂加速；单人也能先扔出再追过去。' : '房间自由进出；击杀唤醒守卫，精英掉落遗物。';
     if (huntTutorial) {
       $('tutorial-title').textContent = '这一次，猎物也在找你';
-      $('tutorial-controls-desktop').textContent = 'WASD 移动 · 按住 K / 右键轻步 · J 攻击 · E 互动 · 空格闪避';
-      $('tutorial-controls-touch').textContent = '按住盾牌键轻步，互动键搬起或投出炸药桶。';
+      $('tutorial-controls-desktop').textContent = 'WASD 移动 · 按住 K / 右键格挡静步 · J 攻击 · Q 切换武器 · E 互动 · 空格闪避';
+      $('tutorial-controls-touch').textContent = '按住盾牌键格挡静步，互动键搬桶，Q 键切换短刃与枪。';
       $('tutorial-detail').textContent = '循足迹和邻室脚步追踪游荡猎兽。枪声、闪避与爆炸会引来它；提前摆好炸药桶，或轻步绕路。找到机会击败它，即可完成狩猎。';
     }
+    if (weaponTutorial) $('tutorial-detail').textContent += ' 每人固定携带一把短刃和一把枪；用枪格挡只减免 50% 伤害，每次实际挡到攻击有 10% 概率损坏，本局只能改用短刃。搬运时仍可静步，但不能格挡。';
     $('tutorial-dismiss').textContent = rhythmTutorial ? '准备好了，迎战 →' : '知道了，出发 →';
     $('tutorial-panel').hidden = !tutorialPending;
     if ((relayTutorial || huntTutorial) && net && net.connected) net.send({ type: 'pause', reason: 'tutorial', runId, paused: tutorialPending });
   }
   function dismissTutorial() {
     tutorialPending = false; $('tutorial-panel').hidden = true;
-    try { localStorage.setItem(tutorialStore(), '1'); } catch (_) { /* Tutorial is optional. */ }
+    try { localStorage.setItem(tutorialStore(), '1'); localStorage.setItem(WEAPONS_TUTORIAL_STORE, '1'); } catch (_) { /* Tutorial is optional. */ }
     if ((relayTutorial || huntTutorial) && net && net.connected) net.send({ type: 'pause', reason: 'tutorial', runId, paused: false });
     clearInput(); if (playing()) { enableAudio(); canvas.focus(); }
   }
@@ -258,6 +269,7 @@
   function shutdownNet() {
     const old = net; net = null; if (old) old.close();
     remoteTutorialPending = false;
+    remoteWeapon = 'pistol';
     remoteInput = {}; remoteAt = 0; remoteSeq = -1;
     $('room-id').textContent = '— — — —'; $('start-room').disabled = true;
     $('host-room').disabled = false; $('join-room').disabled = false;
@@ -284,9 +296,9 @@
     // Restart the actual expedition, including after the player edited camp settings.
     if (state && state.mission) { mission = state.mission.id; difficulty = state.difficulty || 1; gameMode = state.mode || 'story'; }
     if (!canStart(gameMode, mission, difficulty)) { toast('这项故事任务尚未解锁，请先完成前一项任务。'); return; }
-    state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: selectedWeapon(), seed: newSeed(), mission, difficulty });
+    state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty });
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
-    if (state.players.p2) state.players.p2.weapon = remoteWeapon;
+    if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; displayPause();
@@ -343,10 +355,11 @@
     const num = (n, min, max, fallback) => Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
     return { mx: num(raw.mx, -1, 1, 0), my: num(raw.my, -1, 1, 0),
       aimX: num(raw.aimX, 0, 960, 480), aimY: num(raw.aimY, 0, 600, 300),
-      shoot: raw.shoot === true, dash: raw.dash === true, guard: raw.guard === true, guardPulse: raw.guardPulse === true, interact: raw.interact === true };
+      shoot: raw.shoot === true, dash: raw.dash === true, guard: raw.guard === true, guardPulse: raw.guardPulse === true, interact: raw.interact === true,
+      switchWeapon: raw.switchWeapon === true, switchPulse: raw.switchPulse === true };
   }
   function validState(s) {
-    if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.practice !== false || !['random', 'story', 'relay', 'hunt'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
+    if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.weaponVersion !== 1 || s.practice !== false || !['random', 'story', 'relay', 'hunt'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (!s.players || !s.players.p1 || !s.players.p2 || Object.keys(s.players).length !== 2) return false;
     if (!s.mission || !C.MISSIONS.some(m => m.id === s.mission.id) || ![1, 2].includes(s.difficulty) || !Array.isArray(s.runBuffs) || s.runBuffs.length > 6 || new Set(s.runBuffs).size !== s.runBuffs.length || s.runBuffs.some(id => !C.RELICS.includes(id))) return false;
     const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, rooms: 16, interactables: 30, decoys: 8 };
@@ -355,6 +368,7 @@
     for (const p of Object.values(s.players)) {
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp)) return false;
       if (!['blade', 'pistol', 'scatter'].includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
+      if (!p.weapons || typeof p.weapons !== 'object' || Array.isArray(p.weapons) || Object.keys(p.weapons).length !== 2 || p.weapons.melee !== 'blade' || !['pistol', 'scatter'].includes(p.weapons.ranged) || !['melee', 'ranged'].includes(p.activeSlot) || typeof p.rangedBroken !== 'boolean' || typeof p.prevSwitch !== 'boolean' || typeof p.sneaking !== 'boolean' || !bounded(p.switchCd, 2) || p.weapon !== p.weapons[p.activeSlot] || p.rangedBroken && p.activeSlot === 'ranged') return false;
       if (p.ward != null && (!Number.isInteger(p.ward) || !bounded(p.ward, 1))) return false;
       if (p.relayBoost != null && !bounded(p.relayBoost, 3)) return false;
     }
@@ -366,9 +380,10 @@
       }
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
       if (event.type === 'core-catch' && typeof event.perfect !== 'boolean') return false;
+      if (['weapon-switch', 'weapon-broken', 'ranged-block'].includes(event.type) && (!['p1', 'p2'].includes(event.playerId) || event.weapon != null && !['blade', 'pistol', 'scatter'].includes(event.weapon) || event.slot != null && !['melee', 'ranged'].includes(event.slot) || event.perfect != null && typeof event.perfect !== 'boolean' || event.broken != null && typeof event.broken !== 'boolean' || event.damage != null && !bounded(event.damage, 100))) return false;
     }
     if (s.roomEvent != null && (!['sluice', 'lift'].includes(s.roomEvent.kind) || !['ready', 'active', 'complete'].includes(s.roomEvent.stage) || !Array.isArray(s.roomEvent.enemyIds) || s.roomEvent.enemyIds.length > 8 || s.roomEvent.enemyIds.some(id => typeof id !== 'string' || id.length > 100))) return false;
     for (const d of s.decoys) if (!d || typeof d.id !== 'string' || !['p1', 'p2'].includes(d.playerId || d.owner) || !bounded(d.x, 960) || !bounded(d.y, 600) || !bounded(d.ttl, 5)) return false;
@@ -425,8 +440,17 @@
     if (!net || !msg || typeof msg !== 'object') return;
     if (net.role === 'host') {
       if (msg.type === 'input' && Number.isSafeInteger(msg.seq) && msg.seq > remoteSeq) {
-        const input = safeInput(msg.input); if (input) { remoteInput = input; remoteSeq = msg.seq; remoteAt = performance.now(); }
-      } else if (msg.type === 'loadout') remoteWeapon = ['blade', 'scatter'].includes(msg.weapon) ? msg.weapon : 'pistol';
+        const input = safeInput(msg.input);
+        if (input) {
+          // Several packets may arrive before the next fixed step. Keep a fresh
+          // tap until that step consumes it, even when a later packet is keyup.
+          if (performance.now() - remoteAt < 600) {
+            input.switchPulse = input.switchPulse || remoteInput.switchPulse === true;
+            input.guardPulse = input.guardPulse || remoteInput.guardPulse === true;
+          }
+          remoteInput = input; remoteSeq = msg.seq; remoteAt = performance.now();
+        }
+      } else if (msg.type === 'loadout' && !playing() && ['pistol', 'scatter'].includes(msg.weapon)) remoteWeapon = msg.weapon;
     } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && validState(msg.state)) {
       mode = 'guest'; state = msg.state; runId = msg.runId; finished = ''; paused = false; disconnected = false;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
@@ -481,6 +505,9 @@
   }
   $('solo-start').onclick = () => begin(false);
   $('practice-start').onclick = beginPractice;
+  $('start-loadout').addEventListener('change', () => {
+    if (!playing() && net && net.connected && net.role === 'guest') net.send({ type: 'loadout', weapon: selectedWeapon() });
+  });
   $('mode-select').addEventListener('change', updateCamp);
   $('mission-select').addEventListener('change', showMission);
   $('difficulty-select').addEventListener('change', showMission);
@@ -545,9 +572,10 @@
       aimX = nearest ? nearest.x : p.x + Math.cos(p.facing || 0) * 100;
       aimY = nearest ? nearest.y : p.y + Math.sin(p.facing || 0) * 100;
     }
-    return { mx, my, aimX, aimY, shoot: mouse.down || touch.shoot || keys.has('KeyJ'), dash: dashPulse || keys.has('Space') || touch.dash, guard: mouse.guard || touch.guard || keys.has('KeyK'), guardPulse, interact: interactPulse || keys.has('KeyE') || touch.interact };
+    return { mx, my, aimX, aimY, shoot: mouse.down || touch.shoot || keys.has('KeyJ'), dash: dashPulse || keys.has('Space') || touch.dash, guard: mouse.guard || touch.guard || keys.has('KeyK'), guardPulse, interact: interactPulse || keys.has('KeyE') || touch.interact,
+      switchWeapon: keys.has('KeyQ') || touch.switchWeapon, switchPulse };
   }
-  const controlKeys = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyE','KeyJ','KeyK']);
+  const controlKeys = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyE','KeyJ','KeyK','KeyQ']);
   window.addEventListener('keydown', event => {
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
     if (event.code === 'Escape' && !hasDialog()) { event.preventDefault(); if (!event.repeat) pause(!paused); return; }
@@ -556,6 +584,7 @@
       if (!event.repeat && event.code === 'Space') dashPulse = true;
       if (!event.repeat && event.code === 'KeyE') interactPulse = true;
       if (!event.repeat && event.code === 'KeyK') guardPulse = true;
+      if (!event.repeat && event.code === 'KeyQ') switchPulse = true;
     }
   });
   window.addEventListener('keyup', event => keys.delete(event.code));
@@ -592,11 +621,11 @@
   joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickId) moveStick(event); });
   function releaseStick(event) { if (event.pointerId === joystickId) { joystickId = null; touch.mx = touch.my = 0; $('joystick-stick').style.transform = 'translate(0px,0px)'; } }
   joystick.addEventListener('pointerup', releaseStick); joystick.addEventListener('pointercancel', releaseStick);
-  for (const action of ['shoot', 'dash', 'guard', 'interact']) {
-    const button = $('touch-' + action);
-    button.addEventListener('pointerdown', event => { if (!playing() || paused || hasDialog()) return; event.preventDefault(); mouse.active = false; enableAudio(); button.setPointerCapture(event.pointerId); touch[action] = true; if (action === 'dash') dashPulse = true; if (action === 'guard') guardPulse = true; if (action === 'interact') interactPulse = true; });
+  for (const action of ['shoot', 'dash', 'guard', 'interact', 'switchWeapon']) {
+    const button = $('touch-' + (action === 'switchWeapon' ? 'switch' : action));
+    button.addEventListener('pointerdown', event => { if (!playing() || paused || hasDialog()) return; event.preventDefault(); mouse.active = false; enableAudio(); button.setPointerCapture(event.pointerId); touch[action] = true; if (action === 'dash') dashPulse = true; if (action === 'guard') guardPulse = true; if (action === 'interact') interactPulse = true; if (action === 'switchWeapon') switchPulse = true; });
     button.addEventListener('pointerup', () => { touch[action] = false; });
-    button.addEventListener('pointercancel', () => { touch[action] = false; if (action === 'guard') guardPulse = false; });
+    button.addEventListener('pointercancel', () => { touch[action] = false; if (action === 'guard') guardPulse = false; if (action === 'switchWeapon') switchPulse = false; });
   }
   function hud() {
     const p = state && state.players[localId()];
@@ -628,22 +657,32 @@
     $('hud-dash').textContent = p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     $('hud-loot').textContent = `${camp.coins} 星屑`;
     $('hud-team').textContent = state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ? (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
+    const rangedName = p && p.weapons.ranged === 'scatter' ? '散射枪' : '手枪';
+    $('hud-melee').textContent = '短刃';
+    $('hud-ranged').textContent = rangedName + (p && p.rangedBroken ? ' · 已损坏' : '');
+    $('hud-melee').setAttribute('data-active', String(!!p && p.activeSlot === 'melee'));
+    $('hud-ranged').setAttribute('data-active', String(!!p && p.activeSlot === 'ranged'));
+    $('hud-ranged').setAttribute('data-broken', String(!!p && p.rangedBroken));
+    $('hud-quiet').hidden = !p || !p.sneaking;
     const buffs = Object.fromEntries(Object.entries(E.BUFFS).map(([id, buff]) => [id, buff.label]));
-    $('route-progress').textContent = hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次${p && p.guarding && p.moving ? ' · 轻步中' : ''}` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
+    $('route-progress').textContent = hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
     $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
     $('interaction-hint').textContent = hint || ''; $('interaction-hint').hidden = !hint;
     $('touch-controls').hidden = !playing() || paused || hasDialog();
     $('touch-interact').textContent = relay && p && p.carry === state.relay.coreId ? state.room.index === state.relay.extractionRoom && Math.hypot(p.x - 120, p.y - 300) < 76 ? '交' : '掷' : 'E';
     $('touch-interact').setAttribute('aria-label', relay ? '拾取、投掷或交付炉芯' : '互动');
-    $('touch-guard').setAttribute('aria-label', hunt ? '按住轻步或防守招架' : relay ? '接住炉芯或防守招架' : '防守与招架');
+    $('touch-guard').setAttribute('aria-label', relay ? '接住炉芯、格挡与静步' : '格挡与静步');
+    $('touch-shoot').textContent = p && p.activeSlot === 'ranged' ? '射' : '斩';
+    $('touch-switch').disabled = !p || p.rangedBroken;
+    $('touch-switch').setAttribute('aria-label', p && p.rangedBroken ? '远程武器损坏，本局无法切换' : p && p.activeSlot === 'ranged' ? '切换为短刃' : '切换为' + rangedName);
   }
   function frame(now) {
     const delta = last ? Math.min((now - last) / 1000, .1) : 0; last = now;
     if (playing() && !paused && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
       if (mode === 'guest') {
         if (net && net.connected && now - lastSend >= 30) {
-          if (net.send({ type: 'input', input: input(), seq: ++seq })) { dashPulse = guardPulse = interactPulse = false; lastSend = now; }
+          if (net.send({ type: 'input', input: input(), seq: ++seq })) { dashPulse = guardPulse = interactPulse = switchPulse = false; lastSend = now; }
         }
       } else {
         accumulator += delta;
@@ -653,7 +692,8 @@
           E.step(state, commands, 1 / 60); soundEvents();
           // A received tap is consumed once, while held guard remains available to later steps.
           remoteInput.guardPulse = false;
-          dashPulse = guardPulse = interactPulse = false; accumulator -= 1 / 60;
+          remoteInput.switchPulse = false;
+          dashPulse = guardPulse = interactPulse = switchPulse = false; accumulator -= 1 / 60;
         }
       }
     } else accumulator = 0;

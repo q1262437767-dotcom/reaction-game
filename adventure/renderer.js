@@ -353,6 +353,21 @@
     rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
     c.restore();
   }
+  function stowedWeapon(c, p) {
+    // Only the two-slot loadout draws a second weapon; old camp previews keep
+    // their original single-weapon silhouette.
+    if (!p.weapons || !p.weapons.ranged) return;
+    c.save(); c.translate(-14, -5); c.rotate(-.45);
+    if (p.weapon === 'blade') {
+      const length = p.weapons.ranged === 'scatter' ? 17 : 12;
+      rect(c,-3,-12,6,length,'#172b2b');rect(c,-2,-11,4,length-2,p.rangedBroken?'#78665b':'#879a88');
+      rect(c,-2,-1,5,5,'#6e5846');rect(c,-4,-12,8,3,'#b6bea0');
+      if(p.rangedBroken)path(c,[[-5,-9],[4,-2],[-1,-6],[5,-12]],'#e9a083',2);
+    } else {
+      rect(c,-2,-24,4,32,'#263a33');rect(c,-1,-23,2,28,'#b8c7b3');rect(c,-5,5,10,3,'#c5a46b');rect(c,-2,8,4,7,'#786347');
+    }
+    c.restore();
+  }
   function decoy(c, d, time) {
     if (!d || num(d.ttl) <= 0) return;
     const x=num(d.x),y=num(d.y),opacity=Math.min(.42,num(d.ttl)*.6);
@@ -368,7 +383,7 @@
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
     const second = p.id === 'p2' || p.color === '#f08c69', main = second ? '#bb7867' : '#8fae7d', light = second ? '#e1a179' : '#c1d09c', dark = second ? '#805e58' : '#536f56';
     const movement = Math.hypot(num(p.vx), num(p.vy)) > 3 || p.moving;
-    const step = movement ? Math.sin(time * .02) * 2 : Math.sin(time * .0025 + x) * .5;
+    const step = movement ? Math.sin(time * (p.sneaking ? .012 : .02)) * (p.sneaking ? .85 : 2) : Math.sin(time * .0025 + x) * .5;
     const isDash = p.dashing || p.dashTime > 0 || p.dashTimer > 0;
     shadow(c, x, y, num(p.r, 14));
     if (isDash) {
@@ -393,22 +408,30 @@
     rect(c, -12, -8 + step, 4, 11, dark); rect(c, -12, -1 + step, 4, 5, '#cfa57e');
     // Backpack, scarf and a readable silhouette at the small game scale.
     rect(c, -13, -12, 7, 12, '#344f45'); rect(c, -12, -11, 5, 4, '#9f9163');
+    stowedWeapon(c, p);
     rect(c, -5, -15, 12, 6, '#e0b35f'); rect(c, -8, -12, 8, 3, '#c3914d'); rect(c, -7, -9, 4, 8, '#c3914d');
     rect(c, -9, -27, 19, 16, '#122a27'); rect(c, -7, -24, 15, 13, '#ddb48b'); rect(c, -7, -24, 4, 10, '#bd9470'); rect(c, -3, -15, 9, 3, '#c1956e');
     const facing = num(p.facing);
     if (Math.sin(facing) > -.6) { const look = Math.cos(facing) >= 0 ? 2 : -3; rect(c, look, -20, 2, 3, '#263b32'); rect(c, look + 5, -20, 2, 3, '#263b32'); }
     rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main); rect(c, -7, -31, 12, 2, light); rect(c, -12, -23, 25, 4, light); rect(c, -11, -21, 23, 2, dark); rect(c, 4, -30, 3, 6, '#dac783');
     if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
-    else gun(c, 0, -3, facing, p.weapon, '#aebaa0');
+    else gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
     if (p.weapon !== 'blade' && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
       c.save(); c.translate(Math.cos(facing) * (p.weapon === 'scatter' ? 31 : 25), -3 + Math.sin(facing) * (p.weapon === 'scatter' ? 31 : 25)); c.rotate(facing);
       rect(c,-2,-4,10,8,'#f3d496');rect(c,2,-2,10,4,'#fff3c6');rect(c,2,-7,4,14,'#f3d496');c.restore();
     }
     c.restore();
     if (p.guarding) {
-      const ready = p.guardWindow > 0, color = ready ? '#fff1b9' : '#9cb9af';
-      c.strokeStyle = color; c.lineWidth = ready ? 4 : 2; c.beginPath(); c.arc(x, y, 24, facing - .85, facing + .85); c.stroke();
-      if (ready) { c.strokeStyle = '#ffe6a650'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 29, facing - .85, facing + .85); c.stroke(); }
+      const ready = p.guardWindow > 0, ranged = p.weapon !== 'blade', color = ranged ? '#e2af7d' : ready ? '#fff1b9' : '#9cb9af';
+      c.strokeStyle = color; c.lineWidth = ranged ? 2 : ready ? 4 : 2;
+      if(ranged)c.setLineDash([5,5]);
+      c.beginPath(); c.arc(x, y, 24, facing - .85, facing + .85); c.stroke(); c.setLineDash([]);
+      if (ready && !ranged) { c.strokeStyle = '#ffe6a650'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 29, facing - .85, facing + .85); c.stroke(); }
+      else if(ready){c.strokeStyle='#e2af7d66';c.lineWidth=1;c.setLineDash([3,5]);c.beginPath();c.arc(x,y,29,facing-.85,facing+.85);c.stroke();c.setLineDash([]);}
+    }
+    if (p.rangedBroken) {
+      // A compact crossed holster persists after the brief break notification.
+      rect(c,x+19,y-27,12,12,'#27372ee0');path(c,[[x+22,y-24],[x+28,y-18]],'#e9a083',2);path(c,[[x+28,y-24],[x+22,y-18]],'#e9a083',2);
     }
     if (p.counterTime > 0) {
       const color = p.counterKind === 'mikiri' ? '#eac2a2' : p.counterKind === 'dodge' ? '#a8ddd5' : '#f4d58c';
@@ -676,7 +699,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' ? 1 : /^event-|^supply-collected$|^hunt-/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -695,6 +718,18 @@
   function combatEffects(c, events) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (e.type === 'weapon-switch' || e.type === 'weapon-broken' || e.type === 'ranged-block') {
+        const broken=e.type==='weapon-broken',blocked=e.type==='ranged-block',life=broken?1:blocked?.55:.45;
+        if(age>life)continue;
+        const ratio=age/life,x=num(e.x),y=num(e.y),color=broken?'#e9a083':blocked?'#e2af7d':'#c9d8ae';
+        alpha(c,1-ratio,()=>{
+          if(broken){for(const side of [-1,1])path(c,[[x+side*9,y-9],[x+side*(14+ratio*11),y-14-ratio*9]],color,2);}
+          else if(blocked){c.strokeStyle=color;c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.arc(x,y,22+ratio*10,0,Math.PI*2);c.stroke();c.setLineDash([]);}
+          // A break can accompany the same block: show its single useful label.
+          if(!blocked||!e.broken){const name=broken?'远程武器损坏':blocked?'半效格挡':e.weapon==='blade'?'近战 · 旅人短刃':e.weapon==='scatter'?'远程 · 散射枪':'远程 · 手枪';label(c,name,x,y-57-ratio*10,color,broken?12:10);}
+        });
+        continue;
+      }
       if (/^hunt-/.test(e.type)) {
         const won=e.type==='hunt-defeated',life=won?1:.8;
         if(age>life)continue;
