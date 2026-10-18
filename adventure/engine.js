@@ -44,7 +44,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       if (s.combatEvents.length > 24) s.combatEvents.shift();
@@ -133,12 +133,12 @@
   function create(options) {
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
-    var mode = options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
-    var missionId = mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
+    var mode = options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
+    var missionId = mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
     var s = { version: 1, combatVersion: 1, contentVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
-      difficulty: mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
+      difficulty: mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
       runBuffs: [], relicRooms: [], interactables: [], decoys: [], roomEvent: null,
@@ -162,7 +162,8 @@
       s.roomData[0] = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28), rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
         doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
-    } else if (mode === 'relay') createRelay(s);
+    } else if (mode === 'hunt') createHunt(s);
+    else if (mode === 'relay') createRelay(s);
     else if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
     return s;
@@ -205,6 +206,162 @@
       }
       s.roomData[room.index] = data;
     });
+  }
+  function createHunt(s) {
+    var cells = [[0, 0], [1, 0], [2, 0], [2, 1], [1, 1], [0, 1]];
+    var names = ['苔灯哨站', '旧木场', '火药回廊', '苔火猎窝', '断柱庭院', '回声水道'];
+    s.mission.name = '苔火猎场'; s.mission.goal = '循着足迹与声音，击败逐迹巨兽';
+    s.mission.total = 1; s.mission.phase = 'track';
+    s.rooms = cells.map(function (cell, i) {
+      return { index: i, id: 'hunt-' + i, name: names[i], kind: i ? 'hunt' : 'camp',
+        gx: cell[0], gy: cell[1], neighbors: [(i + 5) % 6, (i + 1) % 6],
+        cleared: false, visited: false, discovered: true };
+    });
+    s.hunt = { targetId: '', targetRoom: 3, defeated: false, previousRoom: null,
+      lastSeenRoom: null, lastSeenAt: 0, heardFrom: null, tracks: [],
+      noiseRoom: null, noiseAt: 0, noiseLevel: 0, roamTimer: 6, lures: 0,
+      arrival: null, lastLureAt: 0, stepAt: { p1: 0 } };
+    if (s.players.p2) s.hunt.stepAt.p2 = 0;
+    s.rooms.forEach(function (room) {
+      var data = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28), rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
+        doors: [], portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
+      room.neighbors.forEach(function (next) {
+        var dest = s.rooms[next], dx = dest.gx - room.gx, dy = dest.gy - room.gy;
+        data.portals.push({ id: 'hunt-door-' + room.index + '-' + next,
+          x: dx ? dx > 0 ? 884 : 76 : 480, y: dy ? dy > 0 ? 524 : 76 : 300,
+          r: 27, target: next, active: true, label: names[next] });
+      });
+      // Wide central lanes keep every portal reachable for both the players and
+      // the large hunter. Cover is useful, but never seals a whole corridor.
+      if (room.index % 2) data.walls.push(rect(350, 132, 70, 100), rect(550, 368, 70, 100));
+      else data.walls.push(rect(350, 148, 130, 42), rect(480, 410, 130, 42));
+      data.props.push(prop(s, 'barrel', 660, 270), prop(s, 'barrel', 300, 330), prop(s, 'crate', 480, 225));
+      if (room.index === 2 || room.index === 5) data.enemies.push(enemy(s, 'chaser', 700, 435));
+      if (room.index === 0 || room.index === 3 || room.index === 5) {
+        data.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 345, r: 14, amount: 2 });
+      }
+      if (room.index === 3) {
+        var target = enemy(s, 'brute', 690, 300);
+        target.huntTarget = true; target.name = '逐迹巨兽'; target.elite = true;
+        target.hp = target.maxHp = s.playerCount > 1 ? 54 : 38;
+        target.speed = 82; target.attackCd = 1.1;
+        data.enemies.push(target); s.hunt.targetId = target.id;
+      }
+      data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
+      s.roomData[room.index] = data;
+    });
+    // An old, readable trail gives the first hunt a direction before the beast
+    // starts roaming. New tracks later reveal its actual path, not its future.
+    [0, 1, 2].forEach(function (from) { huntTrack(s, from, from + 1, from); });
+  }
+  function huntDistance(s, from, to) {
+    var queue = [{ room: from, distance: 0 }], seen = {};
+    seen[from] = true;
+    for (var i = 0; i < queue.length; i += 1) {
+      var current = queue[i];
+      if (current.room === to) return current.distance;
+      s.rooms[current.room].neighbors.forEach(function (next) {
+        if (!seen[next]) { seen[next] = true; queue.push({ room: next, distance: current.distance + 1 }); }
+      });
+    }
+    return Infinity;
+  }
+  function huntTrack(s, from, to, roomIndex) {
+    var source = s.rooms[from], dest = s.rooms[to], room = s.rooms[roomIndex];
+    var dx = dest.gx - source.gx, dy = dest.gy - source.gy;
+    var entering = roomIndex === to;
+    var x = dx ? dx > 0 ? entering ? 132 : 828 : entering ? 828 : 132 : 480;
+    var y = dy ? dy > 0 ? entering ? 132 : 468 : entering ? 468 : 132 : 300;
+    if (!room || room.neighbors.indexOf(entering ? from : to) < 0) return;
+    s.hunt.tracks.push({ room: roomIndex, from: from, to: to, x: x, y: y, time: s.time });
+    if (s.hunt.tracks.length > 24) s.hunt.tracks.shift();
+  }
+  function huntNoise(s, level, x, y) {
+    if (s.mode !== 'hunt' || s.hunt.defeated || s.status !== 'playing') return;
+    var run = s.hunt, room = s.room.index;
+    if (huntDistance(s, run.targetRoom, room) > level) return;
+    // Nearby footsteps cannot erase a shot or explosion from the next room.
+    if (level < run.noiseLevel && s.time - run.noiseAt < 2.2) return;
+    var newLure = level >= 2 && run.targetRoom !== room &&
+      (run.noiseRoom !== room || s.time - run.lastLureAt >= 5);
+    run.noiseRoom = room; run.noiseAt = s.time; run.noiseLevel = level;
+    if (newLure) {
+      run.lures += 1; run.lastLureAt = s.time;
+      event(s, 'hunt-lured', { room: room, x: x, y: y, level: level });
+    }
+  }
+  function huntEnemy(s) {
+    var data = s.hunt.targetRoom === s.room.index ? s : s.roomData[s.hunt.targetRoom];
+    return data && data.enemies.find(function (e) { return e.id === s.hunt.targetId && e.huntTarget && e.hp > 0; });
+  }
+  function moveHunter(s, to) {
+    var run = s.hunt, from = run.targetRoom;
+    if (from === s.room.index || s.rooms[from].neighbors.indexOf(to) < 0) return false;
+    var source = s.roomData[from], destination = to === s.room.index ? s : s.roomData[to];
+    var target = huntEnemy(s);
+    if (!source || !destination || !target) return false;
+    var oldX = target.x, oldY = target.y;
+    var dx = s.rooms[to].gx - s.rooms[from].gx, dy = s.rooms[to].gy - s.rooms[from].gy;
+    target.x = dx ? dx > 0 ? 122 : W - 122 : 480;
+    target.y = dy ? dy > 0 ? 122 : H - 122 : 300;
+    if (!placeEnemyInRoom(destination, target, to === s.room.index ? alivePlayers(s) : [])) {
+      target.x = oldX; target.y = oldY; return false;
+    }
+    source.enemies = source.enemies.filter(function (e) { return e.id !== target.id; });
+    target.rhythm = null; target.windup = 0; target.chargeTime = 0; target.stagger = 0;
+    target.attackCd = 1.25; target.navTime = 0; target.navX = target.x; target.navY = target.y;
+    destination.enemies.push(target);
+    run.previousRoom = from; run.targetRoom = to; run.roamTimer = 6; run.arrival = null;
+    huntTrack(s, from, to, from); huntTrack(s, from, to, to);
+    run.heardFrom = s.rooms[s.room.index].neighbors.indexOf(to) >= 0 ? to : null;
+    if (to === s.room.index) {
+      if (alivePlayers(s).some(function (p) { return lineClear(s, p, target, 2); })) {
+        run.lastSeenRoom = to; run.lastSeenAt = s.time;
+      }
+      run.heardFrom = null;
+      s.message = '逐迹巨兽循声而至'; s.messageTime = 2;
+    }
+    return true;
+  }
+  function updateHunt(s, dt) {
+    if (s.mode !== 'hunt' || s.hunt.defeated || s.status !== 'playing') return;
+    var run = s.hunt, target = huntEnemy(s);
+    run.tracks = run.tracks.filter(function (track) { return s.time - track.time < 90; }).slice(-24);
+    if (s.time - run.noiseAt > 8) { run.noiseRoom = null; run.noiseLevel = 0; }
+    if (!target) return;
+    if (run.targetRoom === s.room.index) {
+      run.arrival = null; run.roamTimer = 6; run.heardFrom = null;
+      if (alivePlayers(s).some(function (p) { return lineClear(s, p, target, 2); })) {
+        run.lastSeenRoom = s.room.index; run.lastSeenAt = s.time;
+      }
+      return;
+    }
+    if (run.heardFrom !== null && s.rooms[s.room.index].neighbors.indexOf(run.heardFrom) < 0) run.heardFrom = null;
+    if (run.arrival) {
+      run.arrival.remaining = Math.max(0, run.arrival.remaining - dt);
+      if (run.arrival.remaining <= 0) moveHunter(s, run.arrival.to);
+      return;
+    }
+    run.roamTimer = Math.max(0, run.roamTimer - dt);
+    if (run.roamTimer > 0) return;
+    var neighbors = s.rooms[run.targetRoom].neighbors;
+    var destination;
+    if (run.noiseRoom !== null && run.noiseRoom !== run.targetRoom && s.time - run.noiseAt <= 8) {
+      destination = neighbors.slice().sort(function (a, b) {
+        return huntDistance(s, a, run.noiseRoom) - huntDistance(s, b, run.noiseRoom) || a - b;
+      })[0];
+    } else {
+      var options = neighbors.filter(function (n) { return n !== run.previousRoom; });
+      destination = options[Math.floor(random(s) * options.length)];
+    }
+    if (destination === s.room.index) {
+      var door = s.portals.find(function (gate) { return gate.target === run.targetRoom; });
+      run.arrival = { from: run.targetRoom, to: destination, remaining: 1.15, duration: 1.15 };
+      run.heardFrom = run.targetRoom;
+      s.message = '门后传来沉重脚步'; s.messageTime = 1.2;
+      event(s, 'hunt-arrival', { from: run.targetRoom, to: destination, room: destination,
+        x: door ? door.x : 480, y: door ? door.y : 300, duration: 1.15 });
+    } else moveHunter(s, destination);
   }
   function createExploration(s) {
     // A small polyomino begins with one loop, then grows in a different shape
@@ -497,6 +654,7 @@
     index = Number(index);
     if (!Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
     var previous = s.room;
+    if (s.mode === 'hunt' && !initial && (!previous || previous.neighbors.indexOf(index) < 0)) return false;
     if ((s.mode === 'random' || s.mode === 'relay') && !initial) {
       if (!previous || previous.neighbors.indexOf(index) < 0) return false;
       // A carried object belongs to its original room. Place it safely before
@@ -513,7 +671,7 @@
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
-    if (s.mode === 'relay') delete s.roomData[index];
+    if (s.mode === 'relay' || s.mode === 'hunt') delete s.roomData[index];
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
@@ -527,7 +685,7 @@
       var p = s.players[key]; p.x = 130; p.y = 275 + i * 52;
       resetCombat(p);
       if (s.practice) { p.x = 390; p.y = 300 + i * 48; p.facing = 0; }
-      if (s.mode === 'random' || s.mode === 'relay') {
+      if (s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt') {
         var dx = previous ? s.rooms[index].gx - previous.gx : 0;
         var dy = previous ? s.rooms[index].gy - previous.gy : 0;
         p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
@@ -537,6 +695,15 @@
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
     if (s.mode === 'relay' && s.props.some(function (q) { return q.id === s.relay.coreId; })) s.relay.coreRoom = index;
+    if (s.mode === 'hunt') {
+      if (s.hunt.targetRoom === index) {
+        s.hunt.arrival = null; s.hunt.heardFrom = null;
+        var seen = huntEnemy(s);
+        if (seen && alivePlayers(s).some(function (p) { return lineClear(s, p, seen, 2); })) {
+          s.hunt.lastSeenRoom = index; s.hunt.lastSeenAt = s.time;
+        }
+      } else if (s.hunt.heardFrom !== null && s.room.neighbors.indexOf(s.hunt.heardFrom) < 0) s.hunt.heardFrom = null;
+    }
     updateCarries(s); refreshProgress(s);
     event(s, 'room-enter', { room: index, name: s.room.name });
     s.message = s.room.name; s.messageTime = 2;
@@ -545,6 +712,10 @@
   function setHint(s) {
     if (s.status !== 'playing') return;
     if (s.practice) { s.objective = '击败持刀守卫'; s.hint = ''; return; }
+    if (s.mode === 'hunt') {
+      s.objective = s.hunt.targetRoom === s.room.index ? '击败逐迹巨兽' : '追踪逐迹巨兽';
+      s.hint = ''; return;
+    }
     if (s.mode === 'relay') {
       var carrier = alivePlayers(s).find(function (p) { return p.carry === s.relay.coreId; });
       s.objective = carrier ? '带回炉芯 · 苔灯撤离站交付' : '找到炉芯 · ' + s.rooms[s.relay.coreRoom].name;
@@ -638,6 +809,11 @@
   function syncMission(s) {
     var m = s.mission;
     if (s.status !== 'playing') return;
+    if (s.mode === 'hunt') {
+      m.progress = s.hunt.defeated ? 1 : 0; m.total = 1;
+      m.phase = s.hunt.targetRoom === s.room.index ? 'hunt' : 'track';
+      return;
+    }
     if (s.mode === 'relay') {
       m.progress = s.relay.delivered ? 1 : 0; m.total = 1;
       m.phase = alivePlayers(s).some(function (p) { return p.carry === s.relay.coreId; }) ? 'extract' : 'search';
@@ -754,6 +930,18 @@
       if (s.room.cleared && s.status === 'playing') finish(s, 'won');
       setHint(s); return;
     }
+    if (s.mode === 'hunt') {
+      var clearHuntRoom = !s.enemies.some(function (e) { return e.hp > 0; });
+      if (clearHuntRoom && !s.rooms[s.room.index].cleared) {
+        s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
+      }
+      s.room.cleared = s.rooms[s.room.index].cleared;
+      s.portals.forEach(function (gate) { gate.active = true; });
+      s.doors.forEach(function (door) { door.locked = false; });
+      syncMission(s); setHint(s);
+      if (s.hunt.defeated && s.status === 'playing') finish(s, 'won');
+      return;
+    }
     if (s.mode === 'relay') {
       if (!s.enemies.some(function (e) { return e.hp > 0; }) && !s.rooms[s.room.index].cleared) {
         s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
@@ -815,7 +1003,7 @@
     if (status === 'won' && !s.rewardGranted) {
       s.rewardGranted = true;
       s.mission.phase = 'complete'; s.mission.progress = s.mission.total;
-      s.reward = { coins: s.mode === 'relay' ? 24 : MISSIONS[s.mission.id].coins + (s.secretCleared ? 12 : 0) + (s.difficulty === 2 ? 20 : 0),
+      s.reward = { coins: s.mode === 'hunt' ? 32 : s.mode === 'relay' ? 24 : MISSIONS[s.mission.id].coins + (s.secretCleared ? 12 : 0) + (s.difficulty === 2 ? 20 : 0),
         missionId: s.mission.id, difficulty: s.difficulty,
         secret: s.secretCleared, elapsed: Math.round(s.elapsed), kills: s.stats.kills };
       event(s, 'reward', clone(s.reward));
@@ -1016,6 +1204,10 @@
       if (s.players[owner]) s.players[owner].kills += 1;
       burst(s, 'enemy-death', e.x, e.y, e.kind === 'boss' ? '#ffc477' : '#ec9c8d', 12);
       event(s, 'enemy-killed', { enemyId: e.id, kind: e.kind, playerId: owner || null });
+      if (s.mode === 'hunt' && e.huntTarget && e.id === s.hunt.targetId) {
+        s.hunt.defeated = true; s.hunt.arrival = null; s.hunt.heardFrom = null;
+        event(s, 'hunt-defeated', { enemyId: e.id, room: s.room.index, x: e.x, y: e.y });
+      }
       if (s.mode === 'random') {
         if (e.kind === 'boss') s.exploration.bossDefeated = true;
         else {
@@ -1047,7 +1239,12 @@
     particle(s, 'explosion', barrel.x, barrel.y, { r: 112, ttl: 0.48, life: 0.48, color: '#ffb256' });
     burst(s, 'spark', barrel.x, barrel.y, '#ffbd69', 22);
     event(s, 'explosion', { x: barrel.x, y: barrel.y });
-    s.enemies.forEach(function (e) { if (dist(e, barrel) < 112 + e.r) damageEnemy(s, e, 8, owner); });
+    huntNoise(s, 3, barrel.x, barrel.y);
+    s.enemies.forEach(function (e) {
+      if (dist(e, barrel) >= 112 + e.r) return;
+      damageEnemy(s, e, 8, owner);
+      if (e.huntTarget && e.hp > 0) { e.stagger = 1.2; e.rhythm = null; e.chargeTime = 0; e.attackCd = 1; }
+    });
     s.props.forEach(function (p) {
       if (p !== barrel && p.kind === 'barrel' && !p.destroyed && dist(p, barrel) < 110) {
         p.lit = true; p.fuse = p.fuse > 0 ? Math.min(p.fuse, 0.15) : 0.15;
@@ -1069,6 +1266,7 @@
     }
     p.fireCd = scatter ? 0.54 : 0.205;
     event(s, 'shoot', { playerId: p.id, weapon: p.weapon, x: p.x, y: p.y });
+    huntNoise(s, 2, p.x, p.y);
   }
   function hostileBullet(s, e, a, speed, radius) {
     speed *= s.difficulty === 2 ? 1.1 : 1;
@@ -1269,7 +1467,7 @@
     }
     e.attackCd -= dt;
     var distance = dist(e, target), boss = e.kind === 'boss';
-    var type = e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
+    var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
       ['combo', 'thrust', boss && (s.mode !== 'random' || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
     // A telegraph must start within the strike's reach. Previously a stationary
@@ -1335,6 +1533,7 @@
       else { q.hp -= 3; if (q.hp <= 0) q.destroyed = true; }
     });
     event(s, 'shoot', { playerId: p.id, weapon: 'blade', x: p.x, y: p.y });
+    huntNoise(s, 2, p.x, p.y);
     return true;
   }
   function updateEnemies(s, dt) {
@@ -1637,7 +1836,7 @@
     if (s.mode === 'relay' && s.props.some(function (q) { return q.kind === 'core' && q.thrown && dist(p, q) < 190; })) return 'K / 右键 · 接住炉芯';
     var gate = s.portals.find(function (g) { return g.active && dist(p, g) < 85; });
     if (gate) return '踏入光门 / E · ' + gate.label;
-    return s.mode === 'random' || s.mode === 'relay' ? '' : s.hint;
+    return s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' ? '' : s.hint;
   }
   function step(s, inputs, dt) {
     if (!s || s.status !== 'playing') return s;
@@ -1684,6 +1883,7 @@
         p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.3);
         p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.28; p.guarding = false; p.guardWindow = 0;
         event(s, 'dash', { playerId: key, x: p.x, y: p.y });
+        huntNoise(s, 2, p.x, p.y);
       }
       if (p.dashTime > 0) {
         p.dashTime = Math.max(0, p.dashTime - dt);
@@ -1704,10 +1904,13 @@
       }
       p.vx = dt > 0 ? (p.x - oldX) / dt : 0; p.vy = dt > 0 ? (p.y - oldY) / dt : 0;
       p.moving = Math.abs(p.vx) + Math.abs(p.vy) > 1;
+      if (s.mode === 'hunt' && p.moving && !p.guarding && p.dashTime <= 0 && s.time - (s.hunt.stepAt[key] || 0) >= 0.85) {
+        s.hunt.stepAt[key] = s.time; huntNoise(s, 1, p.x, p.y);
+      }
       if (interactEdge) interact(s, key);
     });
     if (s.room.index !== roomBefore) return s;
-    updateCarries(s); updateProps(s, dt); updateEnemies(s, dt); updateBullets(s, dt);
+    updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateEnemies(s, dt); updateBullets(s, dt);
     if (s.status !== 'playing') return s;
     alivePlayers(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');

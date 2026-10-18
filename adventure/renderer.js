@@ -497,6 +497,12 @@
       rect(c,-20,2,40,6,'#626f50');rect(c,-4,1,8,9,'#d0b573');
       if(attack.type==='quake'&&attack.phase==='windup'){rect(c,-28,-42,8,23,'#7f8864');rect(c,20,-42,8,23,'#7f8864');rect(c,-33,-51,18,12,'#c4b17e');rect(c,15,-51,18,12,'#c4b17e');}
       if(staggered){path(c,[[-24,-51],[-30,-58]],'#edcf8d',2);path(c,[[22,-53],[29,-58]],'#edcf8d',2);}
+      if(e.huntTarget){
+        // A broken red crest marks the quarry without changing its collision body.
+        rect(c,-10,-46,20,5,'#713d35');rect(c,-7,-51,14,6,'#b8674b');rect(c,-3,-57,6,9,'#e5aa73');
+        path(c,[[-19,-19],[-10,-13],[-16,-2]],'#d69362',3);path(c,[[17,-20],[10,-14],[15,-6]],'#c7895d',3);
+        rect(c,-7,-34,4,3,'#eabd84');rect(c,4,-34,4,3,'#eabd84');
+      }
     } else if (kind === 'pyromancer') {
       const attack=e.rhythm||{},casting=attack.phase==='windup';
       c.fillStyle='#233a33';c.beginPath();c.moveTo(-9,-23);c.lineTo(10,-23);c.lineTo(19,16);c.lineTo(-18,16);c.closePath();c.fill();
@@ -545,7 +551,7 @@
     if (e.elite && !boss) {
       const crownY = y - 64;
       path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
-      label(c, {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司'}[kind] || '精英', x, crownY - 15, '#ebcf8e', 8);
+      label(c, e.huntTarget ? '逐迹巨兽' : {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司'}[kind] || '精英', x, crownY - 15, e.huntTarget ? '#e7b18a' : '#ebcf8e', 8);
     }
     if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
   }
@@ -670,7 +676,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' ? 1 : /^event-|^supply-collected$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' ? 1 : /^event-|^supply-collected$|^hunt-/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -689,6 +695,17 @@
   function combatEffects(c, events) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (/^hunt-/.test(e.type)) {
+        const won=e.type==='hunt-defeated',life=won?1:.8;
+        if(age>life)continue;
+        const ratio=age/life,x=num(e.x),y=num(e.y),color=won?'#d4deb0':e.type==='hunt-lured'?'#e9c285':'#dfad83';
+        alpha(c,1-ratio,()=>{
+          c.strokeStyle=color;c.lineWidth=won?2:1;c.beginPath();c.ellipse(x,y,18+ratio*(won?65:31),10+ratio*(won?32:15),0,0,Math.PI*2);c.stroke();
+          const name=won?'狩猎完成':e.type==='hunt-lured'?'巨兽循声而来':'沉重脚步逼近';
+          label(c,name,x,y-59-ratio*12,color,won?15:11);
+        });
+        continue;
+      }
       if (/^core-/.test(e.type)) {
         const delivered=e.type==='core-deliver',caught=e.type==='core-catch',perfect=caught&&e.perfect,life=delivered?1:.58;
         if(age>life)continue;
@@ -775,8 +792,104 @@
     label(c,`${rooms.filter(room=>room.visited).length} / ${rooms.length}`,left+width-12,top+height-12,'#92a38a',8,'right');
     c.restore();
   }
+  function huntTracks(c, state) {
+    if(state.mode!=='hunt'||!state.hunt)return;
+    const current=state.room&&state.room.index,run=state.hunt,rooms=values(state.rooms),time=num(state.time);
+    const tracks=values(run.tracks).filter(track=>track.room===current&&num(track.time)<=time);
+    for(const track of tracks){
+      const from=rooms.find(room=>room.index===track.from),to=rooms.find(room=>room.index===track.to);
+      if(!from||!to)continue;
+      const dx=num(to.gx)-num(from.gx),dy=num(to.gy)-num(from.gy);
+      if(!dx&&!dy)continue;
+      const angle=Math.atan2(dy,dx),age=Math.max(0,time-num(track.time)),strength=Math.max(.22,.64-age*.004);
+      c.save();c.translate(Math.max(44,Math.min(W-44,num(track.x))),Math.max(44,Math.min(H-44,num(track.y))));c.rotate(angle);
+      alpha(c,strength,()=>{
+        for(let i=0;i<3;i++){
+          ellipse(c,-19+i*16,(i%2?-1:1)*6,6,3.4,'#ba9369');
+          rect(c,-15+i*16,(i%2?-1:1)*6-2,3,4,'#d3ac7a');
+        }
+      });
+      c.restore();
+    }
+    // Hearing reveals the doorway that made the sound, never a remote position.
+    const arrival=run.arrival&&run.arrival.to===current?run.arrival:null;
+    const heard=arrival?arrival.from:run.heardFrom;
+    const doorway=values(state.portals).find(portal=>portal.target===heard);
+    if(doorway&&!run.defeated&&heard!==null&&heard!==undefined){
+      const x=num(doorway.x),y=num(doorway.y),room=rooms.find(value=>value.index===current),other=rooms.find(value=>value.index===heard);
+      const dx=room&&other?num(room.gx)-num(other.gx):W/2-x,dy=room&&other?num(room.gy)-num(other.gy):H/2-y;
+      const angle=Math.atan2(dy,dx);
+      c.save();c.translate(x,y);c.rotate(angle);
+      for(let i=0;i<3;i++){
+        c.strokeStyle=i===0?'#efc797':'#c69c7190';c.lineWidth=i===0?2:1;
+        c.beginPath();c.arc(5+i*10,0,13+i*5,-.65,.65);c.stroke();
+      }
+      c.restore();
+      const inwardX=x+Math.cos(angle)*50,inwardY=y+Math.sin(angle)*50;
+      label(c,arrival?'巨兽将至':'沉重脚步',inwardX,Math.max(46,Math.min(H-38,inwardY-33)),'#e7ba8b',10);
+      if(arrival){
+        const ratio=1-Math.max(0,Math.min(1,num(arrival.remaining)/Math.max(.01,num(arrival.duration,1.15))));
+        bar(c,inwardX,Math.max(53,Math.min(H-26,inwardY-19)),38,ratio,'#e4ad7c',3);
+      }
+    }
+  }
+  function huntStatus(c,state){
+    if(state.mode!=='hunt'||!state.hunt)return;
+    const target=values(state.enemies).find(enemy=>enemy.huntTarget&&enemy.hp>0&&!enemy.dead);
+    if(!target)return;
+    const x=W/2;
+    rect(c,x-136,18,272,61,'#102523e8');c.strokeStyle='#b77d5e70';c.lineWidth=1;c.strokeRect(x-135.5,18.5,271,60);
+    label(c,'逐迹巨兽',x,31,'#e7b18a',12);
+    bar(c,x,49,234,num(target.hp)/Math.max(1,num(target.maxHp,1)),'#c58d67',6);
+    label(c,`${Math.max(0,Math.ceil(num(target.hp)))} / ${Math.max(1,Math.ceil(num(target.maxHp,1)))}`,x,66,'#dfc8a7',9);
+  }
+  function huntMap(c,state){
+    if(state.practice||!state.hunt||!Array.isArray(state.rooms))return;
+    const rooms=state.rooms.filter(room=>Number.isFinite(room.gx)&&Number.isFinite(room.gy));
+    if(!rooms.length)return;
+    const run=state.hunt,current=state.room&&state.room.index,visible=rooms.filter(room=>room.visited||room.discovered),time=num(state.time);
+    const left=752,top=18,width=190,height=164,minX=Math.min(...rooms.map(room=>room.gx)),maxX=Math.max(...rooms.map(room=>room.gx)),minY=Math.min(...rooms.map(room=>room.gy)),maxY=Math.max(...rooms.map(room=>room.gy));
+    const spacing=Math.min(44,140/Math.max(1,maxX-minX),67/Math.max(1,maxY-minY));
+    const points=new Map(visible.map(room=>[room.index,{x:left+width/2+(room.gx-(minX+maxX)/2)*spacing,y:top+77+(room.gy-(minY+maxY)/2)*spacing,room}]));
+    const targetVisible=values(state.enemies).some(enemy=>enemy.huntTarget&&enemy.hp>0&&!enemy.dead),lastSeen=run.lastSeenRoom===null||run.lastSeenRoom===undefined?null:points.get(run.lastSeenRoom);
+    c.save();rect(c,left,top,width,height,'#102523e8');c.strokeStyle='#71886865';c.lineWidth=1;c.strokeRect(left+.5,top+.5,width-1,height-1);
+    label(c,'苔火猎场',left+12,top+14,'#d8bb93',10,'left');
+    label(c,run.defeated?'狩猎完成':targetVisible?'猎物在场':'追踪巨兽',left+width-12,top+14,run.defeated?'#bed9ad':'#d7b48d',8,'right');
+    for(const room of visible){
+      const point=points.get(room.index);
+      for(const adjacent of values(room.neighbors)){
+        const next=points.get(adjacent);
+        if(next&&adjacent>room.index)path(c,[[point.x,point.y],[next.x,next.y]],room.visited&&next.room.visited?'#7b9270aa':'#70866a55',2);
+      }
+    }
+    for(const room of visible){
+      const point=points.get(room.index),active=room.index===current,size=active?15:12;
+      rect(c,point.x-size/2-2,point.y-size/2-2,size+4,size+4,'#102523');rect(c,point.x-size/2,point.y-size/2,size,size,active?'#d9dca6':room.visited?'#657f63':'#203a32');
+      c.strokeStyle=active?'#f2e4ad':'#7c927477';c.lineWidth=active?2:1;c.strokeRect(Math.round(point.x-size/2)+.5,Math.round(point.y-size/2)+.5,size,size);
+      if(active)rect(c,point.x-2,point.y-2,4,4,'#20372e');
+    }
+    // The server's actual targetRoom is deliberately not consulted by this map.
+    if(lastSeen&&!run.defeated){
+      c.strokeStyle='#df9c73';c.lineWidth=2;c.beginPath();c.arc(lastSeen.x,lastSeen.y,11,0,Math.PI*2);c.stroke();
+      label(c,targetVisible&&run.lastSeenRoom===current?'在场':'目击',lastSeen.x,lastSeen.y-19,'#dfad82',8);
+    }
+    const arrival=run.arrival&&run.arrival.to===current?run.arrival:null,heard=arrival?arrival.from:run.heardFrom,from=points.get(current),toward=points.get(heard);
+    const currentRoom=rooms.find(room=>room.index===current);
+    if(from&&toward&&!run.defeated&&values(currentRoom&&currentRoom.neighbors).includes(heard)){
+      const x=(from.x+toward.x)/2,y=(from.y+toward.y)/2,angle=Math.atan2(toward.y-from.y,toward.x-from.x);
+      c.save();c.translate(x,y);c.rotate(angle);path(c,[[-4,-4],[1,0],[-4,4]],'#efc797',2);c.restore();
+    }
+    const seenAge=Math.max(0,Math.floor(time-num(run.lastSeenAt))),caption=run.defeated?'猎场已肃清':arrival?'沉重脚步正在逼近':heard!==null&&heard!==undefined?'邻室传来沉重脚步':targetVisible?'目标就在这里':lastSeen?`目击 · ${seenAge} 秒前`:'寻找足迹与脚步';
+    label(c,caption,left+12,top+height-38,'#c4c7a5',9,'left');
+    const audible=run.noiseRoom===current&&time-num(run.noiseAt)<=1.5?Math.max(0,Math.min(3,Math.floor(num(run.noiseLevel)))):0;
+    const noiseText=['静谧','轻微脚步','交战声响','巨响回荡'][audible],noiseColor=audible>=2?'#e2b587':'#a5bd9a';
+    label(c,noiseText,left+12,top+height-14,noiseColor,8,'left');
+    for(let i=0;i<3;i++)rect(c,left+width-37+i*8,top+height-16-i*2,5,4+i*2,i<audible?noiseColor:'#415c4d');
+    c.restore();
+  }
   function minimap(c, state) {
     if (state.mode === 'relay') { relayMap(c, state); return; }
+    if (state.mode === 'hunt') { huntMap(c, state); return; }
     if (state.practice || state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
@@ -840,6 +953,7 @@
     values(state.walls).forEach(w => wall(c, w));
     values(state.doors).forEach(d => door(c, d, time));
     values(state.portals).forEach(p => portal(c, p, time));
+    huntTracks(c,state);
     values(state.switches).forEach(s => pressureSwitch(c, s, time));
     values(state.fountains).forEach(f => fountain(c, f, time));
     values(state.fires).forEach(f => fire(c, f, time));
@@ -865,6 +979,7 @@
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
     practiceStatus(c,state);
+    huntStatus(c,state);
     minimap(c, state);
     c.restore();
   }

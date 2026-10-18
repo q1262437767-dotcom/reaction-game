@@ -95,17 +95,20 @@
     // A guest can accompany a host on a mission not yet unlocked in their own camp.
     // Selection locks belong to canPlay; a valid completed expedition still counts.
     if (!mission || (difficulty !== 1 && difficulty !== 2)) return result;
-    // The relay prototype shares the existing save format, but has its own reward.
-    // Its completion never lights story lamps or unlocks later story missions.
-    if (state.mode === 'relay') {
-      var relay = object(state.relay);
-      if (missionId !== 'salvage' || difficulty !== 1 || typeof relay.coreId !== 'string' || !relay.coreId ||
-          typeof relay.delivered !== 'boolean' || relay.delivered !== (state.status === 'won')) return result;
+    // Standalone modes share the existing save format and have their own rewards.
+    // Their completion never lights story lamps or unlocks later story missions.
+    if (state.mode === 'relay' || state.mode === 'hunt') {
+      var standalone = object(state[state.mode]);
+      var identity = state.mode === 'hunt' ? standalone.targetId : standalone.coreId;
+      var complete = state.mode === 'hunt' ? standalone.defeated : standalone.delivered;
+      var rewardCap = state.mode === 'hunt' ? 32 : 24;
+      if (missionId !== 'salvage' || difficulty !== 1 || typeof identity !== 'string' || !identity ||
+          typeof complete !== 'boolean' || complete !== (state.status === 'won')) return result;
       p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80);
       p.runs = Math.min(LIMIT, p.runs + 1);
       if (state.status === 'won') {
-        var relayCoins = object(state.reward).coins;
-        result.reward = typeof relayCoins === 'number' && Number.isFinite(relayCoins) ? Math.min(24, count(relayCoins)) : 24;
+        var standaloneCoins = object(state.reward).coins;
+        result.reward = typeof standaloneCoins === 'number' && Number.isFinite(standaloneCoins) ? Math.min(rewardCap, count(standaloneCoins)) : rewardCap;
         p.coins = Math.min(LIMIT, p.coins + result.reward);
         p.wins = Math.min(LIMIT, p.wins + 1);
       }
