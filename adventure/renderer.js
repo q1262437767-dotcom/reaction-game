@@ -353,21 +353,6 @@
     rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
     c.restore();
   }
-  function stowedWeapon(c, p) {
-    // Only the two-slot loadout draws a second weapon; old camp previews keep
-    // their original single-weapon silhouette.
-    if (!p.weapons || !p.weapons.ranged) return;
-    c.save(); c.translate(-14, -5); c.rotate(-.45);
-    if (p.weapon === 'blade') {
-      const length = p.weapons.ranged === 'scatter' ? 17 : 12;
-      rect(c,-3,-12,6,length,'#172b2b');rect(c,-2,-11,4,length-2,p.rangedBroken?'#78665b':'#879a88');
-      rect(c,-2,-1,5,5,'#6e5846');rect(c,-4,-12,8,3,'#b6bea0');
-      if(p.rangedBroken)path(c,[[-5,-9],[4,-2],[-1,-6],[5,-12]],'#e9a083',2);
-    } else {
-      rect(c,-2,-24,4,32,'#263a33');rect(c,-1,-23,2,28,'#b8c7b3');rect(c,-5,5,10,3,'#c5a46b');rect(c,-2,8,4,7,'#786347');
-    }
-    c.restore();
-  }
   function decoy(c, d, time) {
     if (!d || num(d.ttl) <= 0) return;
     const x=num(d.x),y=num(d.y),opacity=Math.min(.42,num(d.ttl)*.6);
@@ -408,7 +393,6 @@
     rect(c, -12, -8 + step, 4, 11, dark); rect(c, -12, -1 + step, 4, 5, '#cfa57e');
     // Backpack, scarf and a readable silhouette at the small game scale.
     rect(c, -13, -12, 7, 12, '#344f45'); rect(c, -12, -11, 5, 4, '#9f9163');
-    stowedWeapon(c, p);
     rect(c, -5, -15, 12, 6, '#e0b35f'); rect(c, -8, -12, 8, 3, '#c3914d'); rect(c, -7, -9, 4, 8, '#c3914d');
     rect(c, -9, -27, 19, 16, '#122a27'); rect(c, -7, -24, 15, 13, '#ddb48b'); rect(c, -7, -24, 4, 10, '#bd9470'); rect(c, -3, -15, 9, 3, '#c1956e');
     const facing = num(p.facing);
@@ -432,10 +416,6 @@
       c.beginPath(); c.arc(x, y, 24, facing - .85, facing + .85); c.stroke(); c.setLineDash([]);
       if (ready && !ranged) { c.strokeStyle = '#ffe6a650'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 29, facing - .85, facing + .85); c.stroke(); }
       else if(ready){c.strokeStyle='#e2af7d66';c.lineWidth=1;c.setLineDash([3,5]);c.beginPath();c.arc(x,y,29,facing-.85,facing+.85);c.stroke();c.setLineDash([]);}
-    }
-    if (p.rangedBroken) {
-      // A compact crossed holster persists after the brief break notification.
-      rect(c,x+19,y-27,12,12,'#27372ee0');path(c,[[x+22,y-24],[x+28,y-18]],'#e9a083',2);path(c,[[x+28,y-24],[x+22,y-18]],'#e9a083',2);
     }
     if (p.counterTime > 0) {
       const color = p.counterKind === 'mikiri' ? '#eac2a2' : p.counterKind === 'dodge' ? '#a8ddd5' : '#f4d58c';
