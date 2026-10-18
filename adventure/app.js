@@ -20,6 +20,8 @@
   const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
   let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
+  let menuScreen = 'title';
+  const dialogIds = ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog', 'settings-dialog'];
   const blank = () => C.normalize(null);
   function readCamp() {
     if (account) return account.readLocal();
@@ -37,7 +39,7 @@
   camp = readCamp();
   const localId = () => mode === 'guest' ? 'p2' : 'p1';
   const playing = () => !!state && state.status === 'playing';
-  const hasDialog = () => ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog'].some(id => $(id).open);
+  const hasDialog = () => dialogIds.some(id => $(id).open);
   function toast(message, duration = 3800) {
     $('toast').textContent = message; $('toast').hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, duration);
@@ -48,6 +50,40 @@
     dashPulse = guardPulse = interactPulse = switchPulse = false;
     $('joystick-stick').style.transform = 'translate(0px,0px)';
     remoteInput = {};
+  }
+  function showMenu(screen) {
+    menuScreen = screen;
+    const panels = { title: 'title-menu', modes: 'mode-menu', challenges: 'challenges-menu', loadout: 'loadout-menu' };
+    for (const [name, id] of Object.entries(panels)) $(id).hidden = name !== screen;
+    $('game-wrap').setAttribute('data-screen', screen);
+    $('game-wrap').setAttribute('data-menu', screen);
+    clearInput();
+    if (screen !== 'playing') {
+      const first = { title: 'menu-play', modes: 'mode-chapter', challenges: 'mode-hunt', loadout: 'start-loadout' }[screen];
+      if (first) $(first).focus();
+    }
+  }
+  function lobbyMenu() {
+    // Leaving the lobby to prepare must keep its room and partner connected.
+    if ($('coop-dialog').open) $('coop-dialog').close();
+    showMenu(net && net.connected && net.role === 'guest' ? 'loadout' : 'modes');
+    updateCamp();
+  }
+  function chooseMode(gameMode) {
+    if (net && net.connected && net.role === 'guest') { showMenu('loadout'); return; }
+    $('mode-select').value = gameMode; updateCamp(); showMenu('loadout');
+  }
+  function updateLobbyMenu() {
+    const connected = !!(net && net.connected), guest = connected && net.role === 'guest';
+    $('solo-start').textContent = guest ? '等待队长出发' : connected ? '一起出发' : net ? '等待伙伴' : '出发';
+    $('loadout-coop').textContent = net ? '返回联机房间' : '邀请朋友';
+    $('loadout-coop').hidden = !net; $('open-coop').hidden = !!net;
+    $('menu-room-status').hidden = !net;
+    $('menu-loadout-back').textContent = guest ? '返回主菜单' : '返回选择玩法';
+    $('mission-select').disabled = guest;
+    $('difficulty-select').disabled = guest || ['chapter', 'relay', 'hunt'].includes(selectedGameMode());
+    $('menu-room-status').textContent = connected ? guest ? '队长选择玩法，你可以更换自己的远程武器。' : '搭档已就位，本次将一起出发。' : net ? '房间已保留，可以返回联机面板等待伙伴。' : '';
+    $('solo-start').disabled = !!net && (!connected || guest) || !canStart(selectedGameMode(), selectedMission(), selectedDifficulty());
   }
   function stopSounds() {
     for (const oscillator of soundNodes) { try { oscillator.stop(); } catch (_) { /* Already ended. */ } }
@@ -266,6 +302,7 @@
     $('mission-lock').textContent = chapter ? chapterProgress().completed ? `本章已完成 ${chapterProgress().clears} 次 · 可重新出发` : '第一章已开放 · 归途灯等待点亮' : random ? '3 种精英 · 2 种事件 · 6 件遗物' : relay ? '3 间遗迹 · 单人 / 双人 · 自由穿行' : hunt ? '6 间猎场 · 足迹追踪 · 声音诱敌' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
     $('mission-lock').hidden = false;
     $('solo-start').disabled = !unlocked;
+    updateLobbyMenu();
     if (!state && net && net.connected && net.role === 'host') net.send({ type: 'lobby', mode: gameMode, mission: mission.id, difficulty: selectedDifficulty() });
   }
   function updateCamp() {
@@ -308,7 +345,10 @@
     showMission();
   }
   function closeDialogs() {
-    ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog'].forEach(id => { if ($(id).open) $(id).close(); });
+    // Starting or leaving a run owns the resulting pause state. Dialog close
+    // events must not resume an old run while this transition is in progress.
+    dialogPaused = false;
+    dialogIds.forEach(id => { if ($(id).open) $(id).close(); });
   }
   function displayPause() {
     $('pause-screen').hidden = !paused || !playing();
@@ -323,12 +363,20 @@
     if (announce !== false && net && net.connected) net.send({ type: 'pause', paused, reason: 'manual' });
   }
   function openDialog(id) {
-    clearInput(); stopSounds(); dialogPaused = playing() && !paused;
-    if (dialogPaused) pause(true);
+    clearInput(); stopSounds();
+    if (!hasDialog()) {
+      dialogPaused = playing() && !paused;
+      if (dialogPaused) pause(true);
+    }
     if (!$(id).open) $(id).showModal();
   }
-  ['help-dialog', 'camp-dialog', 'account-dialog'].forEach(id => {
-    $(id).addEventListener('close', () => { if (dialogPaused && !hasDialog()) { dialogPaused = false; pause(false); } });
+  dialogIds.forEach(id => {
+    $(id).addEventListener('close', () => {
+      if (!hasDialog()) {
+        const resume = dialogPaused; dialogPaused = false;
+        if (resume) pause(false);
+      }
+    });
   });
   function shutdownNet() {
     const old = net; net = null; if (old) old.close();
@@ -337,12 +385,13 @@
     remoteInput = {}; remoteAt = 0; remoteSeq = -1;
     $('room-id').textContent = '— — — —'; $('start-room').disabled = true;
     $('host-room').disabled = false; $('join-room').disabled = false;
+    updateLobbyMenu();
   }
   function home() {
     shutdownNet(); state = null; mode = 'solo'; paused = false; disconnected = false;
     finished = ''; runId = ''; clearInput(); resetSounds(); closeDialogs();
     $('start-screen').hidden = false; $('pause-screen').hidden = true; $('end-screen').hidden = true;
-    $('interaction-hint').hidden = true; tutorialPending = false; $('tutorial-panel').hidden = true; updateCamp(); hud();
+    $('interaction-hint').hidden = true; tutorialPending = false; $('tutorial-panel').hidden = true; updateCamp(); showMenu('title'); hud();
   }
   function newRunId() {
     return window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -365,18 +414,19 @@
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
-    closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; displayPause();
+    closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
     if (isCoop && !net.send({ type: 'start', state: E.snapshot(state, true), runId })) {
       pause(true, false); toast('开局消息尚未送达，请稍后点“重新出发”。');
     }
     startTutorial(); primeChapterNarration(); enableAudio(); canvas.focus(); hud();
   }
   function beginPractice() {
+    if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
     shutdownNet(); mode = 'solo';
     state = E.create({ practice: true, mode: 'story', players: 1, loadout: 'blade', seed: newSeed(), mission: 'ember', difficulty: 1 });
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
-    closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; displayPause();
+    closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
     startTutorial(); enableAudio(); canvas.focus(); hud();
   }
   function settle() {
@@ -543,7 +593,7 @@
     } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && validState(msg.state)) {
       mode = 'guest'; state = msg.state; runId = msg.runId; finished = ''; paused = false; disconnected = false;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
-      clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true;
+      clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing');
       startTutorial(); primeChapterNarration(); displayPause(); canvas.focus(); hud();
     } else if (msg.type === 'state' && msg.runId === runId && validState(msg.state)) {
       state = msg.state; settle();
@@ -554,10 +604,17 @@
         if (remoteTutorialPending) { clearInput(); stopSounds(); }
       }
     } else if (msg.type === 'pause' && typeof msg.paused === 'boolean') {
+      // A fresh manual pause from the other player belongs to them. Closing a
+      // local settings window must not undo it; a partner echo of our own pause
+      // keeps the original automatic-resume intent.
+      if (hasDialog() && msg.reason === 'manual') dialogPaused = false;
       pause(msg.paused, false);
       if (net.role === 'host') net.send({ type: 'pause', paused: msg.paused, reason: 'partner' });
     }
     if (msg.type === 'lobby' && net.role === 'guest' && ['chapter', 'random', 'story', 'relay', 'hunt'].includes(msg.mode) && [1, 2].includes(msg.difficulty) && (msg.mode === 'chapter' ? msg.mission === 'chapter1' && msg.difficulty === 1 : C.MISSIONS.some(m => m.id === msg.mission)) && (!['relay', 'hunt'].includes(msg.mode) || msg.mission === 'salvage' && msg.difficulty === 1)) {
+      $('mode-select').value = msg.mode;
+      if (msg.mode !== 'chapter') $('mission-select').value = msg.mission;
+      $('difficulty-select').value = String(msg.difficulty); updateCamp();
       $('room-message').textContent = `队长选择：${msg.mode === 'chapter' ? '第一章 · 借火归营' : msg.mode === 'random' ? '随机探险' : msg.mode === 'relay' ? '接力夺宝 · 试玩' : msg.mode === 'hunt' ? '苔火猎场 · 试玩' : missionInfo(msg.mission).name}${msg.difficulty === 2 ? ' · 险境' : ' · 普通'}，等待出发。`;
     }
   }
@@ -585,14 +642,37 @@
         $('start-room').disabled = instance.role !== 'host';
         $('start-room').textContent = instance.role === 'host' ? '一起出发 →' : '等待房主出发';
         $('room-message').textContent = instance.role === 'host' ? '搭档已到齐，可以一起出发。' : '已加入，等待房主开始探险。';
+        updateLobbyMenu();
         if (instance.role === 'guest') instance.send({ type: 'loadout', weapon: selectedWeapon() });
         else instance.send({ type: 'lobby', mode: selectedGameMode(), mission: selectedMission(), difficulty: selectedDifficulty() });
       }, onMessage: receive,
       onDisconnect() { if (net === instance) disconnectedPeer(); }
     });
-    net = instance; return instance;
+    net = instance; updateLobbyMenu(); return instance;
   }
-  $('solo-start').onclick = () => begin(false);
+  $('menu-play').onclick = lobbyMenu;
+  $('menu-coop').onclick = () => { enableAudio(); openDialog('coop-dialog'); };
+  $('menu-camp').onclick = () => { updateCamp(); openDialog('camp-dialog'); };
+  $('menu-settings').onclick = () => openDialog('settings-dialog');
+  $('menu-modes-back').onclick = () => showMenu('title');
+  $('menu-loadout-back').onclick = () => showMenu(net && net.connected && net.role === 'guest' ? 'title' : 'modes');
+  $('menu-challenges-back').onclick = () => showMenu('modes');
+  $('mode-chapter').onclick = () => chooseMode('chapter');
+  $('mode-random').onclick = () => chooseMode('random');
+  $('mode-hunt').onclick = () => chooseMode('hunt');
+  $('mode-relay').onclick = () => chooseMode('relay');
+  $('mode-legacy').onclick = () => chooseMode('story');
+  $('mode-challenges').onclick = () => showMenu('challenges');
+  $('mode-training').onclick = () => {
+    if (net) { toast('训练为单人模式，请先在联机房间离队。'); openDialog('coop-dialog'); return; }
+    beginPractice();
+  };
+  $('coop-choose-mode').onclick = lobbyMenu;
+  $('loadout-coop').onclick = () => openDialog('coop-dialog');
+  $('solo-start').onclick = () => {
+    if (net && (!net.connected || net.role === 'guest')) return;
+    begin(!!(net && net.connected && net.role === 'host'));
+  };
   $('practice-start').onclick = beginPractice;
   $('start-loadout').addEventListener('change', () => {
     if (!playing() && net && net.connected && net.role === 'guest') net.send({ type: 'loadout', weapon: selectedWeapon() });
@@ -622,8 +702,7 @@
   };
   $('start-room').onclick = () => begin(true);
   $('leave-room').onclick = () => { shutdownNet(); $('room-message').textContent = '已离开房间。'; };
-  $('close-coop').onclick = () => { $('coop-dialog').close(); if (!state) shutdownNet(); };
-  $('coop-dialog').addEventListener('cancel', () => { if (!state) shutdownNet(); });
+  $('close-coop').onclick = () => $('coop-dialog').close();
   $('help-game').onclick = () => openDialog('help-dialog');
   $('help-button').onclick = () => openDialog('help-dialog');
   $('tutorial-dismiss').onclick = dismissTutorial;
@@ -636,10 +715,19 @@
     camp.coins -= 30; camp.scatter = true; writeCamp(); $('start-loadout').value = 'scatter'; toast('散射枪已解锁，下次出发就能使用。');
   };
   $('pause-game').onclick = () => pause(!paused);
+  $('pause-settings').onclick = () => openDialog('settings-dialog');
+  $('close-settings').onclick = () => $('settings-dialog').close();
+  $('settings-sound').onclick = () => $('mute-game').click();
+  $('settings-help').onclick = () => openDialog('help-dialog');
+  $('settings-account').onclick = () => $('open-account').click();
   $('resume-game').onclick = () => pause(false);
   $('restart-game').onclick = $('end-restart').onclick = () => { if (mode !== 'guest') { if (state && state.practice) beginPractice(); else begin(mode === 'host'); } };
   $('back-camp').onclick = $('end-camp').onclick = home;
-  $('mute-game').onclick = () => { muted = !muted; if (muted) stopSounds(); enableAudio(); $('mute-game').setAttribute('aria-pressed', String(muted)); $('mute-game').textContent = muted ? '×♪' : '♪'; };
+  $('mute-game').onclick = () => {
+    muted = !muted; if (muted) stopSounds(); enableAudio();
+    $('mute-game').setAttribute('aria-pressed', String(muted)); $('mute-game').textContent = muted ? '×♪' : '♪';
+    $('settings-sound').setAttribute('aria-pressed', String(muted)); $('settings-sound').textContent = muted ? '声音 · 已关闭' : '声音 · 已开启';
+  };
   function input() {
     const p = state && state.players[localId()];
     let mx = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + touch.mx;
@@ -666,8 +754,15 @@
   }
   const controlKeys = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyE','KeyJ','KeyK','KeyQ']);
   window.addEventListener('keydown', event => {
+    if (event.code === 'Escape' && !hasDialog()) {
+      event.preventDefault();
+      if (!event.repeat) {
+        if (!state) showMenu(menuScreen === 'challenges' || menuScreen === 'loadout' && !(net && net.connected && net.role === 'guest') ? 'modes' : 'title');
+        else pause(!paused);
+      }
+      return;
+    }
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
-    if (event.code === 'Escape' && !hasDialog()) { event.preventDefault(); if (!event.repeat) pause(!paused); return; }
     if (playing() && !paused && !hasDialog() && controlKeys.has(event.code)) {
       event.preventDefault(); keys.add(event.code);
       if (!event.repeat && event.code === 'Space') dashPulse = true;
@@ -742,7 +837,7 @@
       else huntObjective = '追踪逐迹巨兽';
     }
     $('hud-objective').textContent = remoteTutorialPending && !tutorialPending ? '等待搭档准备好，一起出发' : hunt ? huntObjective : relay ? state.relay.delivered ? '炉芯已送达' : core && core.carriedBy ? core.carriedBy === localId() ? '炉芯在你手中 · 带回入口' : '搭档携带炉芯 · 掩护撤离' : `炉芯位于${state.rooms[state.relay.coreRoom].name}` : state ? state.objective : '独自探险，或邀请一位搭档';
-    $('hud-objective').hidden = !!random;
+    $('hud-objective').hidden = false;
     $('hud-health').textContent = p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6';
     $('hud-dash').textContent = p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     $('hud-loot').textContent = `${camp.coins} 星屑`;
@@ -826,5 +921,5 @@
     $('open-account').onclick = () => { $('account-message').textContent = '账号服务未加载，请刷新后再试。'; openDialog('account-dialog'); };
     $('close-account').onclick = () => $('account-dialog').close();
   }
-  updateCamp(); hud(); requestAnimationFrame(frame);
+  updateCamp(); showMenu('title'); hud(); requestAnimationFrame(frame);
 })();

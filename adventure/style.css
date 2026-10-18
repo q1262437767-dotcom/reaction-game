@@ -313,3 +313,228 @@
 @media(max-width:650px){.opportunity-status{font-size:7px;padding-left:4px}}
 @media(pointer:coarse) and (orientation:landscape) and (max-height:500px){.touch-switch{width:29px;height:29px;left:48px;top:5px;font-size:13px}}
 .chapter-camp-card{padding:13px 15px;margin:0 0 16px;border:1px solid #c6a86b44;border-radius:6px;background:#d9b66e0a}.chapter-camp-card strong{font-size:12px;color:#a6b79a}.chapter-camp-card strong[data-complete="true"]{color:#efd097}.chapter-camp-card p{font-size:10px;line-height:1.8;color:#8fa58f;margin:7px 0 0}.chapter-journal{margin-top:18px;padding:13px;border:1px solid #bca46d44;border-radius:5px;background:#e5c48008}.chapter-journal h3{font-size:12px;color:#e3c38c;margin:0 0 12px}.chapter-journal article+article{border-top:1px solid #91a67833;padding-top:10px;margin-top:10px}.chapter-journal strong{font-size:11px;color:#cad4b4}.chapter-journal p{font-size:10px;line-height:1.9;color:#9caf95;margin:5px 0 0}.game-wrap[data-mode="chapter"] .mission-card{box-shadow:inset 2px 0 0 #d3ae6eaa}.game-wrap[data-mode="chapter"] .mission-mark{color:#e0ba79}
+
+/* The game owns the viewport. The canvas rectangle remains 960:600 so aiming,
+   the fog map and touch controls share exactly the same fitted play surface. */
+:root{--bg:#0b1413;--panel:#182421;--ink:#eee8d4;--muted:#98a395;--green:#a3b18c;--gold:#d9b176;--line:#a1b08935}
+html,body{width:100%;height:100%;height:100dvh;overflow:hidden;background:#0b1413}
+body{min-width:280px;min-height:0;background:radial-gradient(ellipse at 68% 55%,#1d2d24 0,#0b1413 72%);font-size:14px}
+.app-shell{width:100%;max-width:none;height:100%;padding:0;margin:0}
+.game-stage{width:100%;height:100%;max-width:none;margin:0;padding:0;display:flex;align-items:center;justify-content:center;border:0;border-radius:0;background:transparent;box-shadow:none}
+.game-stage:before,.game-stage:after{display:none}
+#game-wrap:has(#start-screen){width:min(100vw,160vh);width:min(100vw,160dvh);height:min(100vh,62.5vw);height:min(100dvh,62.5vw);aspect-ratio:8/5;max-width:none;max-height:none;min-height:0;border:0;border-radius:0;background:#14211e}
+#game-wrap canvas{width:100%;height:100%;object-fit:fill;border-radius:0}
+.game-grain{opacity:.025}
+button,input,select,.button,.button-quiet,.icon-button,.screen-card,.modal,.reward-box,.room-ticket,.equipment-card,.journal-item,.journal-list>article,.chapter-camp-card,.auth-tabs,.auth-tab,.account-message,.account-notice,.account-identity,.cloud-choice-panel{border-radius:2px}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #f0cd94;outline-offset:4px}
+.button,.icon-button,.text-button,.close-dialog{min-height:44px}
+.button{height:46px;font-size:13px;letter-spacing:1px;padding-inline:24px;box-shadow:none}
+.button-primary{background:#cfa66c;color:#16211c;border-color:#e5c08a;box-shadow:inset 0 1px #f1d3a54d}
+.button-primary:hover:not(:disabled){background:#e0ba80;box-shadow:0 0 26px #d8b67518}
+.button-secondary{background:#1e3028e6;border-color:#87937566;color:#d3dac4}
+.text-button{font-size:12px;padding:10px 8px;color:#a8b49a}
+.icon-button{width:44px;height:44px}
+
+/* Menus occupy the viewport independently of the fitted world in portrait. */
+#start-screen{position:fixed;inset:0;display:flex;align-items:center;align-items:safe center;min-height:0;padding:32px max(7vw,24px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;background:linear-gradient(90deg,#0a1413f0 0,#0b1712dc 24%,#0b171285 49%,#0b17120a 83%)}
+.menu-view{width:min(560px,100%);flex:none;padding:12px 0;animation:menu-reveal .18s ease-out}
+.title-menu{width:min(335px,100%);padding-bottom:30px}
+.game-title{font-family:"Microsoft YaHei",system-ui,sans-serif;font-size:clamp(38px,5.3vw,72px);font-weight:800;letter-spacing:.13em;line-height:1.18;color:#eee7ce;text-shadow:0 4px 28px #0007;margin:0 0 58px;white-space:nowrap}
+.game-title small{display:block;font-size:clamp(10px,1vw,13px);font-weight:500;letter-spacing:.46em;line-height:1.5;margin-top:18px;color:#b6b79d;padding-left:4px}
+.title-actions{display:flex;flex-direction:column;gap:6px;width:min(252px,100%)}
+.menu-action{min-height:50px;display:flex;align-items:center;justify-content:space-between;text-align:left;padding:0 16px 0 4px;background:transparent;border:1px solid transparent;color:#d0d5be;font-size:19px;font-weight:500;letter-spacing:.13em;transition:background .16s,color .16s,padding .16s,border-color .16s}
+.menu-action>span{color:#d6b374;font-size:20px;opacity:0;transition:opacity .16s}
+.menu-action:hover,.menu-action:focus-visible{padding-left:16px;color:#f4e2ba;background:linear-gradient(90deg,#cab06b24,transparent);border-left-color:#d6b374}
+.menu-action:hover>span,.menu-action:focus-visible>span{opacity:1}
+.menu-back{display:inline-flex;align-items:center;gap:12px;min-height:44px;margin:0 0 14px;padding:0 8px 0 0;background:none;color:#9fab98;font-size:12px;letter-spacing:.5px}
+.menu-back:hover{color:#ecd096}
+.menu-back>span{font-size:20px;line-height:1}
+.menu-heading{font-size:30px;font-weight:700;line-height:1.5;letter-spacing:2px;margin:0 0 26px;color:#eee7ce}
+.mode-list{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mode-choice{display:flex;align-items:center;gap:15px;min-height:86px;padding:18px;text-align:left;background:linear-gradient(110deg,#1b2b23ed,#18281edb);border:1px solid #7f916b55;color:#e1e4cd;transition:border-color .16s,background .16s}
+.mode-choice:hover,.mode-choice:focus-visible{border-color:#ceac71c4;background:#2b3929ed}
+.mode-choice>span:nth-child(2){flex:1;min-width:0}
+.mode-index{color:#a89d6c;font-size:21px;width:27px;text-align:center;flex:none;font-family:Georgia,"Microsoft YaHei",serif}
+.mode-choice strong{font-size:16px;font-weight:600;line-height:1.5;letter-spacing:1px;display:block}
+.mode-choice small{display:block;color:#9eac94;font-size:11px;line-height:1.6;margin-top:6px}
+.mode-arrow{font-size:19px;color:#baa26c}
+.mode-choice-featured{min-height:126px;align-items:flex-start;padding-top:24px;border-top-color:#b7995b88}
+.mode-choice-featured .mode-index{padding-top:1px}
+.mode-choice-featured .mode-arrow{align-self:center}
+.challenge-list{grid-template-columns:1fr}
+.challenge-list .mode-choice{min-height:82px}
+
+/* Preparation has one primary action. Detailed progress lives in the camp. */
+.loadout-menu{max-width:505px}
+.loadout-menu .mission-card{background:none;padding:0;margin:0 0 26px;border:0;box-shadow:none!important}
+.loadout-menu .mission-card-heading{display:block}
+.loadout-menu .mission-card h2.menu-heading{font-size:30px;line-height:1.5;margin:0 0 13px;color:#eee7ce}
+.loadout-menu .mission-card p{font-size:12px;line-height:1.9;color:#a2b198;margin:0 0 9px;max-width:440px}
+.loadout-menu .mission-card p.mission-goal{color:#d2d7bd;font-size:13px;line-height:1.8;margin-top:12px}
+.loadout-menu .mission-card-foot{border:0;margin:12px 0 0;padding:0;display:flex;justify-content:flex-start;gap:16px;color:#8d9e87;font-size:11px}
+.loadout-menu .mission-reward{margin:0;color:#bca66f;font-size:11px}
+.loadout-menu .mission-lock{display:none}
+.loadout-menu .mission-picker{margin:0 0 19px;gap:16px;flex-wrap:wrap;max-width:450px}
+.loadout-menu .mission-picker>div{flex:1;min-width:140px}
+.loadout-menu .mission-picker:has(#story-mission-field:not([hidden])) .mission-select-field{flex:1 1 220px}
+.loadout-menu .mission-picker:has(#story-mission-field:not([hidden])) .difficulty-select-field{flex:0 1 145px}
+.loadout-menu label{display:block;color:#92a18b;font-size:11px;line-height:1.7;margin:0 0 7px}
+.loadout-menu select{height:44px;min-height:44px;width:100%;max-width:none;padding:0 34px 0 12px;border:1px solid #84906c5e;background:#15261fe6;color:#dce0c8;font-size:13px;border-radius:2px}
+.loadout-menu select option{background:#1b2b23;color:#e1e5cc}
+.loadout-menu .loadout-row{display:grid;grid-template-columns:1fr 1.3fr;gap:20px;align-items:end;max-width:450px;margin:0;padding:0 0 25px;border-bottom:1px solid #8fa17b33}
+.loadout-menu .fixed-melee-slot{display:block;padding:0 0 12px;border:0;color:#d5dbc3;font-size:13px}
+.loadout-menu .fixed-melee-slot small{display:block;margin:0 0 13px;color:#92a18b;font-size:11px}
+.loadout-menu .start-buttons{margin-top:26px;align-items:center;flex-wrap:wrap;gap:12px 18px}
+.loadout-menu .start-buttons>.button{min-width:180px}
+.menu-room-status{margin:15px 0 -8px;color:#adbd9d;font-size:11px;line-height:1.8}
+.coop-choose-mode{margin-top:18px}
+
+/* Only health, current weapon, and the current goal remain during play. */
+#game-wrap .hud{top:18px;left:22px;right:26%;display:flex;flex-direction:column;align-items:flex-start;gap:9px;max-width:68%;padding:0;border:0;text-shadow:0 2px 4px #000b}
+#game-wrap .hud-stats{order:-1;display:block;max-width:none}
+#game-wrap .stat-health{border:0;background:#0c1913b8;padding:6px 10px;height:auto;min-height:28px;gap:6px;font-size:12px;line-height:1.5}
+#game-wrap .stat-health .stat-symbol{display:none}
+#game-wrap .stat-dash,#game-wrap .stat-loot,#game-wrap .stat-team,#game-wrap .hud-location>.eyebrow,#hud-stage,#route-progress{display:none}
+#game-wrap .hud-location{max-width:100%;padding:0;border:0;gap:5px}
+#game-wrap .hud-location>#hud-objective{max-width:440px;color:#c8d1b8;font-size:11px;line-height:1.6}
+#game-wrap .hud-location>#route-progress{max-width:440px;color:#abb79a;font-size:10px;line-height:1.5}
+#game-wrap .weapon-hud{margin-top:2px;min-height:22px;gap:7px;flex-wrap:wrap}
+#game-wrap .weapon-slot{font-size:10px;padding:4px 8px;background:#102018b3;border:1px solid #b195575e;border-radius:1px;color:#dec795}
+#game-wrap .weapon-slot[data-active="false"]{display:none}
+#game-wrap .quiet-status{font-size:10px;color:#a7c7bd;padding-left:1px}
+#game-wrap .opportunity-status{font-size:10px;line-height:1.6;color:#f3d99e}
+.game-toolbar{position:absolute;z-index:4;top:15px;right:calc(23% + 9px);display:flex;gap:6px}
+.game-toolbar .icon-button{border-color:#84977544;background:#102018b3;color:#b7c2a7}
+#game-wrap:has(#start-screen:not([hidden])) .game-toolbar,#game-wrap:has(#pause-screen:not([hidden])) .game-toolbar,#game-wrap:has(#end-screen:not([hidden])) .game-toolbar{display:none}
+.interaction-hint{border-radius:2px;background:#11231ce8;border-color:#9ba57566;font-size:12px}
+.toast{border-radius:2px;background:#1e3025f2;border-color:#9aab7a66;font-size:12px}
+
+/* Pause and dialogs share the same quiet stone-and-copper treatment. */
+.centered-screen{position:fixed;inset:0;background:#07100dd9}
+.screen-card{width:min(390px,calc(100% - 40px));max-height:calc(100dvh - 32px);padding:32px;border-color:#a18c5e66;background:linear-gradient(145deg,#25342a,#15231c);border-radius:2px}
+.screen-card h2{font-size:25px;margin:0 0 10px;letter-spacing:2px}
+.screen-card p{font-size:12px}
+.screen-card .stack-actions{gap:9px;margin-top:25px}
+.screen-card .stack-actions .button{height:44px}
+.modal{max-height:calc(100dvh - 32px);padding:28px 30px;background:linear-gradient(145deg,#26352b,#16261f);border-color:#a18f6566;border-radius:2px;scroll-padding-block:25px}
+.modal .close-dialog{width:44px;height:44px;right:12px;top:10px;color:#a3ae96}
+.modal .dialog-heading{padding-right:36px;min-height:24px}
+.modal h2{letter-spacing:1px;font-size:24px}
+.modal .dialog-heading h2{margin:0;line-height:1.5}
+.modal .dialog-intro{font-size:12px;color:#a8b59a}
+.modal .quiet-note{font-size:10px;color:#92a18a}
+.settings-modal{max-width:410px}
+.settings-list{display:grid;margin-top:25px;border-top:1px solid #92a17833}
+.settings-action{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:57px;padding:11px 7px;background:none;border-bottom:1px solid #92a17833;color:#d4dbc1;font-size:14px;text-align:left}
+.settings-action:hover{color:#efd39f;background:#c8ae7410}
+.settings-action>span:last-child{font-size:12px;color:#a6b096}
+.settings-modal .account-status{font-size:11px;color:#91a089;line-height:1.9;margin-top:24px}
+.camp-modal .campaign-status{font-size:12px;color:#d9bc83;margin:0 0 16px}
+.modal .equipment-copy .button{min-height:44px}
+.modal input,.modal select{border-radius:2px}
+.modal .journal-heading>span:last-child{font-size:10px}
+.modal .journal-item strong,.modal .journal-list>article strong{font-size:12px}
+.modal .journal-item p,.modal .journal-list>article p{font-size:11px}
+.modal .help-grid p,.modal .field-tip p{font-size:11px}
+.modal .help-key{font-size:10px;border-radius:1px}
+.modal .help-grid strong{font-size:13px}
+.modal .help-bottom{font-size:10px}
+.tutorial-panel{border-radius:2px;background:linear-gradient(135deg,#273a2cf5,#14261cf5);overflow-y:auto}
+#tutorial-panel{position:fixed;top:50%;bottom:auto;left:50%;transform:translate(-50%,-50%);width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px)}
+@keyframes menu-reveal{from{opacity:0;translate:-5px 0}to{opacity:1;translate:0 0}}
+
+@media(max-width:700px){
+  #start-screen{padding:26px 6vw;background:linear-gradient(90deg,#0a1413f2,#0b1712d6 48%,#0b17126b)}
+  .title-menu{padding-bottom:12px}
+  .game-title{font-size:clamp(36px,8vw,52px);margin-bottom:38px;letter-spacing:.12em}
+  .game-title small{font-size:10px;margin-top:14px;letter-spacing:.35em}
+  .title-actions{width:230px;gap:5px}
+  .menu-action{font-size:18px;min-height:51px}
+  .menu-heading,.loadout-menu .mission-card h2.menu-heading{font-size:27px;margin-bottom:19px}
+  .mode-list{gap:10px}
+  .mode-choice{gap:10px;min-height:86px;padding:15px 12px}
+  .mode-choice-featured{min-height:126px;padding-top:21px}
+  .mode-index{width:22px;font-size:18px}
+  .mode-choice strong{font-size:15px}
+  .mode-choice small{font-size:10px;line-height:1.7}
+  .mode-arrow{font-size:17px}
+  .loadout-menu .mission-card{margin-bottom:21px}
+  .loadout-menu .mission-picker{gap:12px}
+  .loadout-menu .loadout-row{gap:14px;padding-bottom:20px}
+  .loadout-menu .start-buttons{margin-top:22px;gap:8px 10px}
+  .loadout-menu .start-buttons>.button{min-width:150px}
+  .modal{width:calc(100% - 28px);padding:25px 22px;max-height:calc(100dvh - 24px)}
+  .modal .close-dialog{right:7px;top:7px}
+  .modal h2{font-size:22px}
+  .modal .equipment-card{padding:18px 12px}
+  .modal .account-input-row{gap:7px}
+  #game-wrap .hud{top:10px;left:10px;right:30%;max-width:60%;gap:4px}
+  #game-wrap .stat-health{padding:3px 6px;min-height:21px;font-size:9px}
+  #game-wrap .hud-location{gap:3px}
+  #game-wrap .hud-location>#hud-objective{font-size:9px;line-height:1.4}
+  #game-wrap .hud-location>#route-progress{font-size:8px;line-height:1.4}
+  #game-wrap .weapon-hud{gap:4px;min-height:18px;margin-top:1px}
+  #game-wrap .weapon-slot{font-size:8px;padding:3px 5px}
+  #game-wrap .quiet-status,#game-wrap .opportunity-status{font-size:8px}
+  .game-toolbar{top:7px;right:calc(23% + 5px)}
+  .game-toolbar .icon-button{width:36px;height:36px;min-height:36px}
+  .interaction-hint{font-size:10px;padding:7px 10px}
+  .toast{font-size:10px;top:60px}
+  .screen-card{padding:26px;max-height:calc(100dvh - 24px)}
+}
+@media(max-width:370px){
+  .mode-list{grid-template-columns:1fr}
+  .mode-choice,.mode-choice-featured{min-height:76px;padding:13px}
+  .mode-choice small{margin-top:3px}
+  .menu-heading{font-size:25px}
+  .loadout-menu .mission-picker>div{min-width:120px}
+  .loadout-menu .loadout-row{gap:10px;grid-template-columns:.9fr 1.3fr}
+  .loadout-menu select{font-size:12px;padding-left:9px}
+}
+@media(max-height:560px) and (orientation:landscape){
+  #start-screen{padding:16px 6vw}
+  .menu-view{padding:0;width:min(560px,90%)}
+  .title-menu{width:290px;padding:4px 0}
+  .game-title{font-size:42px;margin-bottom:24px}
+  .game-title small{font-size:9px;margin-top:10px}
+  .title-actions{gap:1px;width:225px}
+  .menu-action{min-height:44px;font-size:17px}
+  .menu-back{margin-bottom:6px;min-height:34px}
+  .menu-heading,.loadout-menu .mission-card h2.menu-heading{font-size:24px;margin-bottom:13px}
+  .mode-choice,.mode-choice-featured{min-height:77px;padding:14px}
+  .mode-choice small{margin-top:4px}
+  .challenge-list .mode-choice{min-height:65px;padding:10px 14px}
+  .loadout-menu{max-width:570px}
+  .loadout-menu .mission-card{margin-bottom:12px}
+  .loadout-menu .mission-card h2.menu-heading{margin-bottom:5px}
+  .loadout-menu .mission-card p{font-size:11px;line-height:1.6;margin-bottom:5px}
+  .loadout-menu .mission-card p.mission-goal{font-size:12px;margin-top:5px}
+  .loadout-menu .mission-card-foot{font-size:10px;margin-top:6px}
+  .loadout-menu .mission-reward{font-size:10px}
+  .loadout-menu .mission-picker{display:inline-flex;vertical-align:bottom;width:42%;margin:0 5% 0 0;gap:8px}
+  .loadout-menu .mission-picker>div{min-width:0}
+  .loadout-menu .mission-picker:has(#story-mission-field:not([hidden])){width:100%;margin:0 0 10px}
+  .loadout-menu .mission-picker:has(#story-mission-field:not([hidden])) .mission-select-field{flex:1 1 220px}
+  .loadout-menu .loadout-row{display:inline-grid;vertical-align:bottom;width:51%;grid-template-columns:.7fr 1fr;gap:10px;border:0;padding:0}
+  .loadout-menu:has(#story-mission-field:not([hidden])) .loadout-row{width:100%;max-width:390px}
+  .loadout-menu label{font-size:10px;margin-bottom:4px}
+  .loadout-menu .fixed-melee-slot{font-size:11px;padding-bottom:13px}
+  .loadout-menu .fixed-melee-slot small{font-size:10px;margin-bottom:14px}
+  .loadout-menu .start-buttons{margin-top:15px}
+  .menu-room-status{margin:8px 0 -6px;font-size:10px}
+  .screen-card{max-height:calc(100dvh - 24px);padding:22px}
+  .screen-card h2{font-size:22px;margin-bottom:6px}
+  .screen-card .stack-actions{margin-top:16px;gap:6px}
+  #game-wrap .hud{top:9px;left:11px;gap:4px}
+  #game-wrap .hud-location>#hud-objective{font-size:9px}
+  #game-wrap .stat-health{font-size:10px;min-height:22px;padding:3px 7px}
+  .game-toolbar{top:7px}
+  .game-toolbar .icon-button{width:36px;height:36px;min-height:36px}
+}
+@media(pointer:coarse){.menu-action,.menu-back,.settings-action,.mode-choice{min-height:44px}.modal .text-button{min-height:44px}.modal .close-dialog{width:44px;height:44px}}
+#touch-controls{display:none}
+@media(pointer:fine){#touch-controls{display:none!important}}
+@media(pointer:coarse) and (orientation:portrait){
+  #game-wrap #interaction-hint{position:fixed;top:auto;bottom:max(12px,calc((100dvh - 62.5vw)/2 - 52px));left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);padding:9px 13px;font-size:12px;line-height:1.6}
+}
+@media(prefers-reduced-motion:reduce){.menu-view{animation:none}.menu-action,.mode-choice{transition:none}}
