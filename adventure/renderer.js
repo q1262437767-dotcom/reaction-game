@@ -70,6 +70,35 @@
     if (!floorCache.has(key)) { if (floorCache.size > 12) floorCache.clear(); floorCache.set(key, makeFloor(key, room.kind)); }
     c.drawImage(floorCache.get(key), 0, 0);
   }
+  function chapterFloor(c, state, time) {
+    if (state.mode !== 'chapter') return;
+    const index = num(state.room && state.room.index), run = state.chapter || {};
+    // Recessed copper conduits and cooling channels belong to the floor; their
+    // low contrast leaves the engine's actual cover and attack shapes readable.
+    if (index > 0) {
+      for (const y of [92, 508]) {
+        rect(c, 82, y, 796, 10, '#263c36'); rect(c, 84, y + 2, 792, 3, '#806347');
+        rect(c, 84, y + 5, 792, 2, '#433e31');
+        for (let x = 96; x < 880; x += 64) { rect(c, x, y, 8, 10, '#a07b51'); rect(c, x + 2, y + 1, 2, 2, '#c9a36a'); }
+      }
+      for (const x of [115, 845]) {
+        rect(c, x - 16, 265, 32, 70, '#23352f');
+        for (let y = 269; y < 333; y += 8) rect(c, x - 13, y, 26, 3, '#536053');
+      }
+    }
+    if (index === 2 || index === 3) {
+      const flowing = !!run.sluiceOpen;
+      for (const y of [172, 420]) {
+        rect(c, 120, y, 720, 16, '#1c3532'); rect(c, 124, y + 3, 712, 9, flowing ? '#427c79' : '#2c4740');
+        if (flowing) for (let x = 132; x < 833; x += 35) rect(c, x + (time * .012) % 22, y + 5, 12, 2, '#a8ccc078');
+      }
+    }
+    if (index === 4) {
+      c.strokeStyle = run.fireTaken ? '#746a4d55' : '#c297514d'; c.lineWidth = 3;
+      c.beginPath(); c.ellipse(660, 300, 128, 83, 0, 0, Math.PI * 2); c.stroke();
+      for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; rect(c, 657 + Math.cos(a) * 135, 298 + Math.sin(a) * 89, 6, 4, '#8d7752'); }
+    }
+  }
   function wall(c, w) {
     const x = num(w.x), y = num(w.y), width = num(w.w ?? w.width, 32), height = num(w.h ?? w.height, 32);
     // The lower facade adds height without shifting the collision silhouette.
@@ -194,8 +223,61 @@
       else crystal(c,0,-26,.7,'#ddc27d');
     }
   }
+  function chapterInteractable(c, item, time, state, localId) {
+    const x = num(item.x), y = num(item.y), run = state.chapter || {}, kind = item.kind;
+    const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
+    const active = item.active !== false && !item.used;
+    shadow(c, x, y, kind === 'chapter-lamp' || kind === 'chapter-fire' ? 29 : 21, .3);
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    if (kind === 'chapter-note') {
+      rect(c, -18, -3, 36, 11, '#33473d'); rect(c, -15, -7, 30, 5, '#839078');
+      c.save(); c.rotate(-.16); rect(c, -12, -25, 24, 20, '#695d41'); rect(c, -10, -26, 20, 18, item.used ? '#a39670' : '#d3bf8a');
+      for (let i = 0; i < 3; i++) rect(c, -6, -22 + i * 5, i === 2 ? 9 : 13, 2, '#7f7757');
+      rect(c, 7, -25, 3, 4, '#efe0a7'); c.restore();
+      if (!item.used) crystal(c, 0, -39, .38, '#e9ce8c');
+    } else if (kind === 'chapter-sluice') {
+      eventMachine(c, { ...item, kind: 'sluice', used: !!run.sluiceOpen }, time,
+        { roomEvent: { kind: 'sluice', stage: run.sluiceOpen ? 'complete' : 'ready' } });
+      rect(c, -29, -15, 58, 4, '#a77b50');
+    } else if (kind === 'chapter-fire') {
+      const taken = !!run.fireTaken;
+      ellipse(c, 0, 12, 38, 17, '#182d2a'); ellipse(c, 0, 7, 35, 16, '#6d7867'); ellipse(c, 0, 3, 28, 12, '#2b3a30');
+      for (const side of [-1, 1]) { rect(c, side * 27 - 5, -37, 10, 43, '#8c6748'); rect(c, side * 27 - 3, -36, 3, 40, '#bc9660'); }
+      rect(c, -32, -40, 64, 6, '#a77d4f'); rect(c, -30, -40, 60, 2, '#d1ad71');
+      if (!taken) {
+        glow(c, 0, -27, 77, '#f4b35438');
+        for (const a of [-.7, .7]) { c.save(); c.rotate(a); rect(c, -3, -38, 6, 24, '#aa7849'); c.restore(); }
+        crystal(c, 0, -25 + Math.sin(time * .004) * 2, 1.5, '#f4be6b'); crystal(c, 0, -25 + Math.sin(time * .004) * 2, .65, '#fff0bf');
+      } else { ellipse(c, 0, 0, 17, 7, '#162b27'); rect(c, -9, -4, 18, 3, '#6c654b'); }
+    } else if (kind === 'chapter-lamp') {
+      const lit = !!run.lampLit;
+      ellipse(c, 0, 12, 31, 14, '#182d2a'); rect(c, -24, 0, 48, 10, '#5e715d'); rect(c, -27, -5, 54, 7, '#849278');
+      rect(c, -5, -44, 10, 40, '#766445'); rect(c, -3, -44, 4, 38, '#b68b55');
+      if (lit) { lantern(c, 0, -52, time, 1.55); glow(c, 0, -49, 105, '#eeba5830'); }
+      else { rect(c, -13, -68, 26, 29, '#26372d'); rect(c, -9, -64, 18, 21, '#4b5340'); rect(c, -6, -62, 12, 16, '#26382d'); rect(c, -16, -71, 32, 6, '#a08b5e'); rect(c, -16, -40, 32, 5, '#8a7b50'); }
+    } else if (kind === 'chapter-supplies') {
+      const taken = !!run.suppliesTaken;
+      for (let i = 0; i < 2; i++) { rect(c, -26 + i * 26, -14 + i * 5, 25, 29, '#364a3c'); rect(c, -24 + i * 26, -13 + i * 5, 21, 24, taken ? '#52614c' : '#8d7954'); rect(c, -18 + i * 26, -13 + i * 5, 5, 24, '#b49b66'); }
+      if (!taken) { rect(c, -11, -27, 27, 20, '#566c56'); rect(c, -9, -28, 23, 4, '#aeb188'); rect(c, 0, -24, 5, 15, '#e2d99f'); rect(c, -5, -19, 15, 5, '#e2d99f'); }
+      else path(c, [[-8, -24], [-2, -18], [10, -31]], '#b6d2a5', 3);
+    } else if (kind === 'chapter-beacon') {
+      const lit = !!run.beaconLit;
+      rect(c, -21, 1, 42, 13, '#4b5e4c'); rect(c, -26, -4, 52, 8, '#839077');
+      rect(c, -5, -67, 10, 65, '#766547'); rect(c, -3, -66, 3, 60, '#c0965c');
+      rect(c, -20, -65, 40, 5, '#9e774e'); rect(c, -20, -63, 4, 20, '#9e774e'); rect(c, 16, -63, 4, 20, '#9e774e');
+      if (lit) { lantern(c, 0, -48, time, 1.1); path(c, [[0, -65], [0, -118]], '#e9cd8d2a', 15); path(c, [[0, -65], [0, -118]], '#e9cd8d66', 2); }
+      else { rect(c, -9, -61, 18, 28, '#26392f'); rect(c, -6, -57, 12, 19, '#677050'); rect(c, -3, -55, 6, 15, '#344536'); }
+      c.fillStyle = lit ? '#cfab67' : '#657753'; c.beginPath(); c.moveTo(6, -81); c.lineTo(34, -72); c.lineTo(6, -63); c.closePath(); c.fill();
+    }
+    c.restore();
+    // Information is contextual. Neither a remote note nor an inactive story
+    // prop becomes a permanent instruction label across the room.
+    if (nearby && active) label(c, 'E · ' + (item.label || item.title || '查看'), x, y + (kind === 'chapter-sluice' ? 64 : 34), '#ead7a3', 10);
+    else if (nearby && item.used && kind === 'chapter-note') label(c, item.title || '已读记录', x, y + 30, '#93aa92', 9);
+  }
   function interactable(c, item, time, state, localId) {
     if (!item || (item.kind === 'relic' && item.used)) return;
+    if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId); return; }
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
     const color = kind === 'cache' || kind === 'supply-cache' ? '#9ac9c3' : kind === 'relic' ? relicColors[item.buff] || relicColors.pierce : kind === 'extraction' || kind === 'relay-extraction' ? '#bed6a3' : '#e9c780';
@@ -445,7 +527,91 @@
     }
   }
 
-  function enemy(c, e, time, events = [], still = false) {
+  const chapterEnemyNames = { chaser: '巡炉刀兵', shooter: '炉火枪兵', shield: '执盾守卫', charger: '搬运撞兽',
+    duelist: '守刃监工', brute: '重装炉卫', pyromancer: '提灯司炉者', boss: '炉心守卫' };
+  function chapterConstruct(c, e, time, step) {
+    const kind = e.kind, attack = e.rhythm || {}, facing = num(attack.angle, num(e.facing));
+    const large = kind === 'brute', low = kind === 'charger', width = large ? 44 : low ? 38 : kind === 'shield' ? 28 : 24;
+    const top = large ? -26 : low ? -13 : -17, height = large ? 36 : low ? 25 : 26;
+    const stone = '#67716b', lightStone = '#98a08c', darkStone = '#3e5048', copper = '#9e6947', brightCopper = '#cb965e', amber = '#f4be6b';
+    if (e.stagger > 0 || e.stun > 0) c.rotate(-.1);
+    if (low) {
+      // A squat load carrier with four piston legs and forked copper tusks.
+      for (const side of [-1, 1]) for (const end of [-1, 1]) {
+        const x = side * 16, y = end * 6 + 7 + step * side * end;
+        rect(c, x - 5, y - 3, 10, 13, '#1c302a'); rect(c, x - 4, y - 2, 8, 8, copper); rect(c, x - 3, y - 2, 3, 6, brightCopper);
+      }
+    } else {
+      for (const side of [-1, 1]) {
+        const x = side * (large ? 13 : 7), y = 6 + step * side;
+        rect(c, x - (large ? 6 : 4), y, large ? 12 : 8, large ? 16 : 12, '#1b302a');
+        rect(c, x - (large ? 5 : 3), y, large ? 10 : 6, large ? 11 : 8, darkStone);
+        rect(c, x - (large ? 5 : 3), y + 2, large ? 10 : 6, 3, copper);
+      }
+    }
+    rect(c, -width / 2 - 3, top - 2, width + 6, height + 3, '#172e2b');
+    rect(c, -width / 2, top, width, height, stone); rect(c, -width / 2 + 1, top + 1, 6, height - 2, lightStone);
+    rect(c, width / 2 - 7, top + 2, 7, height - 3, darkStone);
+    rect(c, -width / 2, top + height - 8, width, 5, copper); rect(c, -width / 2, top + height - 8, width, 2, brightCopper);
+    for (const side of [-1, 1]) { rect(c, side * (width / 2 - 5) - 1, top + 3, 3, 3, brightCopper); rect(c, side * (width / 2 - 5) - 1, top + height - 6, 2, 2, '#e1bc80'); }
+    // Every construct shares an inset amber furnace, never an exposed face.
+    const coreY = low ? -3 : -7, coreW = large ? 18 : 11;
+    rect(c, -coreW / 2 - 3, coreY - 6, coreW + 6, 16, '#29352d'); rect(c, -coreW / 2 - 1, coreY - 5, coreW + 2, 13, copper);
+    rect(c, -coreW / 2 + 1, coreY - 3, coreW - 2, 9, amber); rect(c, -2, coreY - 3, 3, 9, '#ffe6aa');
+    for (let i = -1; i <= 1; i++) rect(c, i * 5 - 1, coreY - 5, 2, 13, '#5c4c36');
+    if (attack.phase === 'windup') glow(c, 0, coreY, large ? 38 : 26, '#efad5225');
+    if (!low) {
+      const headY = large ? -45 : kind === 'pyromancer' ? -39 : -35, headW = large ? 29 : 22;
+      rect(c, -headW / 2 - 2, headY, headW + 4, 23, '#1b302b'); rect(c, -headW / 2, headY + 1, headW, 20, stone);
+      rect(c, -headW / 2 + 1, headY + 2, 5, 17, lightStone); rect(c, headW / 2 - 5, headY + 2, 5, 17, darkStone);
+      rect(c, -headW / 2 - 3, headY, headW + 6, 5, copper); rect(c, -headW / 2 - 2, headY, headW + 4, 2, brightCopper);
+      rect(c, -headW / 2 + 2, headY + 9, headW - 4, 5, '#24372f'); rect(c, -headW / 2 + 4, headY + 10, headW - 8, 2, amber);
+      rect(c, -headW / 2 + 4, headY + 18, headW - 8, 2, copper);
+    } else {
+      rect(c, -17, -20, 34, 10, copper); rect(c, -15, -19, 30, 3, brightCopper); rect(c, -10, -16, 20, 3, '#f4be6b');
+    }
+    if (kind === 'chaser' || kind === 'duelist') {
+      if (kind === 'duelist') {
+        rect(c, -16, -22, 32, 6, copper); rect(c, -18, -25, 12, 6, brightCopper); rect(c, 7, -25, 12, 6, brightCopper);
+        rect(c, -3, -48, 6, 14, copper); rect(c, -2, -50, 4, 8, '#e6bd76');
+      }
+      blade(c, 0, -3, facing + (attack.phase === 'windup' && attack.type === 'sweep' ? .8 : 0), attack.phase === 'windup', attack.phase === 'active', true);
+    } else if (kind === 'shooter') {
+      rect(c, -19, -25, 8, 19, '#34473b'); rect(c, -18, -27, 6, 4, copper);
+      for (let y = -22; y < -9; y += 4) rect(c, -18, y, 6, 2, brightCopper);
+      gun(c, 0, -3, facing, 'pistol', brightCopper, true);
+    } else if (kind === 'shield') {
+      c.save(); c.translate(Math.cos(facing) * 17, -3 + Math.sin(facing) * 12); c.rotate(facing);
+      rect(c, -5, -20, 11, 40, '#22382f'); rect(c, -3, -19, 9, 38, copper); rect(c, -2, -18, 3, 36, brightCopper);
+      for (const y of [-13, 0, 13]) { rect(c, -3, y - 2, 9, 4, '#d7b37b'); }
+      rect(c, 1, -6, 4, 12, '#5f5f4b'); c.restore();
+    } else if (low) {
+      for (const side of [-1, 1]) {
+        const sx = Math.cos(facing) * 18 + Math.cos(facing + Math.PI / 2) * side * 12;
+        const sy = -1 + Math.sin(facing) * 13 + Math.sin(facing + Math.PI / 2) * side * 8;
+        path(c, [[sx, sy], [sx + Math.cos(facing) * 19, sy + Math.sin(facing) * 15]], copper, 7);
+        path(c, [[sx, sy - 2], [sx + Math.cos(facing) * 19, sy + Math.sin(facing) * 15 - 2]], brightCopper, 3);
+      }
+      rect(c, -10, -26, 20, 6, darkStone); for (let x = -7; x <= 7; x += 7) rect(c, x, -28, 3, 6, copper);
+    } else if (large) {
+      const raised = attack.phase === 'windup' && attack.type === 'quake';
+      for (const side of [-1, 1]) {
+        const y = raised ? -45 : -17 + step * side;
+        rect(c, side * 27 - 7, y, 14, 26, darkStone); rect(c, side * 27 - 9, y - 4, 18, 14, stone);
+        rect(c, side * 27 - 9, y - 4, 18, 4, brightCopper); rect(c, side * 27 - 6, y + 6, 12, 7, copper);
+      }
+      rect(c, -18, -29, 36, 6, copper); rect(c, -15, -29, 30, 2, brightCopper);
+      for (const side of [-1, 1]) { rect(c, side * 12 - 3, -53, 6, 12, '#3e5048'); rect(c, side * 12 - 2, -53, 4, 3, copper); }
+    } else if (kind === 'pyromancer') {
+      rect(c, -15, 5, 30, 8, '#46574b'); rect(c, -12, 8, 24, 5, copper);
+      rect(c, -16, -42, 32, 5, copper); rect(c, -19, -38, 38, 4, brightCopper);
+      const handX = Math.cos(facing) * 22, handY = -4 + Math.sin(facing) * 13;
+      path(c, [[Math.cos(facing) * 9, -8], [handX, handY]], copper, 6);
+      rect(c, handX - 2, handY - 43, 4, 57, '#594c35'); rect(c, handX - 1, handY - 43, 2, 53, '#bd945c');
+      rect(c, handX - 14, handY - 45, 28, 4, brightCopper); lantern(c, handX, handY - 26, time, .8);
+    }
+  }
+  function enemy(c, e, time, events = [], still = false, chapter = false) {
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15), step = Math.sin(time * .012 + x) * 1.5;
     shadow(c, x, y, r, .43);
@@ -471,7 +637,9 @@
       const recoil = (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
       c.translate(Math.cos(num(e.facing)) * -recoil, Math.sin(num(e.facing)) * -recoil);
     }
-    if (boss) {
+    if (chapter && !boss) {
+      chapterConstruct(c, e, time, step);
+    } else if (boss) {
       const awakened = e.stage >= 2;
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
       rect(c, -21, 5 + step, 15, 16, '#192c2b'); rect(c, 8, 5 - step, 15, 16, '#192c2b'); rect(c, -20, 6 + step, 13, 12, '#62725c'); rect(c, 9, 6 - step, 13, 12, '#62725c');
@@ -578,8 +746,9 @@
     if (e.elite && !boss) {
       const crownY = y - 64;
       path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
-      label(c, e.huntTarget ? '逐迹巨兽' : {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司'}[kind] || '精英', x, crownY - 15, e.huntTarget ? '#e7b18a' : '#ebcf8e', 8);
+      label(c, chapter ? chapterEnemyNames[kind] || '炉卫' : e.huntTarget ? '逐迹巨兽' : {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司'}[kind] || '精英', x, crownY - 15, e.huntTarget ? '#e7b18a' : '#ebcf8e', 8);
     }
+    if (chapter && !boss && !e.elite) label(c, chapterEnemyNames[kind] || '炉卫', x, y - (kind === 'charger' ? 40 : 50), '#d6b789', 8);
     if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
   }
   function bullet(c, b) {
@@ -997,7 +1166,53 @@
     for(let i=0;i<3;i++)rect(c,left+width-37+i*8,top+height-16-i*2,5,4+i*2,i<audible?noiseColor:'#415c4d');
     c.restore();
   }
+  function chapterMap(c, state) {
+    if (!state.chapter || !Array.isArray(state.rooms)) return;
+    const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
+    if (!rooms.length) return;
+    const run = state.chapter, current = state.room && state.room.index, visible = rooms.filter(room => room.visited || room.discovered);
+    const left = 752, top = 18, width = 190, height = 162;
+    const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
+    const minY = Math.min(...rooms.map(room => room.gy)), maxY = Math.max(...rooms.map(room => room.gy));
+    const spacing = Math.min(36, 144 / Math.max(1, maxX - minX), 74 / Math.max(1, maxY - minY));
+    const points = new Map(visible.map(room => [room.index, { room, x: left + width / 2 + (room.gx - (minX + maxX) / 2) * spacing,
+      y: top + 79 + (room.gy - (minY + maxY) / 2) * spacing }]));
+    c.save(); rect(c, left, top, width, height, '#102523e8'); c.strokeStyle = '#a0845e80'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, '借火归营', left + 12, top + 15, '#e1c08a', 10, 'left');
+    const phase = { depart: '启程', workshop: '探查工坊', core: '前往炉心', return: '带火归营', complete: '归火已成', failed: '探险中断' }[run.phase] || '第一章';
+    label(c, phase, left + width - 12, top + 15, run.lampLit ? '#dce3b0' : '#bda98b', 8, 'right');
+    for (const room of visible) {
+      if (!room.visited) continue;
+      const point = points.get(room.index);
+      for (const nextIndex of values(room.neighbors)) {
+        const next = points.get(nextIndex); if (!next) continue;
+        path(c, [[point.x, point.y], [next.x, next.y]], run.fireTaken && next.room.visited ? '#c69b6380' : next.room.visited ? '#82937899' : '#63785e66', 2);
+      }
+    }
+    for (const room of visible) {
+      const point = points.get(room.index), active = room.index === current, size = active ? 14 : 10;
+      rect(c, point.x - size / 2 - 2, point.y - size / 2 - 2, size + 4, size + 4, '#142c28');
+      rect(c, point.x - size / 2, point.y - size / 2, size, size, active ? '#dfd7a0' : room.visited ? '#78866c' : '#334c3e');
+      c.strokeStyle = active ? '#f2dda5' : room.index === 4 ? '#b99462' : '#8d987b70'; c.lineWidth = active ? 2 : 1;
+      c.strokeRect(Math.round(point.x - size / 2) + .5, Math.round(point.y - size / 2) + .5, size, size);
+      if (room.index === 0) {
+        rect(c, point.x - 2, point.y - 6, 4, 11, run.lampLit ? '#f7ce7c' : '#9ba783');
+        rect(c, point.x - 4, point.y - 5, 8, 3, run.lampLit ? '#fff0b5' : '#c5c8a0');
+      } else if (room.index === 4) {
+        path(c, [[point.x, point.y - 5], [point.x + 4, point.y], [point.x, point.y + 5], [point.x - 4, point.y], [point.x, point.y - 5]], run.fireTaken ? '#f6ce86' : '#a5ae91', 2);
+      } else if (room.visited && room.index === 3) {
+        path(c, [[point.x - 4, point.y], [point.x - 1, point.y + 2], [point.x + 3, point.y]], run.sluiceOpen ? '#a5d3c2' : '#6e9c96', 2);
+      } else if (room.visited && (room.index === 5 || room.index === 6)) {
+        rect(c, point.x - 2, point.y - 2, 4, 4, (room.index === 5 ? run.suppliesTaken : run.beaconLit) ? '#f0ca83' : '#b0b394');
+      }
+    }
+    label(c, run.lampLit ? '第一盏归途灯已点亮' : run.fireTaken ? '火种同行 · 返回哨站' : '循着回收队的痕迹', left + 12, top + height - 33, run.lampLit ? '#e8d79e' : '#c1b895', 8, 'left');
+    label(c, `线索 ${values(run.clues).length} / 3`, left + 12, top + height - 13, '#a8b39a', 8, 'left');
+    label(c, `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + width - 12, top + height - 13, '#92a38a', 8, 'right');
+    c.restore();
+  }
   function minimap(c, state) {
+    if (state.mode === 'chapter') { chapterMap(c, state); return; }
     if (state.mode === 'relay') { relayMap(c, state); return; }
     if (state.mode === 'hunt') { huntMap(c, state); return; }
     if (state.practice || state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
@@ -1060,6 +1275,7 @@
     c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
+    chapterFloor(c, state, time);
     values(state.walls).forEach(w => wall(c, w));
     values(state.doors).forEach(d => door(c, d, time));
     values(state.portals).forEach(p => portal(c, p, time));
@@ -1077,7 +1293,7 @@
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId) })),
-      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still) })),
+      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still, state.mode === 'chapter') })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
@@ -1127,7 +1343,7 @@
     wall(c, { x: 551, y: 481, w: 53, h: 40 }); rect(c, 546, 477, 63, 9, '#78906b'); rect(c, 552, 474, 48, 4, '#9caa7b'); grass(c, 558, 476, '#a1af74');
     for (const [x,y,s] of [[629,491,1.4],[907,510,1.3],[892,241,1],[587,154,1],[803,527,1]]) grass(c,x,y,'#6f8c50',s);
     // These three repaired lamps are the expedition campaign's visible goal.
-    const lit = Math.max(0, Math.min(3, Math.floor(num(profile.lit))));
+    const lit = Math.max(profile.chapter1 ? 1 : 0, Math.max(0, Math.min(3, Math.floor(num(profile.lit)))));
     for (let i = 0; i < 3; i++) {
       const x = 665 + i * 73, y = 511;
       shadow(c,x,y,19,.25);rect(c,x-16,y-4,32,11,'#334f42');rect(c,x-18,y-8,36,6,'#6c8160');rect(c,x-13,y-11,26,4,'#92a078');rect(c,x-2,y-21,4,12,'#6d7d55');
@@ -1136,6 +1352,20 @@
       label(c,['炉心','物资','守夜'][i],x,y+15,i<lit?'#d8c58b':'#809676',8);
     }
     label(c,`归途灯 · ${lit} / 3`,739,553,'#bdc499',9);
+    if (profile.chapter1) {
+      // Returning collectors and their recovered cart stay in the camp after
+      // chapter completion, giving the restored lamp a visible consequence.
+      for (const [x, y, flip] of [[842, 253, 1], [898, 291, -1]]) {
+        shadow(c, x, y, 14, .3); rect(c, x - 7, y + 3, 5, 10, '#23382d'); rect(c, x + 3, y + 3, 5, 10, '#23382d');
+        rect(c, x - 10, y - 14, 20, 20, '#7c7651'); rect(c, x - 9, y - 13, 5, 17, '#b5a571');
+        rect(c, x - 8, y - 28, 16, 15, '#bd9e76'); rect(c, x - 11, y - 29, 22, 6, '#786a45');
+        rect(c, x - 6, y - 16, 13, 4, '#b67d48'); rect(c, x + flip * 10 - 3, y - 12, 6, 17, '#53674a');
+        rect(c, x - 14, y - 5, 28, 18, '#715e3e'); rect(c, x - 12, y - 4, 24, 14, '#aa8c58'); rect(c, x - 2, y - 5, 4, 18, '#d0b978');
+      }
+      rect(c, 861, 313, 47, 6, '#88754c'); rect(c, 866, 293, 37, 23, '#5e6648'); rect(c, 869, 294, 31, 5, '#adb183');
+      for (const x of [870, 899]) { ellipse(c, x, 322, 6, 6, '#22372b'); ellipse(c, x, 322, 3, 3, '#a78b57'); }
+      label(c, '采集队已归营', 868, 228, '#d7c48f', 9);
+    }
     lantern(c, 904, 529, time, .85);
     ambient(c, {}, time); c.restore();
   }

@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 10;
+  const VERSION = 11;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -34,7 +34,8 @@
     // A current lobby always identifies its mode. Never interpret an old or altered
     // lobby as the default mode; the app validates mission/difficulty and state.
     if (message.type === 'loadout') return message.weapon === 'pistol' || message.weapon === 'scatter';
-    return message.type !== 'lobby' || message.mode === 'random' || message.mode === 'story' || message.mode === 'relay' || message.mode === 'hunt';
+    if (message.type === 'lobby' && message.mode === 'chapter') return message.mission === 'chapter1' && message.difficulty === 1;
+    return message.type !== 'lobby' || message.mode === 'chapter' || message.mode === 'random' || message.mode === 'story' || message.mode === 'relay' || message.mode === 'hunt';
   }
 
   // Bound both JSON size and nesting. Ignore no fields and accept no binary,

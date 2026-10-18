@@ -10,7 +10,13 @@
   var MISSIONS = {
     ember: { id: 'ember', name: '熄灭炉心', goal: '穿过遗迹，击败炉心守卫，带回营地灯芯', total: 1, coins: 40 },
     salvage: { id: 'salvage', name: '物资回收', goal: '搜集 3 箱补给，再到水闸撤离点按 E 撤离', total: 3, coins: 30 },
-    holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 }
+    holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 },
+    chapter1: { id: 'chapter1', name: '第一章 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 }
+  };
+  var CHAPTER_NOTES = {
+    trail: { title: '采集队的刻痕', text: '新刻下的箭头指向工坊。字迹还很清楚：“灯灭了，我们去找备用火。若有人来，请把归途灯点亮。”' },
+    cooling: { title: '停炉维修记录', text: '“主炉芯移走后，备用炉心持续过热。先打开南侧冷却水闸，再接近炉心。守卫仍执行旧命令，无法辨认来人。”' },
+    'missing-core': { title: '空置的主炉芯座', text: '主炉芯座只剩被切断的铜扣，地上的搬运轨迹还很新。备用炉心代替它运转，直至过热失控。有人先一步带走了主炉芯。' }
   };
   var BUFFS = {
     pierce: { label: '穿透棱镜', description: '子弹穿透 2 个敌人；近战伤害 +1' },
@@ -142,13 +148,13 @@
   function create(options) {
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
-    var mode = options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
-    var missionId = mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : MISSIONS[options.mission] ? options.mission : 'ember';
+    var mode = options.mode === 'chapter' ? 'chapter' : options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
+    var missionId = mode === 'chapter' ? 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
     var s = { version: 1, combatVersion: 1, contentVersion: 1, weaponVersion: 1, tacticsVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       rangedLoadout: options.rangedLoadout === 'scatter' ? 'scatter' : options.rangedLoadout === 'pistol' ? 'pistol' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
-      difficulty: mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
+      difficulty: mode === 'chapter' || mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
       runBuffs: [], relicRooms: [], interactables: [], decoys: [], roomEvent: null,
@@ -172,11 +178,165 @@
       s.roomData[0] = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28), rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
         doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
-    } else if (mode === 'hunt') createHunt(s);
+    } else if (mode === 'chapter') createChapter(s);
+    else if (mode === 'hunt') createHunt(s);
     else if (mode === 'relay') createRelay(s);
     else if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
     return s;
+  }
+  function createChapter(s) {
+    var definitions = [
+      ['归途灯营地', 'camp', 0, 0, [1]], ['工坊外庭', 'battle', 1, 0, [0, 2, 6]],
+      ['苔火工坊', 'battle', 2, 0, [1, 3, 5]], ['冷却水闸', 'puzzle', 2, 1, [2, 4]],
+      ['备用炉心大厅', 'boss', 3, 1, [3]], ['旧物资仓', 'battle', 2, -1, [2, 6]],
+      ['失联信号台', 'battle', 1, -1, [1, 5]]
+    ];
+    s.chapter = { id: 'chapter1', version: 1, phase: 'depart', clues: [], sluiceOpen: false,
+      bossDefeated: false, fireTaken: false, lampLit: false, suppliesTaken: false, beaconLit: false };
+    s.rooms = definitions.map(function (d, i) {
+      return { index: i, id: 'chapter1-' + i, name: d[0], kind: d[1], gx: d[2], gy: d[3],
+        neighbors: d[4], cleared: !i, visited: false, discovered: true };
+    });
+    function item(data, kind, x, y, label, extra) {
+      data.interactables.push(Object.assign({ id: 'chapter1-' + kind, kind: 'chapter-' + kind,
+        x: x, y: y, r: 23, label: label, active: true, used: false }, extra || {}));
+    }
+    function note(data, clue, x, y) {
+      var def = CHAPTER_NOTES[clue];
+      item(data, 'note', x, y, '查看' + def.title, { id: 'chapter1-note-' + clue,
+        clueId: clue, title: def.title, text: def.text });
+    }
+    function guard(data, kind, x, y, elite, relic) {
+      var names = { chaser: '巡炉刀兵', shooter: '炉火枪兵', shield: '执盾守卫', charger: '搬运撞兽',
+        duelist: '守刃监工', brute: '重装炉卫', pyromancer: '提灯司炉者', boss: '炉心守卫' };
+      var foe = enemy(s, kind, x, y); foe.name = names[kind];
+      if (elite) { foe.elite = true; foe.relicBuff = relic; }
+      data.enemies.push(foe); return foe;
+    }
+    s.rooms.forEach(function (room) {
+      var data = { walls: [], doors: [], portals: [], props: [], enemies: [], fires: [],
+        switches: [], pickups: [], fountains: [], interactables: [] }, exits = {};
+      room.neighbors.forEach(function (index) {
+        var next = s.rooms[index], dx = next.gx - room.gx, dy = next.gy - room.gy;
+        var direction = dx > 0 ? 'east' : dx < 0 ? 'west' : dy > 0 ? 'south' : 'north';
+        exits[direction] = true;
+        data.portals.push({ id: 'chapter-path-' + room.index + '-' + index, x: dx ? dx > 0 ? 884 : 76 : 480,
+          y: dy ? dy > 0 ? 524 : 76 : 300, r: 27, target: index, direction: direction,
+          active: index !== 4, label: next.name });
+        data.doors.push({ id: 'door-' + direction, x: dx ? dx > 0 ? 916 : 28 : 436,
+          y: dy ? dy > 0 ? 556 : 28 : 256, w: dx ? 16 : 88, h: dy ? 16 : 88,
+          locked: index === 4, label: index === 4 ? '冷却水闸未开' : '工坊通道' });
+      });
+      ['north', 'south'].forEach(function (edge) {
+        var y = edge === 'north' ? 0 : H - 28;
+        if (exits[edge]) data.walls.push(rect(0, y, 424, 28), rect(536, y, W - 536, 28));
+        else data.walls.push(rect(0, y, W, 28));
+      });
+      ['west', 'east'].forEach(function (edge) {
+        var x = edge === 'west' ? 0 : W - 28;
+        if (exits[edge]) data.walls.push(rect(x, 0, 28, 244), rect(x, 356, 28, H - 356));
+        else data.walls.push(rect(x, 0, 28, H));
+      });
+      if (room.index === 0) {
+        data.walls.push(rect(390, 120, 120, 45), rect(390, 435, 120, 45));
+        item(data, 'lamp', 450, 300, '点亮归途灯', { active: false,
+          description: '守灯人：请从苔火工坊借回备用火，给采集队照亮回来的路。' });
+      } else if (room.index === 1) {
+        data.walls.push(rect(390, 130, 55, 100));
+        data.props.push(prop(s, 'crate', 370, 390), prop(s, 'barrel', 670, 425));
+        guard(data, 'chaser', 610, 140); guard(data, 'shooter', 745, 440);
+        guard(data, 'duelist', 710, 290, true, 'riposte');
+        note(data, 'trail', 290, 150);
+      } else if (room.index === 2) {
+        data.walls.push(rect(330, 140, 65, 105), rect(600, 365, 65, 105));
+        data.props.push(prop(s, 'crate', 330, 325), prop(s, 'barrel', 650, 250));
+        guard(data, 'shield', 680, 165); guard(data, 'shooter', 760, 440); guard(data, 'charger', 480, 180);
+        note(data, 'cooling', 440, 425);
+      } else if (room.index === 3) {
+        data.walls.push(rect(350, 130, 80, 70));
+        data.props.push(prop(s, 'crate', 420, 450), prop(s, 'barrel', 670, 350));
+        guard(data, 'pyromancer', 720, 170, true, 'resonance');
+        data.fires.push({ id: 'chapter-cooling-fire', x: 810, y: 300, r: 38, active: true, chapterCooling: true });
+        item(data, 'sluice', 480, 355, '打开冷却水闸', { description: '冷却水道干涸，炉心通路被热浪封住。' });
+      } else if (room.index === 4) {
+        data.walls.push(rect(300, 145, 66, 70), rect(604, 385, 66, 70));
+        data.props.push(prop(s, 'barrel', 360, 420), prop(s, 'barrel', 650, 170));
+        guard(data, 'boss', 680, 300);
+        note(data, 'missing-core', 370, 165);
+        item(data, 'fire', 680, 300, '借取备用火种', { active: false,
+          description: '先稳定暴走的炉心守卫，再取出可携带的备用火种。' });
+      } else if (room.index === 5) {
+        data.walls.push(rect(310, 160, 65, 95), rect(580, 365, 65, 95));
+        data.props.push(prop(s, 'crate', 320, 360), prop(s, 'barrel', 650, 300));
+        guard(data, 'brute', 700, 210, true, 'vigor');
+        item(data, 'supplies', 470, 370, '取用药物补给', { description: '全队恢复 3 点生命，只能取用一次。' });
+      } else {
+        data.walls.push(rect(360, 125, 70, 100));
+        data.props.push(prop(s, 'crate', 570, 380), prop(s, 'barrel', 680, 200));
+        guard(data, 'chaser', 690, 420); guard(data, 'shooter', 730, 160);
+        item(data, 'beacon', 440, 350, '接通信号台', { description: '全队获得一次护盾；旧线路通向营地。' });
+      }
+      data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
+      s.roomData[room.index] = data;
+    });
+  }
+  function syncChapter(s) {
+    var c = s.chapter;
+    if (s.status === 'playing') c.phase = c.fireTaken ? 'return' : c.sluiceOpen ? 'core' :
+      c.phase !== 'depart' || s.room.index !== 0 ? 'workshop' : 'depart';
+    s.mission.phase = c.phase; s.mission.progress = c.lampLit ? 1 : 0;
+    s.portals.forEach(function (gate) { gate.active = gate.target !== 4 || c.sluiceOpen; });
+    s.doors.forEach(function (door) { door.locked = s.room.index === 3 && door.id === 'door-east' && !c.sluiceOpen; });
+    s.fires.forEach(function (fire) { if (fire.chapterCooling && c.sluiceOpen) fire.active = false; });
+    s.interactables.forEach(function (q) {
+      if (q.kind === 'chapter-note') q.used = c.clues.indexOf(q.clueId) >= 0;
+      if (q.kind === 'chapter-lamp') { q.used = c.lampLit; q.active = c.fireTaken && !q.used; }
+      if (q.kind === 'chapter-fire') { q.used = c.fireTaken; q.active = c.bossDefeated && !q.used; }
+      if (q.kind === 'chapter-sluice') q.used = c.sluiceOpen;
+      if (q.kind === 'chapter-supplies') q.used = c.suppliesTaken;
+      if (q.kind === 'chapter-beacon') q.used = c.beaconLit;
+      if (q.kind.indexOf('chapter-') === 0 && q.used) q.active = false;
+      if (q.kind === 'relic' && s.runBuffs.indexOf(q.buff) >= 0) { q.used = true; q.active = false; }
+    });
+  }
+  function interactChapter(s, p, target) {
+    var c = s.chapter;
+    if (!c || target.kind.indexOf('chapter-') !== 0 || target.used || !target.active) return false;
+    target.used = true; target.active = false;
+    if (target.kind === 'chapter-note') {
+      if (c.clues.indexOf(target.clueId) < 0) c.clues.push(target.clueId);
+      event(s, 'chapter-note', { clueId: target.clueId, title: target.title, text: target.text,
+        playerId: p.id, x: target.x, y: target.y });
+      s.message = target.title + '：' + target.text;
+    } else {
+      if (target.kind === 'chapter-sluice') {
+        c.sluiceOpen = true;
+        s.fires.forEach(function (f) { if (f.chapterCooling && f.active) { f.active = false; s.stats.fires += 1; burst(s, 'steam', f.x, f.y, '#b4d6d6', 14); } });
+        s.message = '冷却水重新流动，热浪退去了。备用炉心的轰鸣从东侧传来。';
+      } else if (target.kind === 'chapter-fire') {
+        c.fireTaken = true;
+        s.message = '备用火种已装入提灯。沿原路返回营地，采集队还在等归途灯。';
+        burst(s, 'heal', target.x, target.y, '#ffd77c', 16);
+      } else if (target.kind === 'chapter-lamp') {
+        c.lampLit = true; c.phase = 'complete';
+        event(s, 'chapter-lamp', { playerId: p.id, x: target.x, y: target.y });
+        burst(s, 'heal', target.x, target.y, '#ffd77c', 30); finish(s, 'won');
+        return true;
+      } else if (target.kind === 'chapter-supplies') {
+        c.suppliesTaken = true;
+        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
+        s.message = '取出尚未损坏的药物，全队恢复 3 点生命。这些物资也能帮营地渡过今夜。';
+        burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
+      } else if (target.kind === 'chapter-beacon') {
+        c.beaconLit = true; alivePlayers(s).forEach(function (q) { q.ward = 1; });
+        s.message = '旧线路接通了。守灯人的声音传来：“我们看见信号了，等你们带火回来。”全队获得一次护盾。';
+        burst(s, 'heal', target.x, target.y, '#a5f6e4', 15);
+      } else return false;
+      event(s, target.kind, { playerId: p.id, x: target.x, y: target.y });
+    }
+    s.messageTime = target.kind === 'chapter-note' ? 8 : 5;
+    syncChapter(s); setHint(s); return true;
   }
   function createRelay(s) {
     s.mission.name = '接力夺宝'; s.mission.goal = '带回炉芯，在苔灯撤离站按 E 交付';
@@ -666,8 +826,9 @@
     if (!Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
     var previous = s.room;
     if (s.mode === 'hunt' && !initial && (!previous || previous.neighbors.indexOf(index) < 0)) return false;
-    if ((s.mode === 'random' || s.mode === 'relay') && !initial) {
+    if ((s.mode === 'random' || s.mode === 'relay' || s.mode === 'chapter') && !initial) {
       if (!previous || previous.neighbors.indexOf(index) < 0) return false;
+      if (s.mode === 'chapter' && index === 4 && !s.chapter.sluiceOpen) return false;
       // A carried object belongs to its original room. Place it safely before
       // saving, rather than duplicating it at the next room's entrance.
       var carriers = Object.keys(s.players).map(function (key) { return s.players[key]; }).filter(function (p) { return p.carry; });
@@ -682,7 +843,7 @@
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
-    if (s.mode === 'relay' || s.mode === 'hunt') delete s.roomData[index];
+    if (s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter') delete s.roomData[index];
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
@@ -696,12 +857,13 @@
       var p = s.players[key]; p.x = 130; p.y = 275 + i * 52;
       resetCombat(p);
       if (s.practice) { p.x = 390; p.y = 300 + i * 48; p.facing = 0; }
-      if (s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt') {
+      if (s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter') {
         var dx = previous ? s.rooms[index].gx - previous.gx : 0;
         var dy = previous ? s.rooms[index].gy - previous.gy : 0;
         p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
         p.y = dy ? dy > 0 ? 132 : H - 132 : H / 2 + (i ? 28 : -24);
         if (s.mode === 'relay' && initial) { p.x = 170; p.y = 276 + i * 48; }
+        if (s.mode === 'chapter' && initial) { p.x = 180; p.y = 276 + i * 48; }
       }
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
@@ -718,11 +880,19 @@
     updateCarries(s); refreshProgress(s);
     event(s, 'room-enter', { room: index, name: s.room.name });
     s.message = s.room.name; s.messageTime = 2;
+    if (s.mode === 'chapter' && initial) {
+      s.message = '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。'; s.messageTime = 8;
+    }
     return true;
   }
   function setHint(s) {
     if (s.status !== 'playing') return;
     if (s.practice) { s.objective = '击败持刀守卫'; s.hint = ''; return; }
+    if (s.mode === 'chapter') {
+      s.objective = s.chapter.fireTaken ? '带火回营 · 点亮归途灯' : s.chapter.bossDefeated ? '取出备用火种' :
+        s.chapter.sluiceOpen ? '稳定备用炉心' : s.chapter.phase === 'depart' ? '前往苔火工坊借火' : '寻找冷却水闸';
+      s.hint = ''; return;
+    }
     if (s.mode === 'hunt') {
       s.objective = s.hunt.targetRoom === s.room.index ? '击败逐迹巨兽' : '追踪逐迹巨兽';
       s.hint = ''; return;
@@ -820,6 +990,7 @@
   function syncMission(s) {
     var m = s.mission;
     if (s.status !== 'playing') return;
+    if (s.mode === 'chapter') { syncChapter(s); return; }
     if (s.mode === 'hunt') {
       m.progress = s.hunt.defeated ? 1 : 0; m.total = 1;
       m.phase = s.hunt.targetRoom === s.room.index ? 'hunt' : 'track';
@@ -941,6 +1112,16 @@
       if (s.room.cleared && s.status === 'playing') finish(s, 'won');
       setHint(s); return;
     }
+    if (s.mode === 'chapter') {
+      var clearChapter = !s.enemies.some(function (e) { return e.hp > 0; });
+      if (clearChapter && !s.rooms[s.room.index].cleared) {
+        s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
+        event(s, 'room-clear', { room: s.room.index });
+        if (s.room.index !== 4) s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 300, r: 14, amount: 2 });
+      }
+      s.room.cleared = s.rooms[s.room.index].cleared;
+      syncChapter(s); setHint(s); return;
+    }
     if (s.mode === 'hunt') {
       var clearHuntRoom = !s.enemies.some(function (e) { return e.hp > 0; });
       if (clearHuntRoom && !s.rooms[s.room.index].cleared) {
@@ -1011,6 +1192,7 @@
       s.message = status === 'won' ? '试炼完成' : '再听一次刀锋的节奏'; s.messageTime = 999;
       event(s, status === 'won' ? 'practice-complete' : 'defeat'); return;
     }
+    if (s.mode === 'chapter') s.chapter.phase = status === 'won' ? 'complete' : 'failed';
     if (status === 'won' && !s.rewardGranted) {
       s.rewardGranted = true;
       s.mission.phase = 'complete'; s.mission.progress = s.mission.total;
@@ -1019,6 +1201,10 @@
         secret: s.secretCleared, elapsed: Math.round(s.elapsed), kills: s.stats.kills };
       event(s, 'reward', clone(s.reward));
       s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
+      if (s.mode === 'chapter') {
+        s.message = '归途灯重新亮起，采集队循着灯光回到了营地。旧线路里，另一座废弃哨站传来微弱的求援声。';
+        s.objective = '第一章完成 · 今夜的归路重新亮起';
+      }
     } else if (status === 'lost') {
       s.mission.phase = 'failed';
       event(s, 'defeat'); s.message = '探险队倒下了'; s.objective = '重整装备，再试一次';
@@ -1127,11 +1313,14 @@
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (target) {
       if (!target.active) {
-        s.message = target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
+        s.message = target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
+          target.kind === 'chapter-lamp' ? '归途灯没有火种。守灯人还在等工坊的备用火。' :
+          target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
           target.kind === 'extraction' ? '还缺补给：沿西侧光门返回搜索遗漏的蓝箱' : '先守住这一波，再操作信标';
         s.messageTime = 2;
         return false;
       }
+      if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift') return startRoomEvent(s, target);
       if (target.kind === 'supply-cache' && s.roomEvent && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
@@ -1258,7 +1447,7 @@
     if (e.hp <= 0) return;
     if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
     e.hp -= amount; e.flash = 0.12;
-    if (s.mode === 'random' && e.kind === 'boss' && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
+    if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
       e.stage = 2; e.rhythm = null; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0;
       s.walls = s.walls.filter(function (w) {
         var boundary = w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28;
@@ -1273,14 +1462,19 @@
       if (s.players[owner]) s.players[owner].kills += 1;
       burst(s, 'enemy-death', e.x, e.y, e.kind === 'boss' ? '#ffc477' : '#ec9c8d', 12);
       event(s, 'enemy-killed', { enemyId: e.id, kind: e.kind, playerId: owner || null });
+      if (s.mode === 'chapter' && e.kind === 'boss') {
+        s.chapter.bossDefeated = true;
+        s.message = '炉心守卫停止了暴走。备用火仍在燃烧，可以带它回营地。'; s.messageTime = 5;
+        event(s, 'chapter-boss-defeated', { enemyId: e.id, x: e.x, y: e.y });
+      }
       if (s.mode === 'hunt' && e.huntTarget && e.id === s.hunt.targetId) {
         s.hunt.defeated = true; s.hunt.arrival = null; s.hunt.heardFrom = null;
         event(s, 'hunt-defeated', { enemyId: e.id, room: s.room.index, x: e.x, y: e.y });
       }
-      if (s.mode === 'random') {
-        if (e.kind === 'boss') s.exploration.bossDefeated = true;
+      if (s.mode === 'random' || s.mode === 'chapter') {
+        if (e.kind === 'boss') { if (s.mode === 'random') s.exploration.bossDefeated = true; }
         else {
-          s.exploration.kills += 1;
+          if (s.mode === 'random') s.exploration.kills += 1;
           if (e.elite && BUFFS[e.relicBuff]) {
             var available = Object.keys(BUFFS).filter(function (key) { return key !== e.relicBuff && s.runBuffs.indexOf(key) < 0; });
             var choices = s.runBuffs.indexOf(e.relicBuff) < 0 ? [e.relicBuff] : [];
@@ -1295,7 +1489,7 @@
             });
             if (choices.length) event(s, 'relic-dropped', { enemyId: e.id, buff: choices[0], x: e.x, y: e.y });
           }
-          awakenBoss(s);
+          if (s.mode === 'random') awakenBoss(s);
         }
       }
     }
@@ -1591,7 +1785,7 @@
     e.attackCd -= dt;
     var distance = dist(e, target), boss = e.kind === 'boss';
     var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
-      ['combo', 'thrust', boss && (s.mode !== 'random' || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
+      ['combo', 'thrust', boss && ((s.mode !== 'random' && s.mode !== 'chapter') || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
     // A telegraph must start within the strike's reach. Previously a stationary
     // beginner saw slashes at ~168px even though they could only connect at 159px.
@@ -1987,7 +2181,8 @@
     var special = s.interactables.filter(function (q) { return !q.used && q.kind !== 'relay-extraction' && dist(p, q) < 76; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (special) {
-      if (!special.active) return special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
+      if (!special.active) return special.kind === 'chapter-fire' ? '炉心仍在暴走' :
+        special.kind === 'chapter-lamp' ? '归途灯还缺火种' : special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
         special.kind === 'extraction' ? '补给尚未齐全：返回前 3 间房搜索蓝箱' : '守住当前波次后可操作信标';
       return 'E · ' + special.label + (special.kind === 'relic' && s.mode !== 'random' ? '（同组只能选一件）' : '');
     }
@@ -1998,7 +2193,7 @@
     if (s.mode === 'relay' && s.props.some(function (q) { return q.kind === 'core' && q.thrown && dist(p, q) < 190; })) return 'K / 右键 · 接住炉芯';
     var gate = s.portals.find(function (g) { return g.active && dist(p, g) < 85; });
     if (gate) return '踏入光门 / E · ' + gate.label;
-    return s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' ? '' : s.hint;
+    return s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter' ? '' : s.hint;
   }
   function step(s, inputs, dt) {
     if (!s || s.status !== 'playing') return s;
@@ -2106,7 +2301,7 @@
     return result;
   }
 
-  return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), BUFFS: clone(BUFFS), create: create, addPlayer: addPlayer,
+  return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
     snapshot: snapshot, getHint: getHint };
 });

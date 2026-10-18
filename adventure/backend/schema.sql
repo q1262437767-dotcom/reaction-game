@@ -114,10 +114,12 @@ begin
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   if not ((p_profile->'missions') ?& array['ember','salvage','holdout'])
-      or (select count(*) from jsonb_object_keys(p_profile->'missions')) <> 3 then
+      or (select count(*) from jsonb_object_keys(p_profile->'missions')) not in (3, 4)
+      or exists (select 1 from jsonb_object_keys(p_profile->'missions') as keys(id)
+                 where id not in ('ember', 'salvage', 'holdout', 'chapter1')) then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
-  foreach v_key in array array['ember','salvage','holdout'] loop
+  for v_key in select jsonb_object_keys(p_profile->'missions') loop
     v_mission := p_profile->'missions'->v_key;
     if jsonb_typeof(v_mission) is distinct from 'object' then
       raise exception using errcode = '22023', message = 'invalid_profile';
@@ -186,7 +188,11 @@ begin
   else
     return query
       update public.ruins_saves as saved
-      set profile = p_profile, revision = saved.revision + 1, updated_at = clock_timestamp()
+      -- Earlier clients do not know chapter1. Their writes preserve its record.
+      set profile = case when not ((p_profile->'missions') ? 'chapter1') and ((saved.profile->'missions') ? 'chapter1')
+                         then jsonb_set(p_profile, '{missions,chapter1}', saved.profile#>'{missions,chapter1}')
+                         else p_profile end,
+          revision = saved.revision + 1, updated_at = clock_timestamp()
       where saved.user_id = v_user_id and saved.revision = p_expected_revision
       returning saved.profile, saved.revision, saved.updated_at;
   end if;

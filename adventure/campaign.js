@@ -14,6 +14,9 @@
     Object.freeze({ id: 1, name: '普通', description: '完成三个任务，点亮营地三盏灯。', bonus: 0 }),
     Object.freeze({ id: 2, name: '险境', description: '三盏灯全部点亮后开放；敌人更强，带回更多星屑。', bonus: 20 })
   ]);
+  var CHAPTERS = Object.freeze([
+    Object.freeze({ id: 'chapter1', name: '第一章 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 })
+  ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
     Object.freeze({ id: 'explorer', name: '秘径寻光', description: '完成一次隐藏房间的探索。' }),
@@ -33,7 +36,7 @@
   function normalize(raw) {
     raw = object(raw);
     var records = object(raw.missions), missions = {};
-    MISSIONS.forEach(function (mission) {
+    MISSIONS.concat(CHAPTERS).forEach(function (mission) {
       var saved = object(records[mission.id]);
       var clears = count(saved.clears), hardClears = count(saved.hardClears);
       var bestTime = typeof saved.bestTime === 'number' && Number.isFinite(saved.bestTime) && saved.bestTime >= 0 ? Math.min(saved.bestTime, 86400) : null;
@@ -41,7 +44,7 @@
     });
     // Version 1 had one mission only. Its wins remain valid after migration.
     if (raw.v !== 2 && count(raw.wins) > 0) missions.ember.clears = Math.max(missions.ember.clears, count(raw.wins));
-    var wins = Math.max(count(raw.wins), MISSIONS.reduce(function (sum, mission) { return sum + missions[mission.id].clears; }, 0));
+    var wins = Math.max(count(raw.wins), MISSIONS.concat(CHAPTERS).reduce(function (sum, mission) { return sum + missions[mission.id].clears; }, 0));
     var badgeIds = BADGES.map(function (badge) { return badge.id; });
     var badges = unique((Array.isArray(raw.badges) ? raw.badges : []).filter(function (id) { return badgeIds.includes(id); }));
     var relics = unique((Array.isArray(raw.relics) ? raw.relics : []).filter(function (id) { return RELICS.includes(id); }));
@@ -63,6 +66,7 @@
   }
 
   function canPlay(profile, id, difficulty) {
+    if (id === 'chapter1') return difficulty === undefined || difficulty === 1;
     var index = MISSIONS.findIndex(function (mission) { return mission.id === id; });
     if (index < 0 || (difficulty !== undefined && difficulty !== 1 && difficulty !== 2)) return false;
     var p = normalize(profile);
@@ -81,6 +85,12 @@
     return p;
   }
 
+  function chapterProgress(profile) {
+    var record = normalize(profile).missions.chapter1;
+    return { completed: record.clears > 0, clears: record.clears, hardClears: record.hardClears,
+      bestTime: record.bestTime, nextChapter: null };
+  }
+
   function applyResult(profile, state, runId) {
     var p = normalize(profile), before = progress(p), unlocks = [], newBadges = [];
     var result = { profile: p, reward: 0, unlocks: unlocks, newBadges: newBadges, duplicate: false };
@@ -91,6 +101,33 @@
     if (p.clearedRuns.includes(runId)) { result.duplicate = true; return result; }
     var missionId = object(state.mission).id || 'ember';
     var mission = missionById(missionId), difficulty = state.difficulty === undefined ? 1 : state.difficulty;
+    if (state.mode === 'chapter') {
+      var chapter = object(state.chapter), won = state.status === 'won';
+      if (missionId !== 'chapter1' || difficulty !== 1 || chapter.id !== 'chapter1' || chapter.version !== 1 ||
+          !['sluiceOpen', 'bossDefeated', 'fireTaken', 'lampLit', 'suppliesTaken', 'beaconLit'].every(function (key) { return typeof chapter[key] === 'boolean'; }) ||
+          chapter.lampLit !== won || chapter.fireTaken && !chapter.bossDefeated || chapter.bossDefeated && !chapter.sluiceOpen ||
+          chapter.lampLit && !chapter.fireTaken || chapter.phase !== (won ? 'complete' : 'failed')) return result;
+      p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80); p.runs = Math.min(LIMIT, p.runs + 1);
+      (Array.isArray(state.runBuffs) ? state.runBuffs : []).forEach(function (buff) {
+        if (RELICS.includes(buff) && !p.relics.includes(buff)) p.relics.push(buff);
+      });
+      if (p.relics.length === RELICS.length) earn('collector');
+      if (won) {
+        var chapterCoins = object(state.reward).coins;
+        result.reward = typeof chapterCoins === 'number' && Number.isFinite(chapterCoins) ? Math.min(40, count(chapterCoins)) : 40;
+        p.coins = Math.min(LIMIT, p.coins + result.reward); p.wins = Math.min(LIMIT, p.wins + 1);
+        var chapterRecord = p.missions.chapter1;
+        chapterRecord.clears = Math.min(LIMIT, chapterRecord.clears + 1);
+        if (typeof state.elapsed === 'number' && Number.isFinite(state.elapsed) && state.elapsed >= 0) {
+          var chapterTime = Math.min(86400, Math.round(state.elapsed * 10) / 10);
+          chapterRecord.bestTime = chapterRecord.bestTime === null ? chapterTime : Math.min(chapterRecord.bestTime, chapterTime);
+        }
+        if (object(state.stats).damage === 0) earn('flawless');
+        if (!chapterProgress(profile).completed) unlocks.push('第一章完成 · 归途灯重明');
+      }
+      return result;
+    }
+    if (missionId === 'chapter1') return result;
     // A malformed result cannot grant currency or unlock a mission.
     // A guest can accompany a host on a mission not yet unlocked in their own camp.
     // Selection locks belong to canPlay; a valid completed expedition still counts.
@@ -150,7 +187,7 @@
     }
   }
 
-  return Object.freeze({ MISSIONS: MISSIONS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS,
+  return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter });
+    chapterProgress: chapterProgress, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter });
 });
