@@ -15,7 +15,7 @@
     Object.freeze({ id: 2, name: '险境', description: '三盏灯全部点亮后开放；敌人更强，带回更多星屑。', bonus: 20 })
   ]);
   var CHAPTERS = Object.freeze([
-    Object.freeze({ id: 'chapter1', name: '第一章 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 })
+    Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 })
   ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
@@ -123,7 +123,7 @@
           chapterRecord.bestTime = chapterRecord.bestTime === null ? chapterTime : Math.min(chapterRecord.bestTime, chapterTime);
         }
         if (object(state.stats).damage === 0) earn('flawless');
-        if (!chapterProgress(profile).completed) unlocks.push('第一章完成 · 归途灯重明');
+        if (!chapterProgress(profile).completed) unlocks.push('第一节完成 · 归途灯重明');
       }
       return result;
     }

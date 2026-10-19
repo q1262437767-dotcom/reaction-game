@@ -11,7 +11,7 @@
     ember: { id: 'ember', name: '熄灭炉心', goal: '穿过遗迹，击败炉心守卫，带回营地灯芯', total: 1, coins: 40 },
     salvage: { id: 'salvage', name: '物资回收', goal: '搜集 3 箱补给，再到水闸撤离点按 E 撤离', total: 3, coins: 30 },
     holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 },
-    chapter1: { id: 'chapter1', name: '第一章 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 }
+    chapter1: { id: 'chapter1', name: '第一章 · 第一节 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 }
   };
   var CHAPTER_NOTES = {
     trail: { title: '采集队的刻痕', text: '新刻下的箭头指向工坊。字迹还很清楚：“灯灭了，我们去找备用火。若有人来，请把归途灯点亮。”' },
@@ -1203,7 +1203,7 @@
       s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
       if (s.mode === 'chapter') {
         s.message = '归途灯重新亮起，采集队循着灯光回到了营地。旧线路里，另一座废弃哨站传来微弱的求援声。';
-        s.objective = '第一章完成 · 今夜的归路重新亮起';
+        s.objective = '第一节完成 · 今夜的归路重新亮起';
       }
     } else if (status === 'lost') {
       s.mission.phase = 'failed';

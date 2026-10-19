@@ -317,7 +317,7 @@
     $('mission-goal').textContent = random ? '探索遗迹，击杀守卫唤醒深处的 Boss。' : relay ? '把炉芯带回入口撤离台，按 E 交付。' : hunt ? '追踪并击败游荡猎兽。' : mission.goal;
     $('mission-reward').textContent = `带回 ${relay ? 24 : hunt ? 32 : mission.reward + (selectedDifficulty() === 2 ? 20 : 0)} 星屑`;
     const unlocked = canStart(gameMode, mission.id, selectedDifficulty());
-    $('mission-lock').textContent = chapter ? chapterProgress().completed ? `本章已完成 ${chapterProgress().clears} 次 · 可重新出发` : '第一章已开放 · 归途灯等待点亮' : random ? '3 种精英 · 2 种事件 · 6 件遗物' : relay ? '3 间遗迹 · 单人 / 双人 · 自由穿行' : hunt ? '6 间猎场 · 足迹追踪 · 声音诱敌' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
+    $('mission-lock').textContent = chapter ? chapterProgress().completed ? `本节已完成 ${chapterProgress().clears} 次 · 可重新出发` : '第一节已开放 · 归途灯等待点亮' : random ? '3 种精英 · 2 种事件 · 6 件遗物' : relay ? '3 间遗迹 · 单人 / 双人 · 自由穿行' : hunt ? '6 间猎场 · 足迹追踪 · 声音诱敌' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
     $('mission-lock').hidden = false;
     $('solo-start').disabled = !unlocked;
     updateLobbyMenu();
@@ -331,12 +331,12 @@
     const chapterDone = chapterProgress();
     $('title-camp-status').textContent = chapterDone.completed ? '归途灯已亮 · 采集队已回营' : '归途灯尚未点亮';
     $('title-camp-status').setAttribute('data-complete', String(chapterDone.completed));
-    $('campaign-status').textContent = chapter ? `${chapterDone.completed ? '归途灯已点亮' : '归途灯等待修复'} · 星屑 ${camp.coins} · 第一章${chapterDone.completed ? '已完成' : '已开放'}` : random || relay || hunt ? `星屑 ${camp.coins} · 归来 ${camp.wins} 次${relay ? ' · 接力夺宝试玩' : hunt ? ' · 苔火猎场试玩' : ` · 遗物图鉴 ${progress.relicCount} / ${progress.relicTotal}`}` : `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
-    $('mission-progress').textContent = chapter ? chapterDone.completed ? '通关记录已保存 · 后续章节待开放' : '借回火种，再回营地点灯' : random ? '每局一张新地图' : relay ? '取回炉芯，原路撤离' : hunt ? '追踪、诱敌、伏击' : `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
-    $('chapter-camp-status').textContent = chapterDone.completed ? `第一章 · 借火归营 · 已完成 ${chapterDone.clears} 次` : '第一章 · 借火归营 · 归途灯尚未点亮';
+    $('campaign-status').textContent = chapter ? `${chapterDone.completed ? '归途灯已点亮' : '归途灯等待修复'} · 星屑 ${camp.coins} · 第一章 · 第一节${chapterDone.completed ? '已完成' : '已开放'}` : random || relay || hunt ? `星屑 ${camp.coins} · 归来 ${camp.wins} 次${relay ? ' · 接力夺宝试玩' : hunt ? ' · 苔火猎场试玩' : ` · 遗物图鉴 ${progress.relicCount} / ${progress.relicTotal}`}` : `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
+    $('mission-progress').textContent = chapter ? chapterDone.completed ? '本节通关记录已保存 · 后续小节尚未开放' : '借回火种，再回营地点灯' : random ? '每局一张新地图' : relay ? '取回炉芯，原路撤离' : hunt ? '追踪、诱敌、伏击' : `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
+    $('chapter-camp-status').textContent = chapterDone.completed ? `第一章 · 第一节 · 借火归营 · 已完成 ${chapterDone.clears} 次` : '第一章 · 第一节 · 借火归营 · 归途灯尚未点亮';
     $('chapter-camp-status').setAttribute('data-complete', String(chapterDone.completed));
-    $('chapter-camp-copy').textContent = chapterDone.completed ? '采集队已经循光回营。旧木场的微弱信号仍在等待回应，后续章节尚未开放。' : '进入苔火工坊借回火种，回营点亮归途灯。章节通关记录可随账号保存。';
-    $('camp-copy').textContent = `现有 ${camp.coins} 星屑。${chapterDone.completed ? '第一章归途灯已点亮。' : '第一章等待你从工坊借回火种。'}旧版任务营灯 ${progress.lit} / 3，${progress.allCleared ? '险境任务已开放。' : '完成旧版三项任务可开启险境任务。'}${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
+    $('chapter-camp-copy').textContent = chapterDone.completed ? '采集队已经循光回营。旧木场的微弱信号仍在等待回应，后续小节尚未开放。' : '进入苔火工坊借回火种，回营点亮归途灯。本节通关记录可随账号保存。';
+    $('camp-copy').textContent = `现有 ${camp.coins} 星屑。${chapterDone.completed ? '第一章第一节的归途灯已点亮。' : '第一章第一节等待你从工坊借回火种。'}旧版任务营灯 ${progress.lit} / 3，${progress.allCleared ? '险境任务已开放。' : '完成旧版三项任务可开启险境任务。'}${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
     $('camp-objectives').innerHTML = C.MISSIONS.map((mission, i) => {
       const complete = camp.missions[mission.id].clears > 0;
       return `<div class="camp-lamp${complete ? ' lit' : ''}" data-complete="${complete}"><i aria-hidden="true"></i><strong>第 ${i + 1} 盏营灯</strong><span>${escapeHTML(mission.name)} · ${complete ? '已点亮' : '等待修复'}</span></div>`;
@@ -466,7 +466,7 @@
     if (practice) next = { kind: 'practice', label: '下一轮', title: '把这一拍接稳', copy: '试炼不消耗星屑。继续练习同一组来招，找到自己的节奏。', action: '再练一轮' };
     else if (mode === 'guest') next = { kind: 'wait', label: '下一趟', title: '等搭档一起出发', copy: '本次记录已经结算。队长可以重新出发，也可以一起回营地调整装备。', action: '等待队长出发' };
     else if (!after.scatter && after.coins >= 30) next = { kind: 'workshop', label: '工坊可用', title: '试试散射枪', copy: `现有 ${after.coins} 星屑，可用 30 星屑解锁散射枪。前往工坊后由你决定是否兑换。`, action: '前往工坊' };
-    else if (state.mode === 'chapter' && won) next = { kind: 'prepare', gameMode: 'random', label: '下一趟', title: '进入迷雾远征', copy: '第一章通关记录已保留，后续章节尚未开放。随机地图里还有精英与遗物可探索。', action: '准备迷雾远征' };
+    else if (state.mode === 'chapter' && won) next = { kind: 'prepare', gameMode: 'random', label: '下一趟', title: '进入迷雾远征', copy: '第一节通关记录已保留，后续小节尚未开放。随机地图里还有精英与遗物可探索。', action: '准备迷雾远征' };
     else if (!after.scatter) next = { kind: 'prepare', gameMode: state.mode, label: '下一个目标', title: `还差 ${30 - after.coins} 星屑`, copy: '攒够 30 星屑，可以在营地工坊解锁散射枪。先调整装备，再出发。', action: '调整装备再出发' };
     else if (state.mode === 'random' && after.relics.length < C.RELICS.length) next = { kind: 'prepare', gameMode: 'random', label: '下一个目标', title: `遗物图鉴 ${after.relics.length} / ${C.RELICS.length}`, copy: '击败精英，寻找尚未发现的遗物。下次远征会重新生成地图。', action: '准备下一次远征' };
     else next = { kind: 'prepare', gameMode: state.mode, label: '下一趟', title: won ? '换种打法，再走一趟' : '整备之后再来', copy: state.mode === 'chapter' ? '击败守卫后取走火种，再带回营地点灯。可以在出发前调整远程武器。' : state.mode === 'random' ? '调整远程武器，再进入一张新地图。已发现的遗物留在营地图鉴。' : '调整远程武器，再挑战一次这项玩法。', action: '前往出发准备' };
@@ -535,12 +535,12 @@
     $('end-title').textContent = chapter ? won ? '归途灯，重新亮了' : '这簇火，还没带回家' : hunt ? won ? '猎场归来，巨兽倒下了' : '这次，猎物先找到了你' : won ? relay ? '炉芯已安全送达' : `${random ? '迷雾远征' : mission.name} · 探险完成` : relay ? '炉芯还在等下一次归途' : '这次，走到这里';
     $('end-copy').textContent = chapter ? won ? '借回的火种点亮了归途灯，失散的采集队循光回营。眼前的归路，终于又安全了。' : '维修小队暂时退了回来。重新准备，再去把火种带回家。' : hunt ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 诱敌 ${state.hunt.lures} 次 · 击败 ${state.stats.kills} 名敌人 · 用时 ${Math.floor(state.elapsed)} 秒` : relay ? `投掷 ${state.relay.throws} 次 · 接住 ${state.relay.catches} 次 · 精准接住 ${state.relay.perfectCatches} 次 · 用时 ${Math.floor(state.elapsed)} 秒` : won ? `击败 ${state.stats.kills} 名守卫 · 用时 ${Math.floor(state.elapsed / 60)} 分 ${Math.floor(state.elapsed % 60)} 秒${state.secretCleared ? ' · 找到了隐藏星藏' : ''}` : '探险暂时告一段落。营地的灯火仍在等你。';
     $('end-reward').textContent = result.duplicate ? `本次记录已保存 · 营地现有 ${camp.coins} 星屑` : won ? `+ ${camp.coins - before.coins} 星屑 · 营地现有 ${camp.coins}` : `本局未带回星屑 · 营地仍有 ${camp.coins}`;
-    $('end-goal').textContent = chapter ? `第一章 · 借火归营 · ${won ? '已完成' : '未完成'} · ${Math.floor(state.elapsed)} 秒` : hunt ? won ? '苔火猎场 · 狩猎完成' : '苔火猎场 · 狩猎未完成' : relay ? won ? '接力夺宝 · 撤离成功' : '接力夺宝 · 撤离未完成' : random ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 遗物 ${state.runBuffs.length} 件` : `营灯 ${C.progress(camp).lit} / 3 · ${won ? mission.goal : state.objective}`;
-    $('end-unlocks').textContent = chapter ? won ? '接通的旧线路传来微弱求援信号——来自已经废弃的旧木场。后续章节尚未开放。' : '击败守卫后，仍需取走火种，回到营地点亮归途灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
+    $('end-goal').textContent = chapter ? `第一章 · 第一节 · 借火归营 · ${won ? '已完成' : '未完成'} · ${Math.floor(state.elapsed)} 秒` : hunt ? won ? '苔火猎场 · 狩猎完成' : '苔火猎场 · 狩猎未完成' : relay ? won ? '接力夺宝 · 撤离成功' : '接力夺宝 · 撤离未完成' : random ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 遗物 ${state.runBuffs.length} 件` : `营灯 ${C.progress(camp).lit} / 3 · ${won ? mission.goal : state.objective}`;
+    $('end-unlocks').textContent = chapter ? won ? '接通的旧线路传来微弱求援信号——来自已经废弃的旧木场。后续小节尚未开放。' : '击败守卫后，仍需取走火种，回到营地点亮归途灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
     $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
     if (state.mode === 'story' && won && C.progress(camp).nextMission) { $('mission-select').value = C.progress(camp).nextMission; showMission(); }
     $('end-restart').disabled = mode === 'guest';
-    $('end-restart').textContent = mode === 'guest' ? '等待房主重新出发' : chapter ? '再走一次第一章 ↗' : '再探一次 ↗';
+    $('end-restart').textContent = mode === 'guest' ? '等待房主重新出发' : chapter ? '重玩第一节 ↗' : '再探一次 ↗';
     showResultDetails(details);
     $('end-screen').hidden = false;
     $(mode === 'guest' ? 'end-camp' : 'end-next-action').focus(); menuSound(won ? 'win' : 'lost');
@@ -696,7 +696,7 @@
       $('mode-select').value = msg.mode;
       if (msg.mode !== 'chapter') $('mission-select').value = msg.mission;
       $('difficulty-select').value = String(msg.difficulty); updateCamp();
-      $('room-message').textContent = `队长选择：${msg.mode === 'chapter' ? '第一章 · 借火归营' : msg.mode === 'random' ? '随机探险' : msg.mode === 'relay' ? '接力夺宝 · 试玩' : msg.mode === 'hunt' ? '苔火猎场 · 试玩' : missionInfo(msg.mission).name}${msg.difficulty === 2 ? ' · 险境' : ' · 普通'}，等待出发。`;
+      $('room-message').textContent = `队长选择：${msg.mode === 'chapter' ? '第一章 · 第一节 · 借火归营' : msg.mode === 'random' ? '随机探险' : msg.mode === 'relay' ? '接力夺宝 · 试玩' : msg.mode === 'hunt' ? '苔火猎场 · 试玩' : missionInfo(msg.mission).name}${msg.difficulty === 2 ? ' · 险境' : ' · 普通'}，等待出发。`;
     }
   }
   function disconnectedPeer() {
@@ -962,7 +962,7 @@
     $('hud-opportunity').hidden = !opening || paused || tutorialPending || remoteTutorialPending || hasDialog() || !playing();
     $('hud-opportunity').textContent = opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '';
     const buffs = Object.fromEntries(Object.entries(E.BUFFS).map(([id, buff]) => [id, buff.label]));
-    $('route-progress').textContent = chapter ? `借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
+    $('route-progress').textContent = chapter ? `第一节 · 借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
     $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
     $('interaction-hint').textContent = hint || ''; $('interaction-hint').hidden = !hint;

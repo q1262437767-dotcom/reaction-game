@@ -1178,8 +1178,8 @@
     const points = new Map(visible.map(room => [room.index, { room, x: left + width / 2 + (room.gx - (minX + maxX) / 2) * spacing,
       y: top + 79 + (room.gy - (minY + maxY) / 2) * spacing }]));
     c.save(); rect(c, left, top, width, height, '#102523e8'); c.strokeStyle = '#a0845e80'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
-    label(c, '借火归营', left + 12, top + 15, '#e1c08a', 10, 'left');
-    const phase = { depart: '启程', workshop: '探查工坊', core: '前往炉心', return: '带火归营', complete: '归火已成', failed: '探险中断' }[run.phase] || '第一章';
+    label(c, '第一节 · 借火归营', left + 12, top + 15, '#e1c08a', 9, 'left');
+    const phase = { depart: '启程', workshop: '探查工坊', core: '前往炉心', return: '带火归营', complete: '归火已成', failed: '探险中断' }[run.phase] || '第一节';
     label(c, phase, left + width - 12, top + 15, run.lampLit ? '#dce3b0' : '#bda98b', 8, 'right');
     for (const room of visible) {
       if (!room.visited) continue;
