@@ -538,3 +538,134 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   #game-wrap #interaction-hint{position:fixed;top:auto;bottom:max(12px,calc((100dvh - 62.5vw)/2 - 52px));left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);padding:9px 13px;font-size:12px;line-height:1.6}
 }
 @media(prefers-reduced-motion:reduce){.menu-view{animation:none}.menu-action,.mode-choice{transition:none}}
+
+/* Copper details and quiet movement connect the title, pause and return screens. */
+#start-screen{background:linear-gradient(90deg,#091310f5 0,#0b1712df 25%,#0b17128a 49%,#0b17120a 83%)}
+.menu-view{position:relative;animation:menu-reveal .24s ease-out}
+.title-menu{padding-bottom:14px}
+.game-title{position:relative;margin-bottom:36px;letter-spacing:.12em;text-shadow:0 3px 25px #0008}
+.game-title:after{content:"";display:block;width:38px;height:2px;margin-top:25px;background:#cfaa70;box-shadow:10px 0 #cfaa7030}
+.game-title small{color:#aeb29a;font-size:11px;letter-spacing:.39em}
+.title-actions{gap:4px}
+.menu-action{position:relative;min-height:51px;border-left-width:2px;transition:background .18s,color .18s,padding .18s,border-color .18s}
+.menu-action>span{transform:translateX(-5px);transition:opacity .18s,transform .18s}
+.menu-action:hover,.menu-action:focus-visible{background:linear-gradient(90deg,#c3a46d26,#c3a46d04 80%,transparent);border-left-color:#ddb77c}
+.menu-action:hover>span,.menu-action:focus-visible>span{transform:translateX(0)}
+.title-camp-status{display:flex;align-items:center;gap:9px;margin:28px 0 0 6px;color:#849481;font-size:10px;line-height:1.8;letter-spacing:.8px}
+.title-camp-status:before{content:"";width:5px;height:5px;flex:none;background:#72826e;transform:rotate(45deg)}
+.title-camp-status[data-complete="true"]{color:#c1b38b}
+.title-camp-status[data-complete="true"]:before{background:#dcb573;box-shadow:0 0 10px #dda75a80}
+.mode-choice,.settings-action,.button-secondary{transition:background .18s,border-color .18s,color .18s}
+.mode-choice .mode-arrow{transition:translate .18s}
+.mode-choice:hover .mode-arrow,.mode-choice:focus-visible .mode-arrow{translate:3px 0}
+.button-secondary:hover:not(:disabled){background:#314234;border-color:#b5b18a88;color:#ebe6cb}
+.modal{box-shadow:0 24px 90px #0008,inset 0 1px #f0d6a609}
+.modal::backdrop{background:#07100de0;backdrop-filter:blur(5px)}
+#pause-screen,#end-screen{background:radial-gradient(ellipse at 65% 30%,#35452c24,transparent 65%),#07100de6;backdrop-filter:blur(5px)}
+#pause-screen:not([hidden]),#end-screen:not([hidden]){animation:screen-reveal .18s ease-out}
+.pause-card,.end-card{border:1px solid #8f8c635e;border-top-color:#ba9a68a1;background:linear-gradient(145deg,#26362cf7,#17251ffb 70%);box-shadow:0 28px 90px #0008,inset 0 1px #e7c68709;text-align:left}
+.pause-card{width:min(390px,calc(100% - 32px));padding:32px}
+.pause-heading{position:relative;padding:0 0 24px;border-bottom:1px solid #91a0782b}
+.pause-mark{display:block;width:12px;height:15px;border-inline:3px solid #c9a671;margin-bottom:20px}
+.pause-card h2{font-size:27px;letter-spacing:3px;margin:0 0 8px}
+.pause-card p{color:#9daa94;font-size:12px;line-height:1.8}
+.pause-card .pause-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:24px}
+.pause-actions #resume-game,.pause-actions #restart-game,.pause-actions #back-camp{grid-column:1/-1}
+.pause-actions .button{width:100%;gap:14px;font-size:12px;letter-spacing:.8px}
+.pause-actions #back-camp{justify-self:center;margin-top:3px;padding-inline:20px;font-size:11px}
+
+/* The return record reads as one spread: the journey on the left, its meaning on the right. */
+.end-card{width:min(840px,calc(100% - 48px));max-height:calc(100dvh - 40px);padding:32px 36px 30px;scroll-padding-block:28px;scrollbar-color:#657b59 transparent}
+.end-heading{padding-bottom:24px;border-bottom:1px solid #91a07833}
+.end-eyebrow,.end-section-label{display:block;color:#a1ae8c;font-size:10px;line-height:1.7;letter-spacing:1.4px;font-weight:500}
+.end-eyebrow{color:#c4ab7b;margin-bottom:9px;letter-spacing:3px}
+.end-card .end-heading h2{font-size:28px;line-height:1.5;letter-spacing:1.6px;margin:0 0 9px;color:#eee7cb}
+.end-card .end-heading>p{font-size:12px;line-height:1.8;color:#a6b39a;max-width:690px}
+.end-card .end-heading>.end-goal{font-size:10px;color:#b3b591;margin-top:11px;letter-spacing:.4px}
+.end-layout{display:grid;grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);gap:30px;padding-top:26px}
+.end-run,.end-outlook{min-width:0}
+.end-stats{display:grid;grid-template-columns:1fr 1fr;column-gap:24px;row-gap:19px;margin:0 0 24px}
+.end-stats>div{min-width:0}
+.end-stats dt{color:#92a38b;font-size:10px;line-height:1.6;margin-bottom:4px;letter-spacing:.4px}
+.end-stats dd{color:#e6e6ce;font-size:24px;line-height:1.35;font-variant-numeric:tabular-nums;font-weight:500;margin:0;overflow-wrap:anywhere}
+.end-haul{padding-top:19px;border-top:1px solid #91a07833}
+.end-card .reward-box{padding:0;border:0;background:none;color:#e5c28b;font-size:14px;line-height:1.8;font-weight:500;margin:8px 0 0;border-radius:0}
+.end-card .end-discoveries{color:#a0af94;font-size:11px;line-height:1.8;margin-top:8px;overflow-wrap:anywhere}
+.end-card .end-discoveries:empty{display:none}
+.end-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px 13px;margin-top:24px}
+.end-actions .button{padding-inline:17px;gap:12px;font-size:12px;letter-spacing:.5px;min-height:44px;height:auto}
+.end-actions .text-button{font-size:11px;padding-inline:4px}
+.end-outlook{border-left:1px solid #91a07833;padding-left:30px}
+.end-card #end-progress{font-size:12px;color:#d0d7bb;line-height:1.8;margin-top:9px}
+.end-card .end-feedback{font-size:11px;line-height:1.85;color:#9ead93;background:none;border:0;padding:0;margin:9px 0 0;border-radius:0}
+.end-card .end-badges{color:#d5bb86}
+.end-next{padding-top:21px;border-top:1px solid #91a07833;margin-top:23px}
+.end-next h3{font-size:17px;line-height:1.6;color:#e1dec0;font-weight:600;margin:8px 0 6px;letter-spacing:.5px}
+.end-card .end-next p{font-size:11px;line-height:1.85;color:#a1af96;margin:0}
+.end-next .button{min-height:44px;height:auto;max-width:100%;padding:11px 18px;margin-top:19px;gap:16px;font-size:12px;letter-spacing:.5px;white-space:normal;text-align:center}
+@keyframes screen-reveal{from{opacity:0}to{opacity:1}}
+
+@media(max-width:700px){
+  .game-title{margin-bottom:28px}
+  .game-title small{font-size:10px;letter-spacing:.34em}
+  .game-title:after{margin-top:21px;width:31px}
+  .title-camp-status{margin-top:22px;font-size:10px}
+  .end-card{padding:25px 25px 23px;width:calc(100% - 32px);max-height:calc(100dvh - 28px)}
+  .end-card .end-heading h2{font-size:24px}
+  .end-layout{gap:22px}
+  .end-outlook{padding-left:22px}
+  .end-stats{column-gap:13px;row-gap:17px}
+  .end-stats dd{font-size:22px}
+  .end-next h3{font-size:16px}
+}
+@media(max-width:560px){
+  .end-heading{padding-bottom:21px}
+  .end-card .end-heading h2{font-size:23px;letter-spacing:1px}
+  .end-layout{grid-template-columns:1fr;padding-top:22px;gap:23px}
+  .end-stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:21px}
+  .end-stats dt{font-size:9px;letter-spacing:0;margin-bottom:6px}
+  .end-stats dd{font-size:19px;line-height:1.4}
+  .end-haul{padding-top:16px}
+  .end-actions{margin-top:19px}
+  .end-outlook{border-left:0;border-top:1px solid #91a07833;padding:21px 0 0}
+  .end-next{padding-top:18px;margin-top:19px}
+  .end-next .button{width:100%;margin-top:16px}
+  .pause-card{padding:29px 27px 23px}
+}
+@media(max-width:370px){
+  .end-card{padding:23px 20px}
+  .end-stats{grid-template-columns:1fr 1fr;gap:15px 20px}
+  .end-stats dt{font-size:10px;margin-bottom:4px}
+  .end-stats dd{font-size:23px}
+  .end-actions{gap:6px 8px}
+  .end-actions .button{font-size:11px;padding-inline:12px}
+}
+@media(max-height:560px) and (orientation:landscape){
+  .title-menu{padding:5px 0}
+  .game-title{font-size:39px;margin-bottom:15px}
+  .game-title small{font-size:9px;margin-top:9px}
+  .game-title:after{margin-top:14px;width:30px}
+  .title-actions{gap:0}
+  .menu-action{min-height:44px;font-size:17px}
+  .title-camp-status{font-size:9px;margin-top:15px}
+  .pause-card{padding:23px 28px 18px;max-height:calc(100dvh - 24px)}
+  .pause-heading{padding-bottom:16px}
+  .pause-mark{display:none}
+  .pause-card h2{font-size:24px;margin-bottom:5px}
+  .pause-card .pause-actions{margin-top:16px;gap:7px}
+  .end-card{padding:23px 28px;max-height:calc(100dvh - 24px)}
+  .end-heading{padding-bottom:18px}
+  .end-card .end-heading h2{font-size:23px;margin-bottom:7px}
+  .end-eyebrow{margin-bottom:5px}
+  .end-layout{padding-top:20px;gap:24px}
+  .end-outlook{padding-left:24px}
+  .end-stats{row-gap:14px;margin-bottom:18px}
+  .end-stats dd{font-size:22px}
+  .end-haul{padding-top:16px}
+  .end-next{margin-top:18px;padding-top:17px}
+  .end-next .button{margin-top:14px}
+}
+@media(prefers-reduced-motion:reduce){
+  .menu-view,#pause-screen:not([hidden]),#end-screen:not([hidden]){animation:none}
+  .menu-action,.menu-action>span,.mode-choice,.mode-choice .mode-arrow,.settings-action,.button-secondary{transition:none}
+}

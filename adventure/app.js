@@ -14,7 +14,7 @@
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol';
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
-  let muted = false, audio = null, soundLast = 0;
+  let muted = false, audio = null, soundLast = 0, uiSoundAt = -Infinity, resultNext = null;
   const heardEvents = new Set(), soundNodes = new Set(), soundAt = new Map(), chapterNotesSeen = new Set(), chapterMomentsSeen = new Set();
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, guard: false, active: false };
   const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
@@ -40,6 +40,7 @@
   const localId = () => mode === 'guest' ? 'p2' : 'p1';
   const playing = () => !!state && state.status === 'playing';
   const hasDialog = () => dialogIds.some(id => $(id).open);
+  const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   function toast(message, duration = 3800) {
     $('toast').textContent = message; $('toast').hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, duration);
@@ -144,6 +145,23 @@
       if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
       if (audio.state === 'suspended') audio.resume().catch(() => {});
     } catch (_) { /* Sound is optional. */ }
+  }
+  function menuSound(kind) {
+    // Only an explicit click may unlock audio. Hover/focus and results use an
+    // already-running context, so the title screen never starts sound itself.
+    if (muted || document.hidden || kind === 'hover' && reducedMotion()) return;
+    if (kind === 'select') enableAudio();
+    if (!audio || audio.state !== 'running') return;
+    const now = performance.now(), resultCue = kind === 'win' || kind === 'lost';
+    if (!resultCue && now - uiSoundAt < (kind === 'hover' ? 110 : 65)) return;
+    if (resultCue) stopSounds();
+    uiSoundAt = now;
+    if (kind === 'hover') tone(360, .035, .004, 'sine', 0, 440);
+    else if (kind === 'win') {
+      tone(392, .16, .012, 'sine', 0, 440);
+      if (!reducedMotion()) tone(587, .20, .010, 'sine', .12, 660);
+    } else if (kind === 'lost') tone(220, .18, .010, 'sine', 0, 165);
+    else tone(520, .055, .009, 'triangle', 0, 390);
   }
   function soundEvents() {
     if (!state) return;
@@ -311,6 +329,8 @@
     const progress = C.progress(camp);
     const random = selectedGameMode() === 'random', relay = selectedGameMode() === 'relay', hunt = selectedGameMode() === 'hunt', chapter = selectedGameMode() === 'chapter';
     const chapterDone = chapterProgress();
+    $('title-camp-status').textContent = chapterDone.completed ? '归途灯已亮 · 采集队已回营' : '归途灯尚未点亮';
+    $('title-camp-status').setAttribute('data-complete', String(chapterDone.completed));
     $('campaign-status').textContent = chapter ? `${chapterDone.completed ? '归途灯已点亮' : '归途灯等待修复'} · 星屑 ${camp.coins} · 第一章${chapterDone.completed ? '已完成' : '已开放'}` : random || relay || hunt ? `星屑 ${camp.coins} · 归来 ${camp.wins} 次${relay ? ' · 接力夺宝试玩' : hunt ? ' · 苔火猎场试玩' : ` · 遗物图鉴 ${progress.relicCount} / ${progress.relicTotal}`}` : `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
     $('mission-progress').textContent = chapter ? chapterDone.completed ? '通关记录已保存 · 后续章节待开放' : '借回火种，再回营地点灯' : random ? '每局一张新地图' : relay ? '取回炉芯，原路撤离' : hunt ? '追踪、诱敌、伏击' : `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
     $('chapter-camp-status').textContent = chapterDone.completed ? `第一章 · 借火归营 · 已完成 ${chapterDone.clears} 次` : '第一章 · 借火归营 · 归途灯尚未点亮';
@@ -360,6 +380,7 @@
   function pause(value, announce) {
     if (!playing() || disconnected) return;
     paused = value; clearInput(); if (value) stopSounds(); displayPause();
+    if (!hasDialog()) (value ? $(disconnected ? 'back-camp' : 'resume-game') : canvas).focus();
     if (announce !== false && net && net.connected) net.send({ type: 'pause', paused, reason: 'manual' });
   }
   function openDialog(id) {
@@ -389,7 +410,7 @@
   }
   function home() {
     shutdownNet(); state = null; mode = 'solo'; paused = false; disconnected = false;
-    finished = ''; runId = ''; clearInput(); resetSounds(); closeDialogs();
+    finished = ''; runId = ''; resultNext = null; clearInput(); resetSounds(); closeDialogs();
     $('start-screen').hidden = false; $('pause-screen').hidden = true; $('end-screen').hidden = true;
     $('interaction-hint').hidden = true; tutorialPending = false; $('tutorial-panel').hidden = true; updateCamp(); showMenu('title'); hud();
   }
@@ -429,6 +450,60 @@
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
     startTutorial(); enableAudio(); canvas.focus(); hud();
   }
+  function resultDetails(before, result) {
+    const after = result.profile, practice = !!state.practice, won = state.status === 'won';
+    const count = value => Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
+    const seconds = count(state.elapsed), found = practice ? [] : after.relics.filter(id => !before.relics.includes(id));
+    const discoveries = found.map(id => (E.BUFFS[id] || { label: id }).label);
+    const changes = [];
+    if (!practice && !result.duplicate) {
+      if (!C.chapterProgress(before).completed && C.chapterProgress(after).completed) changes.push('归途灯已点亮 · 采集队已回营');
+      if (state.mode === 'story') C.MISSIONS.forEach((mission, index) => {
+        if (!before.missions[mission.id].clears && after.missions[mission.id].clears) changes.push(`第 ${index + 1} 盏营灯已点亮`);
+      });
+    }
+    let next;
+    if (practice) next = { kind: 'practice', label: '下一轮', title: '把这一拍接稳', copy: '试炼不消耗星屑。继续练习同一组来招，找到自己的节奏。', action: '再练一轮' };
+    else if (mode === 'guest') next = { kind: 'wait', label: '下一趟', title: '等搭档一起出发', copy: '本次记录已经结算。队长可以重新出发，也可以一起回营地调整装备。', action: '等待队长出发' };
+    else if (!after.scatter && after.coins >= 30) next = { kind: 'workshop', label: '工坊可用', title: '试试散射枪', copy: `现有 ${after.coins} 星屑，可用 30 星屑解锁散射枪。前往工坊后由你决定是否兑换。`, action: '前往工坊' };
+    else if (state.mode === 'chapter' && won) next = { kind: 'prepare', gameMode: 'random', label: '下一趟', title: '进入迷雾远征', copy: '第一章通关记录已保留，后续章节尚未开放。随机地图里还有精英与遗物可探索。', action: '准备迷雾远征' };
+    else if (!after.scatter) next = { kind: 'prepare', gameMode: state.mode, label: '下一个目标', title: `还差 ${30 - after.coins} 星屑`, copy: '攒够 30 星屑，可以在营地工坊解锁散射枪。先调整装备，再出发。', action: '调整装备再出发' };
+    else if (state.mode === 'random' && after.relics.length < C.RELICS.length) next = { kind: 'prepare', gameMode: 'random', label: '下一个目标', title: `遗物图鉴 ${after.relics.length} / ${C.RELICS.length}`, copy: '击败精英，寻找尚未发现的遗物。下次远征会重新生成地图。', action: '准备下一次远征' };
+    else next = { kind: 'prepare', gameMode: state.mode, label: '下一趟', title: won ? '换种打法，再走一趟' : '整备之后再来', copy: state.mode === 'chapter' ? '击败守卫后取走火种，再带回营地点灯。可以在出发前调整远程武器。' : state.mode === 'random' ? '调整远程武器，再进入一张新地图。已发现的遗物留在营地图鉴。' : '调整远程武器，再挑战一次这项玩法。', action: '前往出发准备' };
+    return {
+      kills: String(count(state.stats && state.stats.kills)), time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
+      combatLabel: practice ? '精准招架' : '累计受伤', combat: String(practice ? count(state.practiceParries) : Math.max(0, Number.isFinite(state.stats && state.stats.damage) ? Math.round(state.stats.damage * 100) / 100 : 0)),
+      explored: `${state.rooms.filter(room => room.visited).length} / ${state.rooms.length}`,
+      discoveries: practice ? '试炼不记录遗物与奖励' : discoveries.length ? '新发现：' + discoveries.join('、') : '本次没有新增遗物发现',
+      progress: practice ? '练习成绩仅展示于本轮' : result.duplicate ? '本次记录已保存，不重复结算' : changes.length ? changes.join(' · ') : `探险记录已保存 · 遗物图鉴 ${after.relics.length} / ${C.RELICS.length}`,
+      next
+    };
+  }
+  function showResultDetails(details) {
+    $('end-kills').textContent = details.kills; $('end-time').textContent = details.time;
+    $('end-combat-label').textContent = details.combatLabel; $('end-parries').textContent = details.combat;
+    $('end-explored').textContent = details.explored; $('end-new-relics').textContent = details.discoveries;
+    $('end-progress').textContent = details.progress;
+    showResultNext(details.next);
+  }
+  function showResultNext(next) {
+    resultNext = next;
+    $('end-next-label').textContent = resultNext.label; $('end-next-title').textContent = resultNext.title;
+    $('end-next-copy').textContent = resultNext.copy; $('end-next-action').textContent = resultNext.action;
+    $('end-next-action').disabled = resultNext.kind === 'wait';
+  }
+  function prepareResultMode(gameMode) {
+    if (mode === 'guest') return;
+    const mission = state && state.mission && state.mission.id, difficulty = state && state.difficulty || 1;
+    // A host's room survives preparation; departure still requires its ordinary
+    // explicit start button, and guests continue waiting in their own result.
+    state = null; finished = ''; runId = ''; paused = false; disconnected = false; resultNext = null;
+    clearInput(); resetSounds(); closeDialogs(); tutorialPending = false; $('tutorial-panel').hidden = true;
+    $('start-screen').hidden = false; $('end-screen').hidden = true; $('pause-screen').hidden = true;
+    $('difficulty-select').value = String(difficulty);
+    if (gameMode === 'story' && C.MISSIONS.some(item => item.id === mission)) $('mission-select').value = mission;
+    chooseMode(gameMode); hud();
+  }
   function settle() {
     if (!state || state.status === 'playing' || finished === runId) return;
     finished = runId; clearInput(); paused = false; $('pause-screen').hidden = true; $('tutorial-panel').hidden = true;
@@ -440,29 +515,35 @@
       $('end-goal').textContent = '招架试炼';
       $('end-unlocks').textContent = parries ? '已经接住了它的攻击，下一轮试着连起来。' : '下一轮可以先不攻击，看到圈快合拢或听到提示就按防守。';
       $('end-badges').textContent = '';
+      showResultDetails(resultDetails(camp, { profile: camp, duplicate: false }));
       $('end-restart').disabled = false; $('end-restart').textContent = '再试一轮 ↗';
       $('end-screen').hidden = false;
+      $('end-next-action').focus(); menuSound(state.status === 'won' ? 'win' : 'lost');
       return;
     }
     $('end-reward').hidden = false;
     if (storageOK) camp = readCamp();
-    const result = C.applyResult(camp, state, runId);
+    const before = C.normalize(camp), result = C.applyResult(camp, state, runId);
+    // Freeze feedback before writes can notify the account controller or update
+    // a menu. The once-per-run guard above owns this whole settlement.
+    const details = resultDetails(before, result);
     camp = result.profile;
     if (!result.duplicate) writeCamp();
-    const reward = result.reward;
     const won = state.status === 'won';
     const mission = missionInfo(state.mission && state.mission.id);
     const random = state.mode === 'random', relay = state.mode === 'relay', hunt = state.mode === 'hunt', chapter = state.mode === 'chapter';
     $('end-title').textContent = chapter ? won ? '归途灯，重新亮了' : '这簇火，还没带回家' : hunt ? won ? '猎场归来，巨兽倒下了' : '这次，猎物先找到了你' : won ? relay ? '炉芯已安全送达' : `${random ? '迷雾远征' : mission.name} · 探险完成` : relay ? '炉芯还在等下一次归途' : '这次，走到这里';
     $('end-copy').textContent = chapter ? won ? '借回的火种点亮了归途灯，失散的采集队循光回营。眼前的归路，终于又安全了。' : '维修小队暂时退了回来。重新准备，再去把火种带回家。' : hunt ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 诱敌 ${state.hunt.lures} 次 · 击败 ${state.stats.kills} 名敌人 · 用时 ${Math.floor(state.elapsed)} 秒` : relay ? `投掷 ${state.relay.throws} 次 · 接住 ${state.relay.catches} 次 · 精准接住 ${state.relay.perfectCatches} 次 · 用时 ${Math.floor(state.elapsed)} 秒` : won ? `击败 ${state.stats.kills} 名守卫 · 用时 ${Math.floor(state.elapsed / 60)} 分 ${Math.floor(state.elapsed % 60)} 秒${state.secretCleared ? ' · 找到了隐藏星藏' : ''}` : '探险暂时告一段落。营地的灯火仍在等你。';
-    $('end-reward').textContent = won ? `+ ${reward} 星屑 · 营地现有 ${camp.coins}` : `本局未带回星屑 · 营地仍有 ${camp.coins}`;
+    $('end-reward').textContent = result.duplicate ? `本次记录已保存 · 营地现有 ${camp.coins} 星屑` : won ? `+ ${camp.coins - before.coins} 星屑 · 营地现有 ${camp.coins}` : `本局未带回星屑 · 营地仍有 ${camp.coins}`;
     $('end-goal').textContent = chapter ? `第一章 · 借火归营 · ${won ? '已完成' : '未完成'} · ${Math.floor(state.elapsed)} 秒` : hunt ? won ? '苔火猎场 · 狩猎完成' : '苔火猎场 · 狩猎未完成' : relay ? won ? '接力夺宝 · 撤离成功' : '接力夺宝 · 撤离未完成' : random ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 遗物 ${state.runBuffs.length} 件` : `营灯 ${C.progress(camp).lit} / 3 · ${won ? mission.goal : state.objective}`;
     $('end-unlocks').textContent = chapter ? won ? '接通的旧线路传来微弱求援信号——来自已经废弃的旧木场。后续章节尚未开放。' : '击败守卫后，仍需取走火种，回到营地点亮归途灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
     $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
     if (state.mode === 'story' && won && C.progress(camp).nextMission) { $('mission-select').value = C.progress(camp).nextMission; showMission(); }
     $('end-restart').disabled = mode === 'guest';
     $('end-restart').textContent = mode === 'guest' ? '等待房主重新出发' : chapter ? '再走一次第一章 ↗' : '再探一次 ↗';
+    showResultDetails(details);
     $('end-screen').hidden = false;
+    $(mode === 'guest' ? 'end-camp' : 'end-next-action').focus(); menuSound(won ? 'win' : 'lost');
   }
   function safeInput(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -713,6 +794,7 @@
     if (storageOK) camp = readCamp();
     if (camp.scatter || camp.coins < 30) { updateCamp(); return; }
     camp.coins -= 30; camp.scatter = true; writeCamp(); $('start-loadout').value = 'scatter'; toast('散射枪已解锁，下次出发就能使用。');
+    if (state && state.status !== 'playing' && !$('end-screen').hidden) showResultNext(resultDetails(camp, { profile: camp, duplicate: false }).next);
   };
   $('pause-game').onclick = () => pause(!paused);
   $('pause-settings').onclick = () => openDialog('settings-dialog');
@@ -723,11 +805,29 @@
   $('resume-game').onclick = () => pause(false);
   $('restart-game').onclick = $('end-restart').onclick = () => { if (mode !== 'guest') { if (state && state.practice) beginPractice(); else begin(mode === 'host'); } };
   $('back-camp').onclick = $('end-camp').onclick = home;
+  $('end-next-action').onclick = () => {
+    if (!resultNext || resultNext.kind === 'wait') return;
+    if (resultNext.kind === 'practice') beginPractice();
+    else if (resultNext.kind === 'workshop') { updateCamp(); openDialog('camp-dialog'); $('unlock-scatter').focus(); }
+    else prepareResultMode(resultNext.gameMode);
+  };
   $('mute-game').onclick = () => {
     muted = !muted; if (muted) stopSounds(); enableAudio();
     $('mute-game').setAttribute('aria-pressed', String(muted)); $('mute-game').textContent = muted ? '×♪' : '♪';
     $('settings-sound').setAttribute('aria-pressed', String(muted)); $('settings-sound').textContent = muted ? '声音 · 已关闭' : '声音 · 已开启';
   };
+  const menuButtons = {
+    title: ['menu-play', 'menu-coop', 'menu-camp', 'menu-settings'],
+    modes: ['mode-chapter', 'mode-random', 'mode-challenges', 'mode-training', 'menu-modes-back'],
+    challenges: ['mode-hunt', 'mode-relay', 'mode-legacy', 'menu-challenges-back'],
+    loadout: ['solo-start', 'loadout-coop', 'open-coop', 'menu-loadout-back']
+  };
+  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'resume-game', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-help', 'settings-account', 'close-settings'])];
+  feedbackButtons.forEach(id => {
+    $(id).addEventListener('click', () => menuSound('select'));
+    $(id).addEventListener('pointerenter', () => menuSound('hover'));
+    $(id).addEventListener('focus', () => menuSound('hover'));
+  });
   function input() {
     const p = state && state.players[localId()];
     let mx = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + touch.mx;
@@ -763,6 +863,15 @@
       return;
     }
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (!state && !hasDialog() && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.code)) {
+      const options = (menuButtons[menuScreen] || []).map($).filter(button => !button.hidden && !button.disabled);
+      if (options.length) {
+        const current = options.indexOf(document.activeElement), direction = event.code === 'ArrowUp' ? -1 : 1;
+        const index = event.code === 'Home' ? 0 : event.code === 'End' ? options.length - 1 : current < 0 ? direction > 0 ? 0 : options.length - 1 : (current + direction + options.length) % options.length;
+        event.preventDefault(); options[index].focus();
+      }
+      return;
+    }
     if (playing() && !paused && !hasDialog() && controlKeys.has(event.code)) {
       event.preventDefault(); keys.add(event.code);
       if (!event.repeat && event.code === 'Space') dashPulse = true;
@@ -790,8 +899,8 @@
   window.addEventListener('pointerup', event => { if (event.button === 0) mouse.down = false; if (event.button === 2) mouse.guard = false; });
   window.addEventListener('pointercancel', clearInput);
   canvas.addEventListener('contextmenu', event => event.preventDefault());
-  window.addEventListener('blur', () => { clearInput(); if (playing() && !paused) pause(true); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); if (playing() && !paused) pause(true); } });
+  window.addEventListener('blur', () => { clearInput(); stopSounds(); if (playing() && !paused) pause(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); stopSounds(); if (playing() && !paused) pause(true); } });
   let joystickId = null;
   const joystick = $('joystick');
   function moveStick(event) {
@@ -895,7 +1004,7 @@
       net.send({ type: 'state', state: E.snapshot(state, true), runId }); lastSend = now;
     }
     settle();
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed }); }
+    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion() }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);

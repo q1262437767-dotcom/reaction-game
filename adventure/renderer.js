@@ -1310,9 +1310,41 @@
     c.restore();
   }
 
+  function previewAtmosphere(c, time) {
+    // Title-menu atmosphere stays in the courtyard on the right. Slow, faint
+    // specks do not drift through the navigation or resemble combat bullets.
+    for (let i = 0; i < 12; i++) {
+      const x = 574 + (i * 61.7) % 314 + Math.sin(time * .00012 + i * 1.7) * 8;
+      const y = 89 + ((i * 43.3 + 371 - time * .0018) % 371 + 371) % 371;
+      alpha(c, .10 + (1 + Math.sin(time * .0004 + i)) * .045,
+        () => rect(c, x, y, 1, 1, '#d8c795'));
+    }
+    // Each ember fades out before returning to the hearth. A low-opacity wisp
+    // and steady warm pool connect the flame to the quiet courtyard around it.
+    glow(c, 703, 369, 108 + Math.sin(time * .0007) * 2, '#eda45112');
+    for (let i = 0; i < 5; i++) {
+      const phase = ((time * (.00011 + i * .000006) + i * .21) % 1 + 1) % 1;
+      const x = 703 + Math.sin(phase * 5 + i * 2.1) * (7 + phase * 12);
+      const y = 365 - phase * 105;
+      alpha(c, Math.sin(phase * Math.PI) * .46,
+        () => rect(c, x, y, i % 2 ? 1 : 2, 2, '#efbe78'));
+    }
+    for (let i = 0; i < 2; i++) {
+      const phase = ((time * .00007 + i * .5) % 1 + 1) % 1;
+      alpha(c, Math.sin(phase * Math.PI) * .034,
+        () => ellipse(c, 705 + Math.sin(phase * 3 + i) * 11, 346 - phase * 66, 10 + phase * 12, 6 + phase * 10, '#b8b19a'));
+    }
+    const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590);
+    vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399');
+    c.fillStyle = vignette; c.fillRect(0, 0, W, H);
+  }
+
   function preview(c, profile = {}) {
     if (!c) return;
-    const time = performance.now(); c.save(); c.imageSmoothingEnabled = false;
+    // Callers explicitly supply animation time. Older calls are deterministic,
+    // while reduced motion keeps the complete lit scene without moving specks.
+    const time = profile.reducedMotion ? 0 : Math.max(0, num(profile.now)) * .68;
+    c.save(); c.imageSmoothingEnabled = false;
     if (!floorCache.has('camp-preview')) floorCache.set('camp-preview', makeFloor('camp-preview', 'camp'));
     c.drawImage(floorCache.get('camp-preview'), 0, 0);
     // A camp tucked into the open courtyard, visible to the right of the title.
@@ -1367,7 +1399,7 @@
       label(c, '采集队已归营', 868, 228, '#d7c48f', 9);
     }
     lantern(c, 904, 529, time, .85);
-    ambient(c, {}, time); c.restore();
+    previewAtmosphere(c, time); c.restore();
   }
   window.AdventureRenderer = { draw, preview };
 })();

@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#0b1413">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=15">
-  <script defer src="engine.js?v=15"></script>
-  <script defer src="renderer.js?v=15"></script>
-  <script defer src="vendor/peerjs.min.js?v=15"></script>
-  <script defer src="net.js?v=15"></script>
-  <script defer src="campaign.js?v=15"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=15"></script>
-  <script defer src="cloud-config.js?v=15"></script>
-  <script defer src="cloud.js?v=15"></script>
-  <script defer src="account.js?v=15"></script>
-  <script defer src="app.js?v=15"></script>
+  <link rel="stylesheet" href="style.css?v=16">
+  <script defer src="engine.js?v=16"></script>
+  <script defer src="renderer.js?v=16"></script>
+  <script defer src="vendor/peerjs.min.js?v=16"></script>
+  <script defer src="net.js?v=16"></script>
+  <script defer src="campaign.js?v=16"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=16"></script>
+  <script defer src="cloud-config.js?v=16"></script>
+  <script defer src="cloud.js?v=16"></script>
+  <script defer src="account.js?v=16"></script>
+  <script defer src="app.js?v=16"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -44,6 +44,7 @@
               <button id="menu-camp" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="camp-dialog">营地<span aria-hidden="true">→</span></button>
               <button id="menu-settings" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="settings-dialog">设置<span aria-hidden="true">→</span></button>
             </nav>
+            <p id="title-camp-status" class="title-camp-status" data-complete="false">归途灯尚未点亮</p>
           </section>
 
           <section id="mode-menu" class="menu-view mode-menu" aria-labelledby="mode-menu-title" hidden>
@@ -89,11 +90,24 @@
         </div>
 
         <div id="pause-screen" class="screen centered-screen" hidden>
-          <section class="screen-card"><h2 id="pause-title">已暂停</h2><p id="pause-copy">准备好后，继续出发。</p><div class="stack-actions"><button id="resume-game" class="button button-primary">继续游戏 <span aria-hidden="true">→</span></button><button id="pause-settings" class="button button-secondary" aria-haspopup="dialog" aria-controls="settings-dialog">设置</button><button id="help-button" class="button button-secondary" aria-haspopup="dialog" aria-controls="help-dialog">操作指南</button><button id="restart-game" class="button button-secondary">重新出发</button><button id="back-camp" class="text-button">返回主菜单</button></div></section>
+          <section class="screen-card pause-card" aria-labelledby="pause-title"><div class="pause-heading"><span class="pause-mark" aria-hidden="true"></span><h2 id="pause-title">已暂停</h2><p id="pause-copy">准备好后，继续出发。</p></div><div class="stack-actions pause-actions"><button id="resume-game" class="button button-primary" type="button">继续游戏 <span aria-hidden="true">→</span></button><button id="pause-settings" class="button button-secondary" type="button" aria-haspopup="dialog" aria-controls="settings-dialog">设置</button><button id="help-button" class="button button-secondary" type="button" aria-haspopup="dialog" aria-controls="help-dialog">操作指南</button><button id="restart-game" class="button button-secondary" type="button">重新出发</button><button id="back-camp" class="text-button" type="button">返回主菜单</button></div></section>
         </div>
 
         <div id="end-screen" class="screen centered-screen" hidden>
-          <section class="screen-card end-card"><span class="dialog-kicker">A LIGHT TO BRING HOME</span><span class="card-emblem relic-emblem" aria-hidden="true">◆</span><h2 id="end-title">带着火光归来</h2><p id="end-copy">这一次探索，让营地离重新亮起又近一步。</p><p id="end-goal" class="end-goal"></p><div id="end-reward" class="reward-box">获得星屑</div><p id="end-unlocks" class="end-feedback"></p><p id="end-badges" class="end-feedback end-badges"></p><div class="stack-actions"><button id="end-restart" class="button button-primary">再探一次 <span aria-hidden="true">↗</span></button><button id="end-camp" class="button button-secondary">返回营地</button></div></section>
+          <section class="screen-card end-card" aria-labelledby="end-title">
+            <header class="end-heading"><span class="end-eyebrow">远征记录</span><h2 id="end-title">带着火光归来</h2><p id="end-copy">这一次探索，让营地离重新亮起又近一步。</p><p id="end-goal" class="end-goal"></p></header>
+            <div class="end-layout">
+              <div class="end-run">
+                <dl class="end-stats" aria-label="本次探险表现"><div><dt>击败敌人</dt><dd id="end-kills">0</dd></div><div><dt>探险用时</dt><dd id="end-time">0:00</dd></div><div><dt id="end-combat-label">累计受伤</dt><dd id="end-parries">0</dd></div><div><dt>探索房间</dt><dd id="end-explored">0 / 0</dd></div></dl>
+                <section class="end-haul" aria-label="本次收获"><span class="end-section-label">本次收获</span><div id="end-reward" class="reward-box">获得星屑</div><p id="end-new-relics" class="end-discoveries"></p></section>
+                <div class="end-actions"><button id="end-restart" class="button button-secondary" type="button">再探一次 <span aria-hidden="true">↗</span></button><button id="end-camp" class="text-button" type="button">返回营地</button></div>
+              </div>
+              <aside class="end-outlook" aria-label="营地与下次出发">
+                <section class="end-camp-change"><span class="end-section-label">营地变化</span><p id="end-progress"></p><p id="end-unlocks" class="end-feedback"></p><p id="end-badges" class="end-feedback end-badges"></p></section>
+                <section class="end-next"><span id="end-next-label" class="end-section-label">下次出发</span><h3 id="end-next-title">再走进遗迹</h3><p id="end-next-copy">带上这次的经验，选择下一段旅途。</p><button id="end-next-action" class="button button-primary" type="button">准备出发 <span aria-hidden="true">→</span></button></section>
+              </aside>
+            </div>
+          </section>
         </div>
 
         <aside id="tutorial-panel" class="tutorial-panel" aria-labelledby="tutorial-title" hidden><div><span class="eyebrow">初次出发</span><strong id="tutorial-title">先试试手，再走进遗迹</strong></div><p><span id="tutorial-controls-desktop" class="tutorial-desktop">WASD 移动 · J / 左键攻击 · K / 右键格挡静步 · Q 切换武器 · 空格闪避 · E 互动</span><span id="tutorial-controls-touch" class="tutorial-touch">左侧摇杆移动，右侧按钮攻击、格挡、闪避和互动；Q 键切换武器。</span></p><p id="tutorial-detail">房间自由进出；击杀唤醒守卫，精英掉落遗物。</p><button id="tutorial-dismiss" class="text-button" type="button">知道了，出发 →</button></aside>
