@@ -223,7 +223,8 @@
       else crystal(c,0,-26,.7,'#ddc27d');
     }
   }
-  function chapterInteractable(c, item, time, state, localId) {
+  function chapterInteractable(c, item, time, state, localId, still = false) {
+    time = still ? 0 : time;
     const x = num(item.x), y = num(item.y), run = state.chapter || {}, kind = item.kind;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
     const active = item.active !== false && !item.used;
@@ -257,6 +258,17 @@
       else { rect(c, -13, -68, 26, 29, '#26372d'); rect(c, -9, -64, 18, 21, '#4b5340'); rect(c, -6, -62, 12, 16, '#26382d'); rect(c, -16, -71, 32, 6, '#a08b5e'); rect(c, -16, -40, 32, 5, '#8a7b50'); }
     } else if (kind === 'chapter-supplies') {
       const taken = !!run.suppliesTaken;
+      if (!taken) {
+        // The cloth and soft pool identify medicine from the doorway, without
+        // advertising a permanent interaction prompt across the room.
+        glow(c, 0, -13, 63, '#b5d6ba22');
+        ellipse(c, 0, 10, 33, 12, '#a8d6b113');
+        rect(c, -31, -4, 61, 10, '#c8cfab'); rect(c, -28, -3, 55, 3, '#e5dfb5');
+        const rise = (time * .008) % 20;
+        alpha(c, .35 * (1 - rise / 20), () => {
+          rect(c, 21, -38 - rise, 3, 9, '#c5e7c4'); rect(c, 18, -35 - rise, 9, 3, '#c5e7c4');
+        });
+      }
       for (let i = 0; i < 2; i++) { rect(c, -26 + i * 26, -14 + i * 5, 25, 29, '#364a3c'); rect(c, -24 + i * 26, -13 + i * 5, 21, 24, taken ? '#52614c' : '#8d7954'); rect(c, -18 + i * 26, -13 + i * 5, 5, 24, '#b49b66'); }
       if (!taken) { rect(c, -11, -27, 27, 20, '#566c56'); rect(c, -9, -28, 23, 4, '#aeb188'); rect(c, 0, -24, 5, 15, '#e2d99f'); rect(c, -5, -19, 15, 5, '#e2d99f'); }
       else path(c, [[-8, -24], [-2, -18], [10, -31]], '#b6d2a5', 3);
@@ -266,7 +278,17 @@
       rect(c, -5, -67, 10, 65, '#766547'); rect(c, -3, -66, 3, 60, '#c0965c');
       rect(c, -20, -65, 40, 5, '#9e774e'); rect(c, -20, -63, 4, 20, '#9e774e'); rect(c, 16, -63, 4, 20, '#9e774e');
       if (lit) { lantern(c, 0, -48, time, 1.1); path(c, [[0, -65], [0, -118]], '#e9cd8d2a', 15); path(c, [[0, -65], [0, -118]], '#e9cd8d66', 2); }
-      else { rect(c, -9, -61, 18, 28, '#26392f'); rect(c, -6, -57, 12, 19, '#677050'); rect(c, -3, -55, 6, 15, '#344536'); }
+      else {
+        rect(c, -9, -61, 18, 28, '#26392f'); rect(c, -6, -57, 12, 19, '#677050'); rect(c, -3, -55, 6, 15, '#344536');
+        // A failing pilot light is readable while distant. Activation replaces
+        // this modest signal with the existing steady beam and warm lantern.
+        const pulse = .5 + Math.cos(time * .0018) * .5;
+        glow(c, 0, -48, 44, '#c7c78518');
+        alpha(c, .28 + pulse * .25, () => {
+          rect(c, -2, -52, 4, 9, '#e2c582');
+          for (const side of [-1, 1]) path(c, [[side * 25, -54], [side * 30, -48], [side * 25, -42]], '#b7c393', 2);
+        });
+      }
       c.fillStyle = lit ? '#cfab67' : '#657753'; c.beginPath(); c.moveTo(6, -81); c.lineTo(34, -72); c.lineTo(6, -63); c.closePath(); c.fill();
     }
     c.restore();
@@ -275,9 +297,9 @@
     if (nearby && active) label(c, 'E · ' + (item.label || item.title || '查看'), x, y + (kind === 'chapter-sluice' ? 64 : 34), '#ead7a3', 10);
     else if (nearby && item.used && kind === 'chapter-note') label(c, item.title || '已读记录', x, y + 30, '#93aa92', 9);
   }
-  function interactable(c, item, time, state, localId) {
+  function interactable(c, item, time, state, localId, still = false) {
     if (!item || (item.kind === 'relic' && item.used)) return;
-    if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId); return; }
+    if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
     const color = kind === 'cache' || kind === 'supply-cache' ? '#9ac9c3' : kind === 'relic' ? relicColors[item.buff] || relicColors.pierce : kind === 'extraction' || kind === 'relay-extraction' ? '#bed6a3' : '#e9c780';
@@ -613,8 +635,19 @@
   }
   function enemy(c, e, time, events = [], still = false, chapter = false) {
     if (!e || e.hp <= 0 || e.dead) return;
-    const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15), step = Math.sin(time * .012 + x) * 1.5;
+    const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15);
+    const recovering = boss && e.rhythm && e.rhythm.phase === 'recover' && num(e.stagger) <= 0;
+    const step = recovering ? 0 : Math.sin(time * .012 + x) * 1.5;
     shadow(c, x, y, r, .43);
+    if (recovering) {
+      // This small mint opening belongs to the body, not an attack footprint.
+      // Its arc drains with the authoritative recovery timer on every client.
+      const left = Math.max(0, Math.min(1, num(e.rhythm.remaining) / Math.max(.01, num(e.rhythm.duration, 1))));
+      ellipse(c, x, y + 9, r + 13, (r + 13) * .42, '#aadac51b');
+      c.strokeStyle = '#b9e4c1a8'; c.lineWidth = 2;
+      c.beginPath(); c.ellipse(x, y + 9, r + 14, (r + 14) * .42, 0, -.5 * Math.PI, -.5 * Math.PI + Math.PI * 2 * left); c.stroke();
+      for (const side of [-1, 1]) path(c, [[x + side * (r + 21), y - 4], [x + side * (r + 15), y + 2], [x + side * (r + 21), y + 8]], '#c5e8c6', 2);
+    }
     if (e.elite && !boss) {
       glow(c, x, y - 12, 47, '#e4b96b1f');
       c.strokeStyle = '#dbb66c90'; c.lineWidth = 2;
@@ -641,6 +674,7 @@
       chapterConstruct(c, e, time, step);
     } else if (boss) {
       const awakened = e.stage >= 2;
+      if (recovering) { c.translate(0, 4); c.rotate(.045); }
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
       rect(c, -21, 5 + step, 15, 16, '#192c2b'); rect(c, 8, 5 - step, 15, 16, '#192c2b'); rect(c, -20, 6 + step, 13, 12, '#62725c'); rect(c, 9, 6 - step, 13, 12, '#62725c');
       rect(c, -25, -24, 50, 34, '#142b29'); rect(c, -21, -23, 43, 31, '#71836a'); rect(c, -20, -21, 10, 28, '#8c9b7b'); rect(c, 10, -21, 11, 28, '#526a56'); rect(c, -16, -12, 33, 17, '#4e6552');
@@ -653,6 +687,12 @@
         rect(c,-12,-18,24,22,'#302e25');rect(c,-9,-16,18,19,'#c3713f');rect(c,-5,-14,10,16,'#e8a355');rect(c,-2,-12,4,12,'#ffe3a1');
         for(const side of [-1,1]){path(c,[[side*10,-17],[side*17,-12],[side*15,-3],[side*21,2]],'#f4bb6f',2);rect(c,side*7-3,-36,6,4,'#ffe0a0');}
         for(let i=0;i<3;i++){const rise=(time*.024+i*13)%31;alpha(c,1-rise/31,()=>rect(c,-9+i*9,y%3-25-rise,2,3,'#eab36d'));}
+      }
+      if (recovering) { glow(c, 0, -9, 33, '#b4e5c527'); rect(c, -5, -13, 10, 14, '#b9dcb4'); rect(c, -2, -11, 4, 10, '#f0f3cf'); }
+      if (e.rhythm && e.rhythm.type === 'quake' && e.rhythm.phase === 'windup') {
+        // Raised fists and vertical steel distinguish the room-wide slam from
+        // the horizontal thrust before either floor pattern is fully charged.
+        for (const side of [-1, 1]) { rect(c, side * 30 - 7, -49, 14, 29, '#6f8062'); rect(c, side * 30 - 9, -53, 18, 10, '#b1aa7b'); }
       }
     } else if (kind === 'duelist') {
       const staggered = e.stagger > 0, attack = e.rhythm || {}, raised = attack.phase === 'windup';
@@ -717,8 +757,11 @@
       c.save(); c.translate(13, -1 + step); c.rotate(.35); rect(c, -2, -12, 4, 20, '#2a3c2c'); rect(c, -1, -18, 3, 14, '#b7ba8a'); rect(c, -4, -5, 9, 3, '#8b7b4d'); c.restore();
     }
     if (boss && e.rhythm) {
-      const attack = e.rhythm;
-      blade(c, 0, -5, num(attack.angle, num(e.facing)) + (attack.phase === 'windup' && attack.type === 'quake' ? -1.1 : 0), attack.phase === 'windup', attack.phase === 'active', true);
+      const attack = e.rhythm, angle = num(attack.angle, num(e.facing)), winding = attack.phase === 'windup';
+      if (recovering) blade(c, 1, 8, Math.cos(angle) < 0 ? Math.PI * .75 : Math.PI * .25, false, false, true);
+      else if (winding && attack.type === 'quake') blade(c, -3, -35, -Math.PI / 2, false, false, true);
+      else if (winding && attack.type === 'thrust') blade(c, 12, -9, angle, false, false, true);
+      else blade(c, 0, -5, angle + (winding && attack.type === 'combo' ? -.5 : winding && attack.type === 'sweep' ? .65 : 0), winding, attack.phase === 'active', true);
     }
     if (e.hitFlash > 0 || e.flash > 0) { c.globalCompositeOperation = 'screen'; rect(c, boss ? -21 : -10, boss ? -43 : -24, boss ? 42 : 20, boss ? 55 : 31, '#d9d69c60'); }
     c.restore();
@@ -830,6 +873,17 @@
     if (r.type === 'thrust' || r.type === 'rush') {
       // Directional spearheads also identify a thrust when color is hard to see.
       for (let i = 1; i <= 3; i++) { const dx = radius * (.26 + i * .17); path(c, [[dx-9,-8],[dx,0],[dx-9,8]], color + (active ? 'ed' : '99'), active ? 3 : 2); }
+      if (e.kind === 'boss' && r.type === 'thrust') {
+        const edge = Math.min(22, Math.sin(arc / 2) * radius * .45);
+        for (const side of [-1, 1]) path(c, [[radius * .25, side * edge * .3], [radius * .82, side * edge]], color + (active ? 'd0' : '68'), 2);
+      }
+    } else if (r.type === 'combo' && e.kind === 'boss') {
+      // Parallel blade tracks and the existing beat pips read as a sequence;
+      // thrust keeps its straight arrows and quake keeps its radial cracks.
+      for (const scale of [.57, .74]) {
+        c.strokeStyle = color + (active ? 'c8' : '6b'); c.lineWidth = active ? 4 : 2;
+        c.beginPath(); c.arc(0, 0, radius * scale, -arc * .38, arc * .38); c.stroke();
+      }
     } else if (r.type === 'sweep') {
       for (const scale of [.52, .76]) { c.strokeStyle = color + '60'; c.lineWidth = 2; c.beginPath(); c.arc(0,0,radius*scale,-arc/2,arc/2); c.stroke(); }
       const tip = arc / 2; const tx = Math.cos(tip) * radius * .76, ty = Math.sin(tip) * radius * .76;
@@ -837,6 +891,11 @@
     } else if (r.type === 'quake') {
       c.strokeStyle = color + (active ? 'a0' : '48'); c.lineWidth = 2; c.beginPath(); c.arc(0,0,radius*.66,0,Math.PI*2); c.stroke();
       for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; path(c, [[Math.cos(a)*radius*.72,Math.sin(a)*radius*.72],[Math.cos(a+.03)*radius*.86,Math.sin(a+.03)*radius*.86],[Math.cos(a)*radius,Math.sin(a)*radius]], color + '66', 2); }
+      if (e.kind === 'boss') for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4, rr = radius * .42;
+        const tx = Math.cos(a) * rr, ty = Math.sin(a) * rr;
+        path(c, [[tx - Math.cos(a - .5) * 11, ty - Math.sin(a - .5) * 11], [tx, ty], [tx - Math.cos(a + .5) * 11, ty - Math.sin(a + .5) * 11]], color + (active ? 'db' : '82'), 2);
+      }
     }
     if (!active) {
       const target = num(e.r, 20) + 12;
@@ -1292,7 +1351,7 @@
     const sprites = [
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
-      ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId) })),
+      ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still, state.mode === 'chapter') })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];

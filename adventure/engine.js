@@ -245,13 +245,16 @@
       } else if (room.index === 1) {
         data.walls.push(rect(390, 130, 55, 100));
         data.props.push(prop(s, 'crate', 370, 390), prop(s, 'barrel', 670, 425));
-        guard(data, 'chaser', 610, 140); guard(data, 'shooter', 745, 440);
-        guard(data, 'duelist', 710, 290, true, 'riposte');
+        // The west approach introduces one patrol before the two side guards.
+        // These are sight/distance encounters, so every exit stays usable.
+        var patrol = guard(data, 'chaser', 385, 300); patrol.alertRadius = 265; patrol.alerted = false;
+        var gunner = guard(data, 'shooter', 755, 445); gunner.alertRadius = 265; gunner.alerted = false;
+        var overseer = guard(data, 'duelist', 775, 135, true, 'riposte'); overseer.alertRadius = 180; overseer.alerted = false;
         note(data, 'trail', 290, 150);
       } else if (room.index === 2) {
         data.walls.push(rect(330, 140, 65, 105), rect(600, 365, 65, 105));
-        data.props.push(prop(s, 'crate', 330, 325), prop(s, 'barrel', 650, 250));
-        guard(data, 'shield', 680, 165); guard(data, 'shooter', 760, 440); guard(data, 'charger', 480, 180);
+        data.props.push(prop(s, 'crate', 330, 325), prop(s, 'barrel', 570, 285));
+        guard(data, 'shield', 630, 220); guard(data, 'shooter', 760, 440); guard(data, 'charger', 735, 140);
         note(data, 'cooling', 440, 425);
       } else if (room.index === 3) {
         data.walls.push(rect(350, 130, 80, 70));
@@ -1710,7 +1713,7 @@
     e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
     event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
   }
-  function rushMove(s, e, distance) {
+  function rushMove(s, e, distance, ordinary) {
     var count = Math.max(1, Math.ceil(distance / 9)), stopped = false;
     e.rushHitIds = e.rushHitIds || [];
     for (var i = 0; i < count; i += 1) {
@@ -1725,12 +1728,13 @@
         event(s, 'environment-hit', { enemyId: null, playerId: null, weapon: null, source: 'rush',
           target: 'prop', propId: block.id, x: block.x, y: block.y });
         if (block.kind === 'barrel') explode(s, block, null, 'rush');
+        else if (ordinary) { block.hp -= 3; if (block.hp <= 0) destroyCrate(s, block); }
         else destroyCrate(s, block);
         stopped = true; break;
       }
       var beforeX = e.x, beforeY = e.y;
       move(s, e, dx, dy, false);
-      s.enemies.forEach(function (other) {
+      if (!ordinary) s.enemies.forEach(function (other) {
         if (other === e || other.hp <= 0 || e.rushHitIds.indexOf(other.id) >= 0 ||
             dist(e, other) >= e.r + other.r + 3 || !lineClear(s, e, other, 3)) return;
         e.rushHitIds.push(other.id);
@@ -1780,7 +1784,13 @@
         resolveRhythm(s, e, r);
       } else if (r.phase === 'active') {
         if (r.beat < r.beats) rhythmWindup(s, e, r.type, r.beat + 1, r.beats, target);
-        else { r.phase = 'recover'; r.duration = 0.65; r.remaining = r.duration; }
+        else {
+          r.phase = 'recover';
+          // The heavy guard visibly commits to its strike. This stationary
+          // opening gives a returning blade two or three honest follow-ups.
+          r.duration = e.kind === 'boss' ? r.type === 'quake' ? 1.5 : r.type === 'sweep' ? 1.25 : r.type === 'thrust' ? 1.2 : 1.05 : 0.65;
+          r.remaining = r.duration;
+        }
       } else { e.rhythm = null; e.attackCd = 0.55; }
       return true;
     }
@@ -1813,10 +1823,11 @@
         move(s, p, Math.cos(angle) * Math.min(85, gap), Math.sin(angle) * Math.min(85, gap), false);
         if (dist(p, foe) <= 112 + foe.r && meleeLineClear(s, p, foe, 7)) {
           p.facing = angle; p.meleeTime = 0.24; p.fireCd = 0.34; p.guarding = false; p.guardWindow = 0; p.guardAttackLock = 0.28;
-          foe.stagger = 0.7; foe.rhythm = null; foe.attackCd = 0.8;
+          foe.stagger = foe.kind === 'boss' ? 1.05 : 0.7; foe.rhythm = null; foe.attackCd = 0.8;
           var counterKind = p.counterKind;
           p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
-          damageEnemy(s, foe, 6, p.id, 'blade');
+          var counterDamage = Math.min(foe.hp, foe.kind === 'boss' ? Math.max(6, Math.round(foe.maxHp * 0.04)) : 6);
+          damageEnemy(s, foe, counterDamage, p.id, 'blade');
           openWeakpoint(s, foe, p.id, 'counter');
           var resonance = s.runBuffs.indexOf('resonance') >= 0;
           var riposte = s.runBuffs.indexOf('riposte') >= 0 && p.parryChain >= 2;
@@ -1835,7 +1846,7 @@
             });
             if (riposte) p.parryChain = 0;
           }
-          event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, x: foe.x, y: foe.y });
+          event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, amount: counterDamage, x: foe.x, y: foe.y });
           return true;
         }
       }
@@ -1871,30 +1882,22 @@
       e.weakTime = Math.max(0, (e.weakTime || 0) - dt);
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
       if (e.stun > 0) return;
+      if (e.alertRadius && !e.alerted) {
+        e.alerted = e.hp < e.maxHp || targets.some(function (q) {
+          return dist(e, q) <= e.alertRadius && lineClear(s, e, q, 4);
+        });
+        if (!e.alerted) return;
+      }
       var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < 600 && lineClear(s, e, d, 4); });
       var p = (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
       if (e.kind === 'duelist' || e.kind === 'boss' || e.kind === 'brute' || e.kind === 'pyromancer') { updateRhythm(s, e, p, dt); return; }
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
       if (e.kind === 'charger' && e.chargeTime > 0) {
-        var oldX = e.x, oldY = e.y;
         e.chargeTime = Math.max(0, e.chargeTime - dt);
-        move(s, e, e.chargeX * 410 * dt, e.chargeY * 410 * dt, false);
+        var chargeBlocked = rushMove(s, e, 410 * dt, true);
         var hit = targets.find(function (q) { return dist(e, q) < e.r + q.r + 6; });
         if (hit) { damagePlayer(s, hit, 1, 'charge'); e.chargeTime = 0; }
-        var block = s.props.find(function (q) { return solidProp(q) && dist(e, q) < e.r + q.r + 10; });
-        if (block) {
-          if (block.kind === 'barrel') explode(s, block, null, 'rush');
-          else {
-            block.hp -= 3;
-            if (block.hp <= 0) {
-              block.destroyed = true;
-              if (block.carriedBy && s.players[block.carriedBy]) s.players[block.carriedBy].carry = null;
-              block.carriedBy = null;
-            }
-          }
-          e.chargeTime = 0;
-        }
-        if (len(e.x - oldX, e.y - oldY) < 410 * dt * 0.4) e.chargeTime = 0;
+        if (chargeBlocked) e.chargeTime = 0;
         if (e.chargeTime <= 0) { e.stun = 0.8; e.attackCd = 1.7; }
         particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#f39366' });
         return;

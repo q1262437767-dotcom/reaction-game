@@ -204,7 +204,10 @@
       if (event.type === 'rhythm-windup') {
         const remaining = Math.max(0, Math.min(3, event.duration || .8) - age);
         if (remaining < .07) continue;
-        tone(event.attack === 'thrust' ? 230 : 150, Math.min(.35, remaining), .018, 'triangle', 0, 390);
+        if (event.attack === 'thrust') tone(310, Math.min(.3, remaining), .018, 'triangle', 0, 650);
+        else if (event.attack === 'quake') tone(90, Math.min(.35, remaining), .021, 'triangle', 0, 55);
+        else if (event.attack === 'sweep') tone(480, Math.min(.3, remaining), .016, 'sine', 0, 260);
+        else tone(150, Math.min(.35, remaining), .018, 'triangle', 0, 390);
       } else if (event.type === 'rhythm-beat') {
         tone(65, .13, .035, 'triangle', 0, 35);
       } else if (['perfect-parry', 'mikiri', 'perfect-dodge', 'fireball-reflected'].includes(event.type)) {
@@ -268,6 +271,14 @@
     }
     if (paused || tutorialPending || remoteTutorialPending || hasDialog()) return;
     const local = state.players && state.players[localId()];
+    // One quiet signal invites a closer look; it is never a repeating reminder.
+    if (state.status === 'playing' && state.mode === 'chapter' && local && !local.downed && audio && audio.state === 'running' && !muted) {
+      const beacon = (state.interactables || []).find(item => item.kind === 'chapter-beacon' && item.active && !item.used && Math.hypot(local.x - item.x, local.y - item.y) < 260);
+      const cue = 'beacon-hint:' + state.room.index;
+      if (beacon && !chapterMomentsSeen.has(cue)) {
+        chapterMomentsSeen.add(cue); tone(660, .14, .008, 'sine', 0, 590); tone(880, .18, .006, 'sine', .18, 780);
+      }
+    }
     if (local && !local.downed) for (const ball of state.bullets || []) {
       if (ball.friendly || !ball.reflectable || ball.dead) continue;
       const dx = local.x - ball.x, dy = local.y - ball.y, speed = Math.hypot(ball.vx, ball.vy);
@@ -289,7 +300,7 @@
       const cueId = 'cue:' + windup.id;
       if (heardEvents.has(cueId)) continue;
       heardEvents.add(cueId);
-      tone(attack.type === 'sweep' ? 790 : 1180, .075, .04, 'triangle');
+      tone(attack.type === 'sweep' ? 790 : attack.type === 'quake' ? 440 : attack.type === 'thrust' ? 1480 : 1180, .075, .04, 'triangle');
     }
   }
   function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
@@ -596,6 +607,7 @@
     }
     for (const enemy of s.enemies) {
       if (!enemy || !bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
+      if ((enemy.alertRadius != null || enemy.alerted != null) && (s.mode !== 'chapter' || s.room.index !== 1 || !bounded(enemy.alertRadius, 600) || enemy.alertRadius < 1 || typeof enemy.alerted !== 'boolean')) return false;
       if (enemy.rhythm != null) {
         const attack = enemy.rhythm;
         if (!['combo', 'thrust', 'sweep', 'quake', 'rush', 'fireball'].includes(attack.type) || !['windup', 'active', 'recover'].includes(attack.phase) || !bounded(attack.remaining, 10) || !bounded(attack.duration, 10) || !Number.isInteger(attack.beat) || !Number.isInteger(attack.beats) || attack.beat < 0 || attack.beat > attack.beats || attack.beats < 1 || attack.beats > 8 || !Number.isFinite(attack.angle) || Math.abs(attack.angle) > Math.PI * 4 || !bounded(attack.range, 1600) || !bounded(attack.arc, Math.PI * 2)) return false;
@@ -608,6 +620,7 @@
     for (const event of s.combatEvents) {
       if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
+      if (event.type === 'counterattack' && event.amount != null && (!Number.isInteger(event.amount) || !bounded(event.amount, 1000))) return false;
       if (event.type === 'core-catch' && typeof event.perfect !== 'boolean') return false;
       if (['weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block'].includes(event.type) && (!['p1', 'p2'].includes(event.playerId) || event.weapon != null && !['blade', 'pistol', 'scatter'].includes(event.weapon) || event.slot != null && !['melee', 'ranged'].includes(event.slot) || event.perfect != null && typeof event.perfect !== 'boolean' || event.broken != null && typeof event.broken !== 'boolean' || event.damage != null && !bounded(event.damage, 100))) return false;
       if (event.type === 'player-hit' && (!['p1', 'p2'].includes(event.playerId) || !bounded(event.damage, 100) || !bounded(event.hp, 100) || !['combo', 'thrust', 'sweep', 'quake', 'rush', 'charge', 'melee', 'bullet', 'fire', 'fireball'].includes(event.source))) return false;
