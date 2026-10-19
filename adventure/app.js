@@ -9,6 +9,9 @@
   const RELAY_TUTORIAL_STORE = 'ruins-squad-relay-tutorial-v1';
   const HUNT_TUTORIAL_STORE = 'ruins-squad-hunt-tutorial-v1';
   const WEAPONS_TUTORIAL_STORE = 'ruins-squad-weapons-tutorial-v1';
+  const TOUCH_STORE = 'ruins-squad-touch-controls-v1';
+  let touchPreference = readTouchPreference(), touchSeen = false, joystickId = null;
+  const touchPointers = new Map();
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let account = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol';
@@ -41,6 +44,27 @@
   const playing = () => !!state && state.status === 'playing';
   const hasDialog = () => dialogIds.some(id => $(id).open);
   const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function readTouchPreference() {
+    try { const value = localStorage.getItem(TOUCH_STORE); return ['auto', 'show', 'hide'].includes(value) ? value : 'auto'; }
+    catch (_) { return 'auto'; }
+  }
+  function supportsTouch() {
+    if (touchSeen || Number(navigator.maxTouchPoints) > 0) return true;
+    return ['(any-pointer: coarse)', '(pointer: coarse)'].some(query => {
+      try { return !!(window.matchMedia && window.matchMedia(query).matches); } catch (_) { return false; }
+    });
+  }
+  function touchGameActive() {
+    return playing() && !paused && !hasDialog() && !remoteTutorialPending && !((state.practice || relayTutorial || huntTutorial) && tutorialPending);
+  }
+  function updateTouchControls() {
+    const enabled = touchPreference === 'show' || touchPreference === 'auto' && supportsTouch();
+    $('game-wrap').setAttribute('data-touch-controls', String(enabled));
+    $('touch-controls').hidden = !enabled || !touchGameActive();
+    const label = { auto: '自动', show: '显示', hide: '隐藏' }[touchPreference];
+    $('settings-touch').textContent = '触屏按钮 · ' + label;
+    $('settings-touch').setAttribute('aria-label', `触屏按钮：${label}；点击切换显示方式`);
+  }
   function toast(message, duration = 3800) {
     $('toast').textContent = message; $('toast').hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, duration);
@@ -49,6 +73,7 @@
     keys.clear(); mouse.down = mouse.guard = false; touch.mx = touch.my = 0;
     touch.shoot = touch.dash = touch.guard = touch.interact = touch.switchWeapon = false;
     dashPulse = guardPulse = interactPulse = switchPulse = false;
+    joystickId = null; touchPointers.clear();
     $('joystick-stick').style.transform = 'translate(0px,0px)';
     remoteInput = {};
   }
@@ -800,6 +825,12 @@
   $('pause-settings').onclick = () => openDialog('settings-dialog');
   $('close-settings').onclick = () => $('settings-dialog').close();
   $('settings-sound').onclick = () => $('mute-game').click();
+  $('settings-touch').onclick = () => {
+    const options = ['auto', 'show', 'hide'];
+    touchPreference = options[(options.indexOf(touchPreference) + 1) % options.length];
+    try { localStorage.setItem(TOUCH_STORE, touchPreference); } catch (_) { /* Keep the choice for this page. */ }
+    clearInput(); updateTouchControls();
+  };
   $('settings-help').onclick = () => openDialog('help-dialog');
   $('settings-account').onclick = () => $('open-account').click();
   $('resume-game').onclick = () => pause(false);
@@ -822,7 +853,7 @@
     challenges: ['mode-hunt', 'mode-relay', 'mode-legacy', 'menu-challenges-back'],
     loadout: ['solo-start', 'loadout-coop', 'open-coop', 'menu-loadout-back']
   };
-  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'resume-game', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-help', 'settings-account', 'close-settings'])];
+  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'resume-game', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-help', 'settings-account', 'close-settings'])];
   feedbackButtons.forEach(id => {
     $(id).addEventListener('click', () => menuSound('select'));
     $(id).addEventListener('pointerenter', () => menuSound('hover'));
@@ -881,6 +912,18 @@
     }
   });
   window.addEventListener('keyup', event => keys.delete(event.code));
+  window.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'touch' && !touchSeen) { touchSeen = true; updateTouchControls(); }
+  }, true);
+  window.addEventListener('resize', () => { clearInput(); updateTouchControls(); });
+  for (const query of ['(any-pointer: coarse)', '(pointer: coarse)']) {
+    try {
+      const media = window.matchMedia && window.matchMedia(query);
+      const changed = () => { clearInput(); updateTouchControls(); };
+      if (media && media.addEventListener) media.addEventListener('change', changed);
+      else if (media && media.addListener) media.addListener(changed);
+    } catch (_) { /* Actual touch and the manual setting remain available. */ }
+  }
   function pointerAim(event) {
     const bounds = canvas.getBoundingClientRect();
     mouse.x = Math.max(0, Math.min(960, (event.clientX - bounds.left) * 960 / bounds.width));
@@ -901,7 +944,6 @@
   canvas.addEventListener('contextmenu', event => event.preventDefault());
   window.addEventListener('blur', () => { clearInput(); stopSounds(); if (playing() && !paused) pause(true); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); stopSounds(); if (playing() && !paused) pause(true); } });
-  let joystickId = null;
   const joystick = $('joystick');
   function moveStick(event) {
     const bounds = joystick.getBoundingClientRect(), radius = bounds.width * .32;
@@ -910,15 +952,19 @@
     touch.mx = x * factor / radius; touch.my = y * factor / radius;
     $('joystick-stick').style.transform = `translate(${x * factor}px,${y * factor}px)`;
   }
-  joystick.addEventListener('pointerdown', event => { if (!playing() || paused || hasDialog()) return; event.preventDefault(); mouse.active = false; joystickId = event.pointerId; joystick.setPointerCapture(event.pointerId); moveStick(event); });
-  joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickId) moveStick(event); });
+  joystick.addEventListener('pointerdown', event => { if (!touchGameActive() || touchPreference === 'hide' || joystickId !== null) return; event.preventDefault(); mouse.active = false; joystickId = event.pointerId; joystick.setPointerCapture(event.pointerId); moveStick(event); });
+  joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickId && touchGameActive()) moveStick(event); });
   function releaseStick(event) { if (event.pointerId === joystickId) { joystickId = null; touch.mx = touch.my = 0; $('joystick-stick').style.transform = 'translate(0px,0px)'; } }
-  joystick.addEventListener('pointerup', releaseStick); joystick.addEventListener('pointercancel', releaseStick);
+  joystick.addEventListener('pointerup', releaseStick); joystick.addEventListener('pointercancel', releaseStick); joystick.addEventListener('lostpointercapture', releaseStick);
   for (const action of ['shoot', 'dash', 'guard', 'interact', 'switchWeapon']) {
     const button = $('touch-' + (action === 'switchWeapon' ? 'switch' : action));
-    button.addEventListener('pointerdown', event => { if (!playing() || paused || hasDialog()) return; event.preventDefault(); mouse.active = false; enableAudio(); button.setPointerCapture(event.pointerId); touch[action] = true; if (action === 'dash') dashPulse = true; if (action === 'guard') guardPulse = true; if (action === 'interact') interactPulse = true; if (action === 'switchWeapon') switchPulse = true; });
-    button.addEventListener('pointerup', () => { touch[action] = false; });
-    button.addEventListener('pointercancel', () => { touch[action] = false; if (action === 'guard') guardPulse = false; if (action === 'switchWeapon') switchPulse = false; });
+    button.addEventListener('pointerdown', event => { if (!touchGameActive() || touchPreference === 'hide' || touchPointers.has(action)) return; event.preventDefault(); mouse.active = false; enableAudio(); button.setPointerCapture(event.pointerId); touchPointers.set(action, event.pointerId); touch[action] = true; if (action === 'dash') dashPulse = true; if (action === 'guard') guardPulse = true; if (action === 'interact') interactPulse = true; if (action === 'switchWeapon') switchPulse = true; });
+    const release = (event, cancelled) => {
+      if (!touchPointers.has(action) || touchPointers.get(action) !== event.pointerId) return;
+      touchPointers.delete(action); touch[action] = false;
+      if (cancelled) { if (action === 'guard') guardPulse = false; if (action === 'switchWeapon') switchPulse = false; if (action === 'dash') dashPulse = false; if (action === 'interact') interactPulse = false; }
+    };
+    button.addEventListener('pointerup', event => release(event, false)); button.addEventListener('pointercancel', event => release(event, true)); button.addEventListener('lostpointercapture', event => release(event, true));
   }
   function hud() {
     const p = state && state.players[localId()];
@@ -966,7 +1012,7 @@
     $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
     $('interaction-hint').textContent = hint || ''; $('interaction-hint').hidden = !hint;
-    $('touch-controls').hidden = !playing() || paused || hasDialog();
+    updateTouchControls();
     $('touch-interact').textContent = relay && p && p.carry === state.relay.coreId ? state.room.index === state.relay.extractionRoom && Math.hypot(p.x - 120, p.y - 300) < 76 ? '交' : '掷' : 'E';
     $('touch-interact').setAttribute('aria-label', relay ? '拾取、投掷或交付炉芯' : '互动');
     $('touch-guard').setAttribute('aria-label', relay ? '接住炉芯、格挡与静步' : '格挡与静步');
@@ -1009,7 +1055,10 @@
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);
   }
-  window.addEventListener('storage', event => { if (!account && event.key === STORE) { camp = readCamp(); updateCamp(); } });
+  window.addEventListener('storage', event => {
+    if (!account && event.key === STORE) { camp = readCamp(); updateCamp(); }
+    if (event.key === TOUCH_STORE) { touchPreference = readTouchPreference(); clearInput(); updateTouchControls(); }
+  });
   if (window.AdventureAccount && window.AdventureCloud) {
     const config = window.AdventureCloudConfig || {};
     const cloud = window.AdventureCloud.create(config, {
