@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 11;
+  const VERSION = 12;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -33,7 +33,11 @@
     if (!isRecord(message) || !TYPES.has(message.type)) return false;
     // A current lobby always identifies its mode. Never interpret an old or altered
     // lobby as the default mode; the app validates mission/difficulty and state.
-    if (message.type === 'loadout') return message.weapon === 'pistol' || message.weapon === 'scatter';
+    if (message.type === 'loadout') {
+      if (message.weapon !== 'pistol' && message.weapon !== 'scatter') return false;
+      const camp = message.camp;
+      return camp === undefined || isRecord(camp) && Object.keys(camp).length === 1 && Array.isArray(camp.upgrades) && camp.upgrades.length <= 3 && new Set(camp.upgrades).size === camp.upgrades.length && camp.upgrades.every(id => ['ward', 'stride', 'relicCase'].includes(id));
+    }
     if (message.type === 'lobby' && message.mode === 'chapter') return message.mission === 'chapter1' && message.difficulty === 1;
     return message.type !== 'lobby' || message.mode === 'chapter' || message.mode === 'random' || message.mode === 'story' || message.mode === 'relay' || message.mode === 'hunt';
   }

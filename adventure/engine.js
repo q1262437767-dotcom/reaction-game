@@ -121,6 +121,15 @@
       dashWindow: 0, dashOriginX: 0, dashOriginY: 0, counterTime: 0, counterEnemy: null,
       counterKind: '', meleeTime: 0, guardLoad: 0, guardAttackLock: 0, parryChain: 0, ward: 0, relayBoost: 0 };
   }
+  function campUpgrades(camp) {
+    return ['ward', 'stride', 'relicCase'].filter(function (key) {
+      return camp && Array.isArray(camp.upgrades) && camp.upgrades.indexOf(key) >= 0;
+    });
+  }
+  function hasPreparation(s, key, upgrade) {
+    var preparation = s.preparations && s.preparations[key];
+    return !s.practice && preparation && Array.isArray(preparation.upgrades) && preparation.upgrades.indexOf(upgrade) >= 0;
+  }
   function addPlayer(s, requestedId) {
     var key = requestedId || (s.players.p1 ? 'p2' : 'p1');
     if (s.players[key]) return s.players[key];
@@ -128,6 +137,7 @@
     var index = Object.keys(s.players).length;
     var p = player(key, index, s.loadout === 'blade' ? 'blade' : s.rangedLoadout, s.rangedLoadout);
     if (s.runBuffs && s.runBuffs.indexOf('vigor') >= 0) p.hp = p.maxHp = 7;
+    if (hasPreparation(s, key, 'ward')) p.ward = 1;
     var anchor = alivePlayers(s)[0];
     if (anchor) { p.x = anchor.x; p.y = clamp(anchor.y + 40, 50, H - 50); }
     s.players[key] = p;
@@ -151,13 +161,17 @@
     var mode = options.mode === 'chapter' ? 'chapter' : options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
     var missionId = mode === 'chapter' ? 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
+    var hostUpgrades = options.practice ? [] : campUpgrades(options.camp);
+    var partnerUpgrades = options.practice ? [] : campUpgrades(options.partnerCamp);
+    var startingRelic = hostUpgrades.indexOf('relicCase') >= 0 && options.camp && Object.keys(BUFFS).indexOf(options.camp.startingRelic) >= 0 ? options.camp.startingRelic : null;
     var s = { version: 1, combatVersion: 1, contentVersion: 1, weaponVersion: 1, tacticsVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
       time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       rangedLoadout: options.rangedLoadout === 'scatter' ? 'scatter' : options.rangedLoadout === 'pistol' ? 'pistol' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
       difficulty: mode === 'chapter' || mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
-      runBuffs: [], relicRooms: [], interactables: [], decoys: [], roomEvent: null,
+      preparations: { p1: { upgrades: hostUpgrades }, p2: { upgrades: partnerUpgrades }, startingRelic: startingRelic },
+      runBuffs: startingRelic ? [startingRelic] : [], relicRooms: [], interactables: [], decoys: [], roomEvent: null,
       unlocks: clone(options.unlocks || {}), playerCount: 0, players: {}, enemies: [], bullets: [], props: [],
       particles: [], events: [], combatEvents: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
       room: null, roomData: {}, rooms: ROOM_DEFS.map(function (r, i) {
@@ -2246,7 +2260,7 @@
       if (dashEdge && p.dashCd <= 0) {
         p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(p.facing);
         p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(p.facing);
-        p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : 1.15; p.invuln = Math.max(p.invuln, 0.3);
+        p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : hasPreparation(s, key, 'stride') ? 1 : 1.15; p.invuln = Math.max(p.invuln, 0.3);
         p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.28; p.guarding = false; p.guardWindow = 0; p.sneaking = false;
         event(s, 'dash', { playerId: key, x: p.x, y: p.y });
         huntNoise(s, 2, p.x, p.y);

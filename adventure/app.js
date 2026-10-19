@@ -15,6 +15,8 @@
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let account = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol';
+  let remoteCamp = { upgrades: [] };
+  let remoteCampReady = false;
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
   let muted = false, audio = null, soundLast = 0, uiSoundAt = -Infinity, resultNext = null;
@@ -108,8 +110,10 @@
     $('menu-loadout-back').textContent = guest ? '返回主菜单' : '返回选择玩法';
     $('mission-select').disabled = guest;
     $('difficulty-select').disabled = guest || ['chapter', 'relay', 'hunt'].includes(selectedGameMode());
-    $('menu-room-status').textContent = connected ? guest ? '队长选择玩法，你可以更换自己的远程武器。' : '搭档已就位，本次将一起出发。' : net ? '房间已保留，可以返回联机面板等待伙伴。' : '';
-    $('solo-start').disabled = !!net && (!connected || guest) || !canStart(selectedGameMode(), selectedMission(), selectedDifficulty());
+    $('menu-room-status').textContent = connected ? guest ? '队长选择玩法，你可以更换自己的远程武器。' : remoteCampReady ? '搭档已就位，本次将一起出发。' : '正在接收搭档的出发整备。' : net ? '房间已保留，可以返回联机面板等待伙伴。' : '';
+    $('solo-start').disabled = !!net && (!connected || guest || !remoteCampReady) || !canStart(selectedGameMode(), selectedMission(), selectedDifficulty());
+    $('start-room').disabled = !connected || guest || !remoteCampReady;
+    if (connected && !guest) $('start-room').textContent = remoteCampReady ? '一起出发 →' : '等待搭档整备';
   }
   function stopSounds() {
     for (const oscillator of soundNodes) { try { oscillator.stop(); } catch (_) { /* Already ended. */ } }
@@ -304,6 +308,14 @@
     }
   }
   function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
+  function safeCampLoadout(value) {
+    if (value === undefined) return { upgrades: [] };
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !Array.isArray(value.upgrades) || value.upgrades.length > 3 || new Set(value.upgrades).size !== value.upgrades.length || value.upgrades.some(id => !C.CAMP_UPGRADES.some(upgrade => upgrade.id === id))) return null;
+    return { upgrades: C.CAMP_UPGRADES.filter(upgrade => value.upgrades.includes(upgrade.id)).map(upgrade => upgrade.id) };
+  }
+  function sendCampLoadout() {
+    if (net && net.connected && net.role === 'guest' && !playing()) net.send({ type: 'loadout', weapon: selectedWeapon(), camp: { upgrades: C.departure(camp).upgrades } });
+  }
   function missionInfo(id) { return [...C.MISSIONS, ...(C.CHAPTERS || [])].find(mission => mission.id === id) || C.MISSIONS[0]; }
   function chapterProgress() { return C.chapterProgress(camp); }
   function selectedGameMode() { return ['chapter', 'story', 'relay', 'hunt'].includes($('mode-select').value) ? $('mode-select').value : 'random'; }
@@ -398,6 +410,26 @@
     if (relay || hunt || chapter || !random && !progress.allCleared) $('difficulty-select').value = '1';
     $('unlock-scatter').disabled = camp.scatter || camp.coins < 30;
     $('unlock-scatter').textContent = camp.scatter ? '已解锁 · 出发前可选择' : `30 星屑解锁${camp.coins < 30 ? ' · 通关一局即可' : ''}`;
+    const departure = C.departure(camp), locked = !!(account && (account.busy || account.needsChoice));
+    for (const upgrade of C.CAMP_UPGRADES) {
+      const button = $('upgrade-' + upgrade.id), owned = departure.upgrades.includes(upgrade.id);
+      button.disabled = locked || !C.canPurchaseUpgrade(camp, upgrade.id);
+      button.textContent = owned ? '已解锁 · 每次生效' : upgrade.id === 'relicCase' && !camp.relics.length ? '先发现一件遗物' : camp.coins < upgrade.cost ? `还差 ${upgrade.cost - camp.coins} 星屑` : `${upgrade.cost} 星屑解锁`;
+    }
+    $('camp-upgrade-status').textContent = playing() ? '整备在下次出发生效，本局状态保持出发时的配置。' : '每项只解锁一次，每次探险自动生效。训练不启用。';
+    $('starter-relic').disabled = locked || !departure.upgrades.includes('relicCase');
+    $('starter-relic').value = departure.startingRelic || '';
+    for (const id of C.RELICS) {
+      const item = $('starter-relic').querySelector(`option[value="${id}"]`), found = camp.relics.includes(id);
+      item.disabled = !found; item.textContent = (E.BUFFS[id] || { label: id }).label + (found ? '' : ' · 未发现');
+    }
+    const relicLabel = departure.startingRelic ? E.BUFFS[departure.startingRelic].label : null;
+    $('starter-relic-copy').textContent = relicLabel ? `${relicLabel}：${E.BUFFS[departure.startingRelic].description} 联机由房主携带，全队共享，同名效果不叠加。` : '解锁遗物匣后，可选择一件已发现的遗物。联机由房主携带，全队共享；同名效果不叠加。';
+    const preparationNames = C.CAMP_UPGRADES.filter(upgrade => departure.upgrades.includes(upgrade.id) && upgrade.id !== 'relicCase').map(upgrade => upgrade.name);
+    if (net && net.connected && net.role === 'guest') preparationNames.push('出发遗物由房主携带');
+    else if (relicLabel) preparationNames.push(relicLabel);
+    $('departure-summary').textContent = preparationNames.length ? '营地整备 · ' + preparationNames.join(' / ') : '营地整备 · 可在营地工坊解锁';
+    sendCampLoadout();
     showMission();
   }
   function closeDialogs() {
@@ -439,6 +471,8 @@
     const old = net; net = null; if (old) old.close();
     remoteTutorialPending = false;
     remoteWeapon = 'pistol';
+    remoteCamp = { upgrades: [] };
+    remoteCampReady = false;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1;
     $('room-id').textContent = '— — — —'; $('start-room').disabled = true;
     $('host-room').disabled = false; $('join-room').disabled = false;
@@ -460,13 +494,14 @@
   function begin(isCoop) {
     if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
     if (isCoop && (!net || !net.connected || net.role !== 'host')) return;
+    if (isCoop && !remoteCampReady) { toast('正在接收搭档的出发整备，请稍候。'); return; }
     if (!isCoop) shutdownNet();
     mode = isCoop ? 'host' : 'solo';
     let mission = selectedMission(), difficulty = selectedDifficulty(), gameMode = selectedGameMode();
     // Restart the actual expedition, including after the player edited camp settings.
     if (state && state.mission) { mission = state.mission.id; difficulty = state.difficulty || 1; gameMode = state.mode || 'story'; }
     if (!canStart(gameMode, mission, difficulty)) { toast('这项故事任务尚未解锁，请先完成前一项任务。'); return; }
-    state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty });
+    state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty, camp: C.departure(camp), partnerCamp: isCoop ? remoteCamp : undefined });
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
@@ -488,6 +523,7 @@
   }
   function resultDetails(before, result) {
     const after = result.profile, practice = !!state.practice, won = state.status === 'won';
+    const campUpgrade = C.CAMP_UPGRADES.find(upgrade => C.canPurchaseUpgrade(after, upgrade.id));
     const count = value => Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
     const seconds = count(state.elapsed), found = practice ? [] : after.relics.filter(id => !before.relics.includes(id));
     const discoveries = found.map(id => (E.BUFFS[id] || { label: id }).label);
@@ -502,6 +538,7 @@
     if (practice) next = { kind: 'practice', label: '下一轮', title: '把这一拍接稳', copy: '试炼不消耗星屑。继续练习同一组来招，找到自己的节奏。', action: '再练一轮' };
     else if (mode === 'guest') next = { kind: 'wait', label: '下一趟', title: '等搭档一起出发', copy: '本次记录已经结算。队长可以重新出发，也可以一起回营地调整装备。', action: '等待队长出发' };
     else if (!after.scatter && after.coins >= 30) next = { kind: 'workshop', label: '工坊可用', title: '试试散射枪', copy: `现有 ${after.coins} 星屑，可用 30 星屑解锁散射枪。前往工坊后由你决定是否兑换。`, action: '前往工坊' };
+    else if (campUpgrade) next = { kind: 'workshop', focusId: 'upgrade-' + campUpgrade.id, label: '星屑可用', title: '解锁' + campUpgrade.name, copy: `${state.mode === 'chapter' && won ? '第一节通关记录已保留，后续小节尚未开放。 ' : ''}${campUpgrade.cost} 星屑 · ${campUpgrade.description} 前往营地后由你决定是否解锁。`, action: '前往营地整备' };
     else if (state.mode === 'chapter' && won) next = { kind: 'prepare', gameMode: 'random', label: '下一趟', title: '进入迷雾远征', copy: '第一节通关记录已保留，后续小节尚未开放。随机地图里还有精英与遗物可探索。', action: '准备迷雾远征' };
     else if (!after.scatter) next = { kind: 'prepare', gameMode: state.mode, label: '下一个目标', title: `还差 ${30 - after.coins} 星屑`, copy: '攒够 30 星屑，可以在营地工坊解锁散射枪。先调整装备，再出发。', action: '调整装备再出发' };
     else if (state.mode === 'random' && after.relics.length < C.RELICS.length) next = { kind: 'prepare', gameMode: 'random', label: '下一个目标', title: `遗物图鉴 ${after.relics.length} / ${C.RELICS.length}`, copy: '击败精英，寻找尚未发现的遗物。下次远征会重新生成地图。', action: '准备下一次远征' };
@@ -598,6 +635,8 @@
     const bounded = (n, max) => Number.isFinite(n) && n >= 0 && n <= max;
     const shortId = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
     const volleyIds = value => Array.isArray(value) && value.length <= 8 && new Set(value).size === value.length && value.every(shortId);
+    const preparation = s.preparations;
+    if (!preparation || typeof preparation !== 'object' || Array.isArray(preparation) || Object.keys(preparation).length !== 3 || !preparation.p1 || !preparation.p2 || !safeCampLoadout(preparation.p1) || !safeCampLoadout(preparation.p2) || ![null, ...C.RELICS].includes(preparation.startingRelic) || preparation.startingRelic !== null && (!preparation.p1.upgrades.includes('relicCase') || !s.runBuffs.includes(preparation.startingRelic))) return false;
     for (const p of Object.values(s.players)) {
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp)) return false;
       if (!['blade', 'pistol', 'scatter'].includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
@@ -708,7 +747,10 @@
           }
           remoteInput = input; remoteSeq = msg.seq; remoteAt = performance.now();
         }
-      } else if (msg.type === 'loadout' && !playing() && ['pistol', 'scatter'].includes(msg.weapon)) remoteWeapon = msg.weapon;
+      } else if (msg.type === 'loadout' && !playing() && ['pistol', 'scatter'].includes(msg.weapon)) {
+        const preparation = safeCampLoadout(msg.camp);
+        if (preparation) { remoteWeapon = msg.weapon; remoteCamp = preparation; remoteCampReady = true; updateLobbyMenu(); }
+      }
     } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && validState(msg.state)) {
       mode = 'guest'; state = msg.state; runId = msg.runId; finished = ''; paused = false; disconnected = false;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
@@ -758,11 +800,12 @@
       },
       onPeer() {
         if (net !== instance) return;
+        if (instance.role === 'host') remoteCampReady = false;
         $('start-room').disabled = instance.role !== 'host';
         $('start-room').textContent = instance.role === 'host' ? '一起出发 →' : '等待房主出发';
         $('room-message').textContent = instance.role === 'host' ? '搭档已到齐，可以一起出发。' : '已加入，等待房主开始探险。';
         updateLobbyMenu();
-        if (instance.role === 'guest') instance.send({ type: 'loadout', weapon: selectedWeapon() });
+        if (instance.role === 'guest') sendCampLoadout();
         else instance.send({ type: 'lobby', mode: selectedGameMode(), mission: selectedMission(), difficulty: selectedDifficulty() });
       }, onMessage: receive,
       onDisconnect() { if (net === instance) disconnectedPeer(); }
@@ -794,7 +837,7 @@
   };
   $('practice-start').onclick = beginPractice;
   $('start-loadout').addEventListener('change', () => {
-    if (!playing() && net && net.connected && net.role === 'guest') net.send({ type: 'loadout', weapon: selectedWeapon() });
+    sendCampLoadout();
   });
   $('mode-select').addEventListener('change', updateCamp);
   $('mission-select').addEventListener('change', showMission);
@@ -834,6 +877,25 @@
     camp.coins -= 30; camp.scatter = true; writeCamp(); $('start-loadout').value = 'scatter'; toast('散射枪已解锁，下次出发就能使用。');
     if (state && state.status !== 'playing' && !$('end-screen').hidden) showResultNext(resultDetails(camp, { profile: camp, duplicate: false }).next);
   };
+  function refreshResultPreparation() {
+    if (state && state.status !== 'playing' && !$('end-screen').hidden) showResultNext(resultDetails(camp, { profile: camp, duplicate: false }).next);
+  }
+  function purchaseCampUpgrade(id) {
+    const upgrade = C.CAMP_UPGRADES.find(item => item.id === id);
+    if (!upgrade) return;
+    if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再整备。'); return; }
+    if (storageOK) camp = readCamp();
+    if (!C.canPurchaseUpgrade(camp, upgrade.id)) { updateCamp(); return; }
+    camp = C.purchaseUpgrade(camp, upgrade.id); writeCamp();
+    toast(upgrade.name + '已解锁，下次出发自动生效。'); refreshResultPreparation();
+  }
+  for (const upgrade of C.CAMP_UPGRADES) $('upgrade-' + upgrade.id).onclick = () => purchaseCampUpgrade(upgrade.id);
+  $('starter-relic').addEventListener('change', () => {
+    if (account && (account.busy || account.needsChoice)) { updateCamp(); return; }
+    const selected = $('starter-relic').value || null;
+    if (storageOK) camp = readCamp();
+    camp = C.equipRelic(camp, selected); writeCamp(); refreshResultPreparation();
+  });
   $('pause-game').onclick = () => pause(!paused);
   $('pause-settings').onclick = () => openDialog('settings-dialog');
   $('close-settings').onclick = () => $('settings-dialog').close();
@@ -852,7 +914,7 @@
   $('end-next-action').onclick = () => {
     if (!resultNext || resultNext.kind === 'wait') return;
     if (resultNext.kind === 'practice') beginPractice();
-    else if (resultNext.kind === 'workshop') { updateCamp(); openDialog('camp-dialog'); $('unlock-scatter').focus(); }
+    else if (resultNext.kind === 'workshop') { const focusId = resultNext.focusId || 'unlock-scatter'; updateCamp(); openDialog('camp-dialog'); $(focusId).focus(); }
     else prepareResultMode(resultNext.gameMode);
   };
   $('mute-game').onclick = () => {

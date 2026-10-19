@@ -436,6 +436,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .modal .journal-heading>span:last-child{font-size:10px}
 .modal .journal-item strong,.modal .journal-list>article strong{font-size:12px}
 .modal .journal-item p,.modal .journal-list>article p{font-size:11px}
+.camp-upgrades{margin-top:22px}.camp-upgrade-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.camp-upgrade{min-width:0;padding:15px 12px;border:1px solid #b29f6140;background:#b2944c09;display:flex;flex-direction:column;gap:7px}
+.camp-upgrade-symbol{font-size:20px;color:#d8bd7e;line-height:1}.camp-upgrade h3{font-size:13px;margin:0;color:#d5c69d}.camp-upgrade p{font-size:11px;line-height:1.8;color:#99ab91;margin:0 0 8px;flex:1}
+.camp-upgrade .button{min-height:44px;padding:8px 5px;font-size:11px;width:100%}.camp-upgrade .button:disabled{opacity:.65}
+.camp-meta-note{font-size:11px;line-height:1.8;color:#96a68c;margin:10px 0}.starter-relic-field{margin:18px 0 21px;padding:16px;border:1px solid #8da67b36;background:#142a2640}.starter-relic-field label{display:block;font-size:12px;color:#d6c69d;margin-bottom:9px}.starter-relic-field select{width:100%;min-height:44px}
+.departure-summary{font-size:11px;line-height:1.8;color:#b7ba91;margin:0 0 10px}.camp-records{border-top:1px solid #8da67b36;margin-top:20px;padding-top:14px}.camp-records>summary{color:#b8b995;font-size:12px;cursor:pointer;min-height:34px}.camp-records .chapter-camp-card{margin-top:14px}
+@media(max-width:560px){.camp-upgrade-grid{grid-template-columns:1fr}.camp-upgrade{display:grid;grid-template-columns:24px 1fr;gap:5px 9px}.camp-upgrade-symbol{grid-row:1/3}.camp-upgrade p{margin-bottom:6px}.camp-upgrade .button{grid-column:2}.departure-summary{font-size:10px}}
 .modal .help-grid p,.modal .field-tip p{font-size:11px}
 .modal .help-key{font-size:10px;border-radius:1px}
 .modal .help-grid strong{font-size:13px}

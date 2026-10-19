@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#0b1413">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=20">
-  <script defer src="engine.js?v=20"></script>
-  <script defer src="renderer.js?v=20"></script>
-  <script defer src="vendor/peerjs.min.js?v=20"></script>
-  <script defer src="net.js?v=20"></script>
-  <script defer src="campaign.js?v=20"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=20"></script>
-  <script defer src="cloud-config.js?v=20"></script>
-  <script defer src="cloud.js?v=20"></script>
-  <script defer src="account.js?v=20"></script>
-  <script defer src="app.js?v=20"></script>
+  <link rel="stylesheet" href="style.css?v=21">
+  <script defer src="engine.js?v=21"></script>
+  <script defer src="renderer.js?v=21"></script>
+  <script defer src="vendor/peerjs.min.js?v=21"></script>
+  <script defer src="net.js?v=21"></script>
+  <script defer src="campaign.js?v=21"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=21"></script>
+  <script defer src="cloud-config.js?v=21"></script>
+  <script defer src="cloud.js?v=21"></script>
+  <script defer src="account.js?v=21"></script>
+  <script defer src="app.js?v=21"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -83,6 +83,7 @@
               <div class="difficulty-select-field"><label for="difficulty-select">难度</label><select id="difficulty-select"><option value="1">普通</option><option value="2" disabled>险境 · 待解锁</option></select></div>
             </div>
             <div class="loadout-row"><span class="fixed-melee-slot"><small>近战</small>旅人短刃</span><div class="ranged-select-field"><label for="start-loadout">远程</label><select id="start-loadout"><option value="pistol" selected>旅人手枪</option><option value="scatter" disabled>散射枪 · 待解锁</option></select></div></div>
+            <p id="departure-summary" class="departure-summary"></p>
             <p id="menu-room-status" class="menu-room-status" role="status" hidden></p>
             <div class="start-buttons"><button id="solo-start" class="button button-primary" type="button">出发 <span aria-hidden="true">→</span></button><button id="open-coop" class="text-button" type="button" aria-haspopup="dialog" aria-controls="coop-dialog">邀请朋友</button><button id="loadout-coop" class="text-button" type="button" hidden>返回联机房间</button></div>
             <button id="practice-start" class="practice-entry" type="button" hidden>招架试炼</button>
@@ -125,7 +126,22 @@
 
   <dialog id="coop-dialog" class="modal coop-modal"><div class="dialog-heading"><span class="dialog-kicker">CO-OP</span><button id="close-coop" class="icon-button close-dialog" aria-label="关闭联机面板">×</button></div><h2>联机</h2><p class="dialog-intro">创建双人房间，或输入朋友的房间码。</p><button id="host-room" class="button button-primary full-width">创建房间 <span aria-hidden="true">＋</span></button><div class="or-divider"><span>加入房间</span></div><div class="join-form"><label class="sr-only" for="room-code">房间码</label><input id="room-code" type="text" maxlength="12" placeholder="输入房间码" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="join-room" class="button button-secondary">加入</button></div><div class="room-ticket"><span class="eyebrow">房间码</span><div class="room-code-row"><strong id="room-id">— — — — — —</strong><button id="copy-room" class="text-button">复制</button></div><p id="room-message" role="status">等待连接。</p></div><button id="coop-choose-mode" class="button button-secondary full-width coop-choose-mode" type="button">选择玩法与装备 <span aria-hidden="true">→</span></button><div class="room-bottom"><button id="leave-room" class="text-button">离开房间</button><button id="start-room" class="button button-primary" disabled>等待伙伴 <span aria-hidden="true">→</span></button></div><p class="quiet-note">房主选择玩法与难度。</p></dialog>
 
-  <dialog id="camp-dialog" class="modal camp-modal"><div class="dialog-heading"><span class="dialog-kicker">CAMP</span><button id="camp-close" class="icon-button close-dialog" aria-label="关闭营地">×</button></div><h2>营地</h2><p id="campaign-status" class="campaign-status">星屑与探险记录</p><p id="camp-copy" class="dialog-intro">完成三项任务，为营地带回火种、物资与安全的航标。</p><section class="chapter-camp-card"><strong id="chapter-camp-status" data-complete="false">第一章 · 第一节 · 借火归营 · 归途灯尚未点亮</strong><p id="chapter-camp-copy">进入苔火工坊借回火种，回营点亮归途灯。</p></section><div id="camp-objectives" class="camp-objectives" aria-live="polite"><div class="camp-lamp" data-mission="ember"><i aria-hidden="true"></i><strong>炉心之火</strong><span>完成熄灭炉心</span></div><div class="camp-lamp" data-mission="salvage"><i aria-hidden="true"></i><strong>归营之粮</strong><span>完成物资回收</span></div><div class="camp-lamp" data-mission="holdout"><i aria-hidden="true"></i><strong>夜航之光</strong><span>完成信标守夜</span></div></div><div class="equipment-card"><div class="equipment-art" aria-hidden="true"><i class="pixel-gun"></i><span>Ⅱ</span></div><div class="equipment-copy"><span class="eyebrow">营地工坊</span><h3>散射枪</h3><p>一次射出多枚弹丸，贴身命中可击退敌人，为换位争取空间。</p><button id="unlock-scatter" class="button button-primary">解锁散射枪 <span aria-hidden="true">◆</span></button></div></div><div class="journal-heading"><span class="eyebrow">探险徽章</span><span>额外的挑战，留给更熟练的你</span></div><div id="journal-list" class="journal-list"></div><div class="journal-heading"><span class="eyebrow">遗物图鉴</span><span>发现六种不同的战斗方式</span></div><div id="relic-journal" class="journal-list"></div><p class="quiet-note">游客进度保存在这台设备，登录后可同步云存档。完成全部普通任务，解锁险境难度。</p></dialog>
+  <dialog id="camp-dialog" class="modal camp-modal"><div class="dialog-heading"><span class="dialog-kicker">CAMP</span><button id="camp-close" class="icon-button close-dialog" aria-label="关闭营地">×</button></div><h2>营地整备</h2><p id="campaign-status" class="campaign-status">星屑与探险记录</p><p id="camp-copy" class="dialog-intro">完成三项任务，为营地带回火种、物资与安全的航标。</p><div class="equipment-card"><div class="equipment-art" aria-hidden="true"><i class="pixel-gun"></i><span>Ⅱ</span></div><div class="equipment-copy"><span class="eyebrow">营地工坊</span><h3>散射枪</h3><p>一次射出多枚弹丸，贴身命中可击退敌人，为换位争取空间。</p><button id="unlock-scatter" class="button button-primary">解锁散射枪 <span aria-hidden="true">◆</span></button></div></div>
+    <section class="camp-upgrades" id="camp-upgrades" aria-labelledby="camp-upgrades-title">
+      <div class="journal-heading"><span class="eyebrow" id="camp-upgrades-title">永久整备</span><span>每项只需解锁一次</span></div>
+      <div class="camp-upgrade-grid">
+        <article class="camp-upgrade"><span class="camp-upgrade-symbol" aria-hidden="true">◇</span><h3>归途护符</h3><p>每次出发自带一层护盾，抵挡一次伤害。</p><button id="upgrade-ward" class="button button-secondary" type="button">40 星屑解锁</button></article>
+        <article class="camp-upgrade"><span class="camp-upgrade-symbol" aria-hidden="true">↯</span><h3>轻步绑带</h3><p>基础闪避冷却从 1.15 秒缩短至 1 秒。</p><button id="upgrade-stride" class="button button-secondary" type="button">60 星屑解锁</button></article>
+        <article class="camp-upgrade"><span class="camp-upgrade-symbol" aria-hidden="true">◆</span><h3>遗物匣</h3><p>带一件已发现的遗物出发，开局就能发挥作用。</p><button id="upgrade-relicCase" class="button button-secondary" type="button">80 星屑解锁</button></article>
+      </div>
+      <p id="camp-upgrade-status" class="camp-meta-note" role="status">训练不启用营地整备。</p>
+    </section>
+    <section class="starter-relic-field" aria-labelledby="starter-relic-title">
+      <label id="starter-relic-title" for="starter-relic">出发遗物 · 1 个位置</label>
+      <select id="starter-relic"><option value="">不携带</option><option value="pierce">穿透棱镜</option><option value="swift">疾风羽饰</option><option value="vigor">生命苔石</option><option value="resonance">鸣震核心</option><option value="riposte">回刃纹章</option><option value="decoy">留影灯芯</option></select>
+      <p id="starter-relic-copy" class="camp-meta-note">解锁遗物匣后，可选择已发现的遗物。联机由房主携带，全队共享；同名效果不叠加。</p>
+    </section>
+    <details class="camp-records"><summary>探险记录 · 营灯、徽章与遗物图鉴</summary><section class="chapter-camp-card"><strong id="chapter-camp-status" data-complete="false">第一章 · 第一节 · 借火归营 · 归途灯尚未点亮</strong><p id="chapter-camp-copy">进入苔火工坊借回火种，回营点亮归途灯。</p></section><div id="camp-objectives" class="camp-objectives" aria-live="polite"><div class="camp-lamp" data-mission="ember"><i aria-hidden="true"></i><strong>炉心之火</strong><span>完成熄灭炉心</span></div><div class="camp-lamp" data-mission="salvage"><i aria-hidden="true"></i><strong>归营之粮</strong><span>完成物资回收</span></div><div class="camp-lamp" data-mission="holdout"><i aria-hidden="true"></i><strong>夜航之光</strong><span>完成信标守夜</span></div></div><div class="journal-heading"><span class="eyebrow">探险徽章</span><span>额外的挑战，留给更熟练的你</span></div><div id="journal-list" class="journal-list"></div><div class="journal-heading"><span class="eyebrow">遗物图鉴</span><span>发现六种不同的战斗方式</span></div><div id="relic-journal" class="journal-list"></div></details><p class="quiet-note">星屑与整备保存在营地；登录后随账号同步。整备在下次出发生效，训练不启用。</p></dialog>
 
   <dialog id="account-dialog" class="modal account-modal" aria-labelledby="account-title" aria-describedby="account-intro">
     <div class="dialog-heading"><span class="dialog-kicker">YOUR CAMP, ANYWHERE</span><button id="close-account" class="icon-button close-dialog" type="button" aria-label="关闭账号与云存档">×</button></div>

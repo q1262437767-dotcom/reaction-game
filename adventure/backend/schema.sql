@@ -56,6 +56,7 @@ declare
   v_key text;
   v_item jsonb;
   v_mission jsonb;
+  v_camp jsonb;
   v_count numeric;
 begin
   -- Identity comes from the verified JWT, never from a client-supplied user ID.
@@ -75,7 +76,9 @@ begin
   end if;
   if not (p_profile ?& array['v','coins','wins','runs','scatter',
                             'clearedRuns','missions','badges','relics'])
-      or (select count(*) from jsonb_object_keys(p_profile)) <> 9
+      or (select count(*) from jsonb_object_keys(p_profile)) not in (9, 10)
+      or exists (select 1 from jsonb_object_keys(p_profile) as keys(id)
+                 where id not in ('v','coins','wins','runs','scatter','clearedRuns','missions','badges','relics','camp'))
       or p_profile->'v' is distinct from '2'::jsonb
       or jsonb_typeof(p_profile->'scatter') is distinct from 'boolean' then
     raise exception using errcode = '22023', message = 'invalid_profile';
@@ -177,6 +180,40 @@ begin
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
 
+  -- Older v2 clients send the original nine fields. New clients may also store
+  -- a bounded camp record; no account identity or per-run state belongs in it.
+  if p_profile ? 'camp' then
+    v_camp := p_profile->'camp';
+    if jsonb_typeof(v_camp) is distinct from 'object' then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    if not (v_camp ?& array['upgrades','startingRelic'])
+        or (select count(*) from jsonb_object_keys(v_camp)) <> 2
+        or jsonb_typeof(v_camp->'upgrades') is distinct from 'array' then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    if jsonb_array_length(v_camp->'upgrades') > 3 then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    for v_item in select value from jsonb_array_elements(v_camp->'upgrades') loop
+      if jsonb_typeof(v_item) is distinct from 'string'
+          or (v_item #>> '{}') not in ('ward','stride','relicCase') then
+        raise exception using errcode = '22023', message = 'invalid_profile';
+      end if;
+    end loop;
+    if (select count(*) <> count(distinct value) from jsonb_array_elements(v_camp->'upgrades')) then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    if v_camp->'startingRelic' is distinct from 'null'::jsonb then
+      if jsonb_typeof(v_camp->'startingRelic') is distinct from 'string'
+          or (v_camp->>'startingRelic') not in ('pierce','swift','vigor','resonance','riposte','decoy')
+          or not ((v_camp->'upgrades') ? 'relicCase')
+          or not ((p_profile->'relics') ? (v_camp->>'startingRelic')) then
+        raise exception using errcode = '22023', message = 'invalid_profile';
+      end if;
+    end if;
+  end if;
+
   -- Each single statement is atomic. A racing initial insert cannot replace a
   -- save, and a stale update cannot pass its revision predicate after waiting.
   if p_expected_revision = 0 then
@@ -188,10 +225,19 @@ begin
   else
     return query
       update public.ruins_saves as saved
-      -- Earlier clients do not know chapter1. Their writes preserve its record.
-      set profile = case when not ((p_profile->'missions') ? 'chapter1') and ((saved.profile->'missions') ? 'chapter1')
-                         then jsonb_set(p_profile, '{missions,chapter1}', saved.profile#>'{missions,chapter1}')
-                         else p_profile end,
+      -- Missing fields in older clients must not erase newer same-owner records.
+      -- Retain an equipped relic's discovery too, keeping the preserved camp valid.
+      set profile = (case when not ((p_profile->'missions') ? 'chapter1') and ((saved.profile->'missions') ? 'chapter1')
+                          then jsonb_set(p_profile, '{missions,chapter1}', saved.profile#>'{missions,chapter1}')
+                          else p_profile end)
+                    || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
+                             then jsonb_build_object('camp', saved.profile->'camp')
+                             else '{}'::jsonb end)
+                    || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
+                                  and jsonb_typeof(saved.profile#>'{camp,startingRelic}') = 'string'
+                                  and not ((p_profile->'relics') ? (saved.profile#>>'{camp,startingRelic}'))
+                             then jsonb_build_object('relics', (p_profile->'relics') || jsonb_build_array(saved.profile#>>'{camp,startingRelic}'))
+                             else '{}'::jsonb end),
           revision = saved.revision + 1, updated_at = clock_timestamp()
       where saved.user_id = v_user_id and saved.revision = p_expected_revision
       returning saved.profile, saved.revision, saved.updated_at;

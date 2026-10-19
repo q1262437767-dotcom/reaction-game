@@ -32,12 +32,18 @@
     function remove(key) { try { storage.removeItem(key); } catch (_) {} }
     function guest() { return copy(read(guestKey) || read(legacyKey)); }
     function progressText(value) {
-      var p = copy(value);
-      return '星屑 ' + p.coins + ' · 营灯 ' + C.progress(p).lit + '/3 · 探险 ' + p.runs + ' 次';
+      var p = copy(value), relicNames = { pierce: '穿透棱镜', swift: '疾风羽饰', vigor: '生命苔石', resonance: '鸣震核心', riposte: '回刃纹章', decoy: '留影灯芯' };
+      var upgrades = p.camp.upgrades.map(function (id) {
+        var upgrade = C.CAMP_UPGRADES.find(function (item) { return item.id === id; });
+        return upgrade ? upgrade.name : id;
+      });
+      return '星屑 ' + p.coins + ' · 营灯 ' + C.progress(p).lit + '/3 · 探险 ' + p.runs + ' 次' +
+        ' · 营地强化 ' + upgrades.length + '/3' + (upgrades.length ? '（' + upgrades.join('、') + '）' : '') +
+        ' · 出发遗物：' + (relicNames[p.camp.startingRelic] || '未装备');
     }
     function hasProgress(value) {
       var p = copy(value);
-      return p.coins > 0 || p.runs > 0 || p.scatter || p.badges.length > 0 || p.relics.length > 0;
+      return p.coins > 0 || p.runs > 0 || p.scatter || p.badges.length > 0 || p.relics.length > 0 || p.camp.upgrades.length > 0;
     }
     function safeEnvelope(value) {
       if (!value || !value.profile || !Number.isSafeInteger(value.revision) || value.revision < 0) return null;

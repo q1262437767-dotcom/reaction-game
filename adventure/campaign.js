@@ -25,6 +25,11 @@
     Object.freeze({ id: 'veteran', name: '险境踏破', description: '在险境难度完成全部三个任务。' })
   ]);
   var RELICS = Object.freeze(['pierce', 'swift', 'vigor', 'resonance', 'riposte', 'decoy']);
+  var CAMP_UPGRADES = Object.freeze([
+    Object.freeze({ id: 'ward', cost: 40, name: '归途护符', description: '每次出发获得 1 层护符，抵挡一次伤害。' }),
+    Object.freeze({ id: 'stride', cost: 60, name: '轻步绑带', description: '闪避冷却从 1.15 秒缩短至 1 秒；疾风羽饰仍为 0.75 秒。' }),
+    Object.freeze({ id: 'relicCase', cost: 80, name: '遗物匣', description: '选择一件已发现的遗物带入探险，全队共享。' })
+  ]);
   var LIMIT = 1000000;
   var object = function (value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; };
   var count = function (value) {
@@ -48,11 +53,16 @@
     var badgeIds = BADGES.map(function (badge) { return badge.id; });
     var badges = unique((Array.isArray(raw.badges) ? raw.badges : []).filter(function (id) { return badgeIds.includes(id); }));
     var relics = unique((Array.isArray(raw.relics) ? raw.relics : []).filter(function (id) { return RELICS.includes(id); }));
+    var campRaw = object(raw.camp), upgrades = CAMP_UPGRADES.map(function (upgrade) { return upgrade.id; }).filter(function (id) {
+      return Array.isArray(campRaw.upgrades) && campRaw.upgrades.includes(id);
+    });
+    var startingRelic = upgrades.includes('relicCase') && relics.includes(campRaw.startingRelic) ? campRaw.startingRelic : null;
     var runIds = unique((Array.isArray(raw.clearedRuns) ? raw.clearedRuns : []).filter(function (id) {
       return typeof id === 'string' && id.length > 0 && id.length <= 160;
     }).slice().reverse()).reverse().slice(-80);
     return { v: 2, coins: count(raw.coins), wins: Math.min(LIMIT, wins), runs: Math.max(count(raw.runs), Math.min(LIMIT, wins)),
-      scatter: raw.scatter === true, clearedRuns: runIds, missions: missions, badges: badges, relics: relics };
+      scatter: raw.scatter === true, clearedRuns: runIds, missions: missions, badges: badges, relics: relics,
+      camp: { upgrades: upgrades, startingRelic: startingRelic } };
   }
 
   function progress(profile) {
@@ -83,6 +93,31 @@
     var p = normalize(profile);
     if (canUnlockScatter(p)) { p.coins -= 30; p.scatter = true; }
     return p;
+  }
+
+  function canPurchaseUpgrade(profile, id) {
+    var p = normalize(profile), upgrade = CAMP_UPGRADES.find(function (entry) { return entry.id === id; });
+    return !!upgrade && !p.camp.upgrades.includes(id) && p.coins >= upgrade.cost &&
+      (id !== 'relicCase' || p.relics.length > 0);
+  }
+
+  function purchaseUpgrade(profile, id) {
+    var p = normalize(profile);
+    if (!canPurchaseUpgrade(p, id)) return p;
+    var upgrade = CAMP_UPGRADES.find(function (entry) { return entry.id === id; });
+    p.coins -= upgrade.cost; p.camp.upgrades.push(id);
+    return normalize(p);
+  }
+
+  function equipRelic(profile, id) {
+    var p = normalize(profile);
+    if (id === null || p.camp.upgrades.includes('relicCase') && p.relics.includes(id)) p.camp.startingRelic = id;
+    return p;
+  }
+
+  function departure(profile) {
+    var camp = normalize(profile).camp;
+    return { upgrades: camp.upgrades.slice(), startingRelic: camp.startingRelic };
   }
 
   function chapterProgress(profile) {
@@ -187,7 +222,8 @@
     }
   }
 
-  return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS,
+  return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    chapterProgress: chapterProgress, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter });
+    chapterProgress: chapterProgress, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure });
 });
