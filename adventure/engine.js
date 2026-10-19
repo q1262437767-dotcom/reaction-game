@@ -706,6 +706,8 @@
   function enemy(s, kind, x, y) {
     var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'brute' ? 30 : kind === 'pyromancer' ? 20 : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
     if (s.difficulty === 2) hp += kind === 'boss' ? 10 : 1;
+    if (kind === 'boss') hp *= 10;
+    else if (/^(chaser|shooter|shield|charger)$/.test(kind)) hp *= 3;
     return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'brute' ? 27 : kind === 'charger' ? 19 : 16,
       hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'brute' ? 72 : kind === 'pyromancer' ? 65 : kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
@@ -780,7 +782,7 @@
         });
       } else if (variant === 2 && index > 1) {
         data.enemies.forEach(function (e, i) {
-          if (e.kind === 'chaser' && i === 0) { e.kind = 'charger'; e.r = 19; e.hp = e.maxHp = s.difficulty === 2 ? 5 : 4; e.speed = 64; }
+          if (e.kind === 'chaser' && i === 0) { e.kind = 'charger'; e.r = 19; e.hp = e.maxHp = (s.difficulty === 2 ? 5 : 4) * 3; e.speed = 64; }
         });
       }
     }
