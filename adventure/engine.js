@@ -50,7 +50,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       // A shotgun can land five pellets at once. Routine damage feedback may
@@ -171,7 +171,7 @@
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
       preparations: { p1: { upgrades: hostUpgrades }, p2: { upgrades: partnerUpgrades }, startingRelic: startingRelic },
-      runBuffs: startingRelic ? [startingRelic] : [], relicRooms: [], interactables: [], decoys: [], roomEvent: null,
+      runBuffs: startingRelic ? [startingRelic] : [], runUpgrades: { tempered: false }, relicRooms: [], interactables: [], decoys: [], roomEvent: null,
       unlocks: clone(options.unlocks || {}), playerCount: 0, players: {}, enemies: [], bullets: [], props: [],
       particles: [], events: [], combatEvents: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
       room: null, roomData: {}, rooms: ROOM_DEFS.map(function (r, i) {
@@ -594,10 +594,16 @@
     for (var b = relicPool.length - 1; b > 0; b -= 1) {
       var k = Math.floor(random(s) * (b + 1)), relic = relicPool[b]; relicPool[b] = relicPool[k]; relicPool[k] = relic;
     }
+    var eliteKinds = ['duelist', 'brute', 'pyromancer'];
+    for (var q = eliteKinds.length - 1; q > 0; q -= 1) {
+      var pick = Math.floor(random(s) * (q + 1)), old = eliteKinds[q]; eliteKinds[q] = eliteKinds[pick]; eliteKinds[pick] = old;
+    }
+    eliteKinds = ['hookwarden'].concat(eliteKinds.slice(0, 2));
     battleRooms.slice(0, 3).forEach(function (r, index) {
-      r.elite = true; r.eliteKind = ['duelist', 'brute', 'pyromancer'][index]; r.eliteBuff = relicPool[index];
+      r.elite = true; r.eliteKind = eliteKinds[index]; r.eliteBuff = relicPool[index];
     });
     battleRooms.slice(3, 5).forEach(function (r, index) { r.eventKind = index ? 'lift' : 'sluice'; });
+    battleRooms.slice(5, 7).forEach(function (r, index) { r.eventKind = index ? 'storehouse' : 'forge'; });
     s.exploration = { kills: 0, target: 0, totalEnemies: 0, bossAwake: false, bossSpawned: false, bossDefeated: false };
     s.rooms.forEach(function (r) {
       var data = randomRoomContent(s, r);
@@ -669,12 +675,33 @@
     }
     if (room.eventKind) {
       data.roomEvent = { kind: room.eventKind, stage: 'ready', enemyIds: [], collected: false };
-      data.interactables.push({ id: 'event-' + room.index, kind: room.eventKind, x: 480, y: 440, r: 25,
-        label: room.eventKind === 'sluice' ? '开启水闸' : '启动升降台', active: true, used: false });
+      if (room.eventKind !== 'storehouse') data.interactables.push({ id: 'event-' + room.index, kind: room.eventKind, x: 480, y: room.eventKind === 'forge' ? 405 : 440, r: 25,
+        label: room.eventKind === 'sluice' ? '开启水闸' : room.eventKind === 'forge' ? '启动锻炉' : '启动升降台', active: true, used: false });
       if (room.eventKind === 'sluice') {
         room.name = '失压水闸';
         var barrier = rect(430, 215, 100, 42); barrier.eventBarrier = true; data.walls.push(barrier);
         data.fires.push({ id: id(s, 'fire-'), x: 480, y: 288, r: 34, active: true, sluiceFire: true });
+      } else if (room.eventKind === 'forge') {
+        room.name = '余温锻炉';
+        // A dedicated interior keeps the machine and every approach clear of
+        // the randomly selected cover, without changing doorway geometry.
+        data.walls = data.walls.filter(function (w) { return w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28; });
+        data.fires = []; data.fountains = [];
+        data.props = [prop(s, 'crate', 330, 210), prop(s, 'barrel', 650, 200)];
+      } else if (room.eventKind === 'storehouse') {
+        room.name = '封存物资仓';
+        data.walls = data.walls.filter(function (w) { return w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28; });
+        data.fires = []; data.fountains = [];
+        data.props = [prop(s, 'crate', 330, 345), prop(s, 'barrel', 630, 375)];
+        [rect(580, 130, 240, 16), rect(580, 130, 16, 190), rect(804, 130, 16, 190),
+          rect(580, 304, 80, 16), rect(740, 304, 80, 16)].forEach(function (wall) { wall.storehouseWall = true; data.walls.push(wall); });
+        var seal = prop(s, 'crate', 700, 312); seal.r = 30; seal.hp = seal.maxHp = 8; seal.eventSeal = true; data.props.push(seal);
+        data.roomEvent.sealId = seal.id; data.roomEvent.breach = 'sealed';
+        data.interactables.push({ id: 'storehouse-switch-' + room.index, kind: 'storehouse-switch', x: 835, y: 370, r: 22,
+          label: '转动仓门机关', active: true, used: false });
+        data.interactables.push({ id: 'storehouse-cache-' + room.index, kind: 'storehouse-cache', x: 700, y: 230, r: 23,
+          label: '领取仓库存货', active: false, used: false });
+        data.enemies.forEach(function (foe) { if (foe.x > 550 && foe.y < 345) { foe.x = 450; foe.y = 170; } });
       } else room.name = '遗落升降台';
     }
     data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
@@ -721,12 +748,12 @@
       charges: kind === 'water' ? 3 : 0, destroyed: false };
   }
   function enemy(s, kind, x, y) {
-    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'brute' ? 30 : kind === 'pyromancer' ? 20 : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
+    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'hookwarden' ? 26 : kind === 'brute' ? 30 : kind === 'pyromancer' ? 20 : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
     if (s.difficulty === 2) hp += kind === 'boss' ? 10 : 1;
     if (kind === 'boss') hp *= 10;
     else if (/^(chaser|shooter|shield|charger)$/.test(kind)) hp *= 3;
-    return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'brute' ? 27 : kind === 'charger' ? 19 : 16,
-      hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'brute' ? 72 : kind === 'pyromancer' ? 65 : kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
+    return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'hookwarden' ? 20 : kind === 'brute' ? 27 : kind === 'charger' ? 19 : 16,
+      hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'brute' ? 72 : kind === 'pyromancer' || kind === 'hookwarden' ? 65 : kind === 'boss' ? 43 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
       aimX: 0, aimY: 0, phase: 0, flash: 0, stun: 0, navTime: 0, navX: x, navY: y,
       chargeTime: 0, chargeX: 0, chargeY: 0, shieldOpen: 0,
@@ -1069,8 +1096,22 @@
     var state = s.roomEvent;
     if (s.mode !== 'random' || !state || state.kind !== item.kind || state.stage !== 'ready' || item.used) return false;
     item.used = true; item.active = false; state.stage = 'active';
-    var kinds = state.kind === 'sluice' ? ['duelist'] : ['chaser', 'shield', 'shooter'];
+    var kinds = state.kind === 'sluice' ? ['duelist'] : state.kind === 'forge' ? ['chaser', 'shield'] : ['chaser', 'shield', 'shooter'];
     var spots = state.kind === 'sluice' ? [[740, 300]] : [[800, 140], [800, 460], [480, 100]];
+    spawnEventGuards(s, state, kinds, spots);
+    // Awakening keeps the original threshold: optional events never become a compulsory chore.
+    if (state.kind === 'sluice') {
+      s.walls = s.walls.filter(function (w) { return !w.eventBarrier; });
+      s.fires.forEach(function (f) { if (f.sluiceFire && f.active) { f.active = false; s.stats.fires += 1; } });
+      s.message = '水路已通 · 一名巡逻守刃者听见了动静';
+    } else if (state.kind === 'forge') s.message = '锻炉升温 · 击退追兵后领取本局武器淬火';
+    else s.message = '升降台启动 · 守住后可以领取补给';
+    s.messageTime = 3;
+    event(s, 'event-start', { kind: state.kind, room: s.room.index, x: item.x, y: item.y });
+    return true;
+  }
+  function spawnEventGuards(s, state, kinds, spots) {
+    var spawned = 0;
     kinds.forEach(function (kind, index) {
       var foe = enemy(s, kind, spots[index][0], spots[index][1]);
       if (state.kind === 'sluice') {
@@ -1078,18 +1119,27 @@
         var available = Object.keys(BUFFS).filter(function (key) { return s.runBuffs.indexOf(key) < 0; });
         foe.relicBuff = available[Math.floor(random(s) * available.length)] || 'resonance';
       }
-      placeEnemyInRoom(s, foe, alivePlayers(s));
-      state.enemyIds.push(foe.id); s.enemies.push(foe);
+      if (placeEnemyInRoom(s, foe, alivePlayers(s))) {
+        state.enemyIds.push(foe.id); s.enemies.push(foe); spawned += 1;
+      }
     });
-    s.exploration.totalEnemies += kinds.length;
-    // Awakening keeps the original threshold: optional events never become a compulsory chore.
-    if (state.kind === 'sluice') {
-      s.walls = s.walls.filter(function (w) { return !w.eventBarrier; });
-      s.fires.forEach(function (f) { if (f.sluiceFire && f.active) { f.active = false; s.stats.fires += 1; } });
-      s.message = '水路已通 · 一名巡逻守刃者听见了动静';
-    } else s.message = '升降台启动 · 守住后可以领取补给';
-    s.messageTime = 3;
-    event(s, 'event-start', { kind: state.kind, room: s.room.index, x: item.x, y: item.y });
+    s.exploration.totalEnemies += spawned;
+    if (spawned) { s.rooms[s.room.index].cleared = false; s.room.cleared = false; }
+  }
+  function openStorehouse(s, loud) {
+    var state = s.roomEvent;
+    if (s.mode !== 'random' || !state || state.kind !== 'storehouse' || state.stage !== 'ready' || state.breach !== 'sealed') return false;
+    state.breach = loud ? 'loud' : 'quiet'; state.stage = loud ? 'active' : 'complete';
+    var seal = s.props.find(function (q) { return q.id === state.sealId; });
+    if (seal) { seal.destroyed = true; seal.hp = 0; clearPropCarrier(s, seal); }
+    s.interactables.forEach(function (q) {
+      if (q.kind === 'storehouse-switch') { q.used = true; q.active = false; }
+      if (q.kind === 'storehouse-cache') q.active = !loud;
+    });
+    if (loud) spawnEventGuards(s, state, ['chaser', 'shooter'], [[440, 110], [830, 450]]);
+    event(s, 'storehouse-open', { kind: 'storehouse', room: s.room.index, breach: state.breach, x: 700, y: 312 });
+    event(s, loud ? 'event-start' : 'event-complete', { kind: 'storehouse', room: s.room.index, x: 700, y: 312 });
+    s.message = loud ? '封板碎裂 · 巡逻队听见了动静' : '仓门悄然开启 · 可以领取库存'; s.messageTime = 3;
     return true;
   }
   function updateRoomEvent(s) {
@@ -1102,6 +1152,13 @@
       s.interactables.push({ id: 'supply-' + s.room.index, kind: 'supply-cache', x: 480, y: 440, r: 24,
         label: '领取补给与护盾', active: true, used: false });
       s.message = '补给已送达 · 升降台旁按 E 领取'; s.messageTime = 3;
+    } else if (state.kind === 'forge') {
+      s.interactables.push({ id: 'forge-reward-' + s.room.index, kind: 'forge-reward', x: 480, y: 405, r: 25,
+        label: '领取武器淬火', active: true, used: false });
+      s.message = '淬火完成 · 回到锻炉领取本局强化'; s.messageTime = 3;
+    } else if (state.kind === 'storehouse') {
+      s.interactables.forEach(function (q) { if (q.kind === 'storehouse-cache') q.active = true; });
+      s.message = '追兵已退 · 物资仓可以领取库存'; s.messageTime = 3;
     }
     event(s, 'event-complete', { kind: state.kind, room: s.room.index, x: 480, y: 440 });
   }
@@ -1334,6 +1391,7 @@
       if (!target.active) {
         s.message = target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
           target.kind === 'chapter-lamp' ? '归途灯没有火种。守灯人还在等工坊的备用火。' :
+          target.kind === 'storehouse-cache' ? s.roomEvent && s.roomEvent.stage === 'active' ? '先击退被声响引来的巡逻队' : '转动外侧机关，或击碎仓门封板' :
           target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
           target.kind === 'extraction' ? '还缺补给：沿西侧光门返回搜索遗漏的蓝箱' : '先守住这一波，再操作信标';
         s.messageTime = 2;
@@ -1341,7 +1399,21 @@
       }
       if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
-      if (target.kind === 'sluice' || target.kind === 'lift') return startRoomEvent(s, target);
+      if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
+      if (target.kind === 'storehouse-switch') return openStorehouse(s, false);
+      if (target.kind === 'forge-reward' && s.roomEvent && s.roomEvent.kind === 'forge' && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
+        target.used = true; target.active = false; s.roomEvent.collected = true; s.runUpgrades.tempered = true;
+        event(s, 'weapon-tempered', { room: s.room.index, x: target.x, y: target.y });
+        burst(s, 'spark', target.x, target.y, '#ffd18a', 18);
+        s.message = '武器淬火：短刃伤害+1，远程每轮伤害+1（散射整轮只加1）'; s.messageTime = 4; return true;
+      }
+      if (target.kind === 'storehouse-cache' && s.roomEvent && s.roomEvent.kind === 'storehouse' && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
+        target.used = true; target.active = false; s.roomEvent.collected = true;
+        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; q.rangedBroken = false; });
+        event(s, 'supply-collected', { kind: 'storehouse', room: s.room.index, x: target.x, y: target.y });
+        burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
+        s.message = '库存已领取 · 全队恢复 2 点生命、修好远程武器并获得一次护盾'; s.messageTime = 3; return true;
+      }
       if (target.kind === 'supply-cache' && s.roomEvent && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
         target.used = true; target.active = false; s.roomEvent.collected = true;
         alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; });
@@ -1360,7 +1432,7 @@
       if (target.kind === 'beacon') return startWave(s);
       if (target.kind === 'extraction') { target.used = true; target.active = false; finish(s, 'won'); return true; }
     }
-    var nearest = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown &&
+    var nearest = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown && !q.eventSeal &&
       dist(p, q) < 74; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (nearest) {
@@ -1427,7 +1499,7 @@
         p.rangedBroken = true; p.activeSlot = 'melee'; p.weapon = p.weapons.melee;
         p.guardWindow = 0; p.switchCd = Math.max(p.switchCd, 0.25);
         event(s, 'weapon-broken', { playerId: p.id, x: p.x, y: p.y, weapon: weapon, slot: 'ranged', broken: true });
-        s.message = '远程武器损坏 · 已切换近战，本局无法再使用远程武器'; s.messageTime = 2.5;
+        s.message = s.mode === 'random' ? '远程武器损坏 · 已切换近战，可在物资仓修复' : '远程武器损坏 · 已切换近战，下次探险恢复'; s.messageTime = 2.5;
       }
     } else {
       event(s, 'guard', { playerId: p.id, enemyId: attacker.id || null, x: p.x, y: p.y });
@@ -1456,7 +1528,7 @@
   }
   function breakPosture(s, e, owner) {
     e.posture = 0; e.stagger = Math.max(e.stagger, 1); e.rhythm = null; e.windup = 0; e.chargeTime = 0;
-    if (!/^(duelist|brute|pyromancer|boss)$/.test(e.kind)) e.stun = Math.max(e.stun, 1);
+    if (!/^(duelist|brute|pyromancer|hookwarden|boss)$/.test(e.kind)) e.stun = Math.max(e.stun, 1);
     e.attackCd = Math.max(e.attackCd, 0.8); e.shieldOpen = Math.max(e.shieldOpen, 1.6);
     event(s, 'posture-break', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
       weapon: 'blade', x: e.x, y: e.y });
@@ -1521,6 +1593,7 @@
     if (q.destroyed) return;
     q.hp = 0; q.destroyed = true; clearPropCarrier(s, q);
     burst(s, 'wood', q.x, q.y, '#d6a971', 12);
+    if (q.eventSeal) openStorehouse(s, true);
   }
   function explode(s, barrel, owner, source) {
     if (barrel.destroyed) return;
@@ -1540,6 +1613,9 @@
       if (e.huntTarget && e.hp > 0) { e.stagger = 1.2; e.rhythm = null; e.chargeTime = 0; e.attackCd = 1; }
     });
     s.props.forEach(function (p) {
+      if (p.eventSeal && !p.destroyed && dist(p, barrel) < 112 + p.r) {
+        p.hp -= 8; if (p.hp <= 0) destroyCrate(s, p);
+      }
       if (p !== barrel && p.kind === 'barrel' && !p.destroyed && dist(p, barrel) < 110) {
         p.lit = true; p.fuse = p.fuse > 0 ? Math.min(p.fuse, 0.15) : 0.15;
         p.thrower = s.players[owner] ? owner : null;
@@ -1558,7 +1634,7 @@
       s.bullets.push({ id: id(s, 'bullet-'), x: p.x + Math.cos(a) * 23,
         y: p.y + Math.sin(a) * 23, r: scatter ? 4 : 4.5,
         vx: Math.cos(a) * (scatter ? 550 : 650), vy: Math.sin(a) * (scatter ? 550 : 650),
-        friendly: true, owner: p.id, damage: 1, ttl: scatter ? 0.65 : 1.3,
+        friendly: true, owner: p.id, damage: 1 + (s.runUpgrades.tempered && i === (scatter ? 2 : 0) ? 1 : 0), ttl: scatter ? 0.65 : 1.3,
         weapon: scatter ? 'scatter' : 'pistol', volleyId: volley, originX: p.x, originY: p.y,
         color: s.runBuffs.indexOf('pierce') >= 0 ? '#d8bcff' : scatter ? '#ffe6a0' : '#c4fff0',
         hitsLeft: s.runBuffs.indexOf('pierce') >= 0 ? 2 : 1, hitIds: [], dead: false });
@@ -1641,7 +1717,7 @@
     if (threats.length) p.facing = Math.atan2(threats[0].y - p.y, threats[0].x - p.x);
     else {
       var ball = s.bullets.filter(function (b) {
-        return !b.friendly && b.fireball && !b.dead && dist(p, b) < 145 &&
+        return !b.friendly && (b.fireball || b.hook) && !b.dead && dist(p, b) < 145 &&
           (p.x - b.x) * b.vx + (p.y - b.y) * b.vy > 0;
       }).sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
       if (ball) p.facing = Math.atan2(ball.y - p.y, ball.x - p.x);
@@ -1672,6 +1748,14 @@
   }
   function resolveRhythm(s, e, r) {
     event(s, 'rhythm-beat', { attack: r.type, beat: r.beat, beats: r.beats, enemyId: e.id, x: e.x, y: e.y });
+    if (r.type === 'hook') {
+      hostileBullet(s, e, r.angle, 360, 8);
+      var hook = s.bullets[s.bullets.length - 1];
+      hook.hook = true; hook.reflectable = true; hook.color = '#edc48a';
+      hook.ttl = Math.max(0.1, (r.range - e.r - 9) / len(hook.vx, hook.vy));
+      if (r.targetId) s.decoys = s.decoys.filter(function (d) { return d.id !== r.targetId; });
+      return;
+    }
     if (r.type === 'fireball') {
       particle(s, 'counter', e.x + Math.cos(r.angle) * (e.r + 9), e.y + Math.sin(r.angle) * (e.r + 9),
         { r: 24, ttl: 0.24, life: 0.24, color: '#ffd189' });
@@ -1719,11 +1803,11 @@
     });
   }
   function rhythmWindup(s, e, type, beat, beats, target) {
-    var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
+    var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' || type === 'hook' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
     e.rhythm = { type: type, phase: 'windup', remaining: duration, duration: duration,
       beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x), targetId: target.id,
-      range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'quake' ? 450 : type === 'rush' || type === 'fireball' ? 560 : 235,
-      arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' || type === 'rush' ? 0.34 : type === 'fireball' ? 0.14 : type === 'quake' ? TAU : Math.PI * 1.65 };
+      range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'hook' ? 430 : type === 'quake' ? 450 : type === 'rush' || type === 'fireball' ? 560 : 235,
+      arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' || type === 'rush' ? 0.34 : type === 'hook' ? 0.18 : type === 'fireball' ? 0.14 : type === 'quake' ? TAU : Math.PI * 1.65 };
     e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
     event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
   }
@@ -1810,16 +1894,16 @@
     }
     e.attackCd -= dt;
     var distance = dist(e, target), boss = e.kind === 'boss';
-    var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
+    var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'hookwarden' ? ['hook', 'combo', 'sweep'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
       ['combo', 'thrust', boss && ((s.mode !== 'random' && s.mode !== 'chapter') || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
     // A telegraph must start within the strike's reach. Previously a stationary
     // beginner saw slashes at ~168px even though they could only connect at 159px.
-    var engageRange = type === 'combo' ? 128 : type === 'thrust' ? 250 : type === 'rush' || type === 'fireball' ? 560 : type === 'quake' ? 460 : 230;
+    var engageRange = type === 'combo' ? 128 : type === 'hook' ? 430 : type === 'thrust' ? 250 : type === 'rush' || type === 'fireball' ? 560 : type === 'quake' ? 460 : 230;
     if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
       e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? 2 : 1, target); return true;
     }
-    var approachRange = type === 'combo' ? 118 : type === 'fireball' ? 320 : type === 'rush' ? 360 : boss ? 150 : 118;
+    var approachRange = type === 'combo' ? 118 : type === 'hook' ? 320 : type === 'fireball' ? 320 : type === 'rush' ? 360 : boss ? 150 : 118;
     if (distance > approachRange || !lineClear(s, e, target, e.r + 1)) {
       e.navTime -= dt;
       if (e.navTime <= 0) { var wp = waypoint(s, e, target); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.35; }
@@ -1871,7 +1955,7 @@
       if (e.hp <= 0 || dist(p, e) > 74 + e.r || Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), p.facing)) > 1.1 || !meleeLineClear(s, p, e, 5)) return;
       var shielded = e.kind === 'shield' && e.shieldOpen <= 0 && e.stun <= 0 && Math.cos(Math.atan2(p.y - e.y, p.x - e.x) - e.facing) > 0.5;
       if (!shielded) {
-        damageEnemy(s, e, s.runBuffs.indexOf('pierce') >= 0 ? 3 : 2, p.id, 'blade');
+        damageEnemy(s, e, (s.runBuffs.indexOf('pierce') >= 0 ? 3 : 2) + (s.runUpgrades.tempered ? 1 : 0), p.id, 'blade');
         if (e.hp > 0) {
           e.posture = Math.min(e.maxPosture, e.posture + 0.5);
           if (e.posture >= e.maxPosture) breakPosture(s, e, p.id);
@@ -1904,7 +1988,7 @@
       }
       var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < 600 && lineClear(s, e, d, 4); });
       var p = (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
-      if (e.kind === 'duelist' || e.kind === 'boss' || e.kind === 'brute' || e.kind === 'pyromancer') { updateRhythm(s, e, p, dt); return; }
+      if (e.kind === 'duelist' || e.kind === 'boss' || e.kind === 'brute' || e.kind === 'pyromancer' || e.kind === 'hookwarden') { updateRhythm(s, e, p, dt); return; }
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
       if (e.kind === 'charger' && e.chargeTime > 0) {
         e.chargeTime = Math.max(0, e.chargeTime - dt);
@@ -1979,14 +2063,33 @@
       }
     });
   }
+  function hookPull(s, entity, anchor, limit, caster, playerId, target) {
+    var distance = dist(entity, anchor), gap = Math.max(0, distance - entity.r - anchor.r - 12);
+    var amount = Math.min(limit, gap), dx = (anchor.x - entity.x) / (distance || 1), dy = (anchor.y - entity.y) / (distance || 1);
+    var count = Math.max(1, Math.ceil(amount / 6)), x = entity.x, y = entity.y;
+    // Tension follows one straight swept path. Stop at the first solid object;
+    // sliding along a wall would quietly pull someone around its corner.
+    for (var i = 0; i < count; i += 1) {
+      var nextX = entity.x + dx * amount / count, nextY = entity.y + dy * amount / count;
+      if (collides(s, nextX, nextY, entity.r, entity.id, false)) break;
+      entity.x = nextX; entity.y = nextY;
+    }
+    var cue = { enemyId: caster.id, playerId: playerId || null, target: target,
+      amount: len(entity.x - x, entity.y - y), x: entity.x, y: entity.y };
+    if (target === 'prop') cue.propId = entity.id;
+    event(s, 'hook-pull', cue);
+  }
   function updateBullets(s, dt) {
     var pushes = [];
     s.bullets.forEach(function (b) {
       if (b.dead) return;
       b.ttl -= dt;
+      var hookCaster = b.hook && s.enemies.find(function (e) { return e.id === b.owner && e.kind === 'hookwarden' && e.hp > 0; });
+      if (b.hook && (b.ttl <= 0 || !hookCaster)) { b.dead = true; return; }
       var n = Math.max(1, Math.ceil(len(b.vx, b.vy) * dt / 10));
       for (var stepIndex = 0; stepIndex < n && !b.dead; stepIndex += 1) {
         b.x += b.vx * dt / n; b.y += b.vy * dt / n;
+        if (b.hook && !lineClear(s, hookCaster, b, 3)) { b.dead = true; break; }
         if (b.x < 25 || b.x > W - 25 || b.y < 25 || b.y > H - 25 ||
             s.walls.some(function (w) { return circleRect(b, w); }) ||
             s.doors.some(function (door) { return door.locked && circleRect(b, door); })) {
@@ -1996,6 +2099,10 @@
           dist(p, b) < p.r + b.r; });
         if (hitProp) {
           b.dead = true;
+          if (b.hook) {
+            if (!hitProp.carriedBy && !hitProp.thrown && !hitProp.eventSeal) hookPull(s, hitProp, hookCaster, 175, hookCaster, null, 'prop');
+            break;
+          }
           if (hitProp.kind === 'barrel') explode(s, hitProp, b.owner, b.fireball ? 'fireball' : 'explosion');
           else {
             hitProp.hp -= b.damage;
@@ -2020,6 +2127,9 @@
                   weapon: 'pistol', amount: amount, source: 'pistol', x: foe.x, y: foe.y });
               }
               damageEnemy(s, foe, amount, b.owner, b.weapon || null, weakShot);
+              // Tempering belongs to the volley, including a piercing shot.
+              // Once its chosen pellet lands, later pierced victims get base damage.
+              if ((b.weapon === 'pistol' || b.weapon === 'scatter') && b.damage > 1) b.damage -= 1;
               if (b.weapon === 'scatter' && foe.hp > 0 && len(foe.x - b.originX, foe.y - b.originY) <= 190 &&
                   (foe.scatterVolleys || []).indexOf(b.volleyId) < 0) {
                 foe.lastScatterVolley = b.volleyId; foe.scatterVolleys = (foe.scatterVolleys || []).concat(b.volleyId).slice(-8);
@@ -2034,6 +2144,24 @@
           if (shadow) { s.decoys = s.decoys.filter(function (d) { return d.id !== shadow.id; }); b.dead = true; }
           var target = !b.dead && alivePlayers(s).find(function (p) { return dist(p, b) < p.r + b.r + (b.fireball ? 9 : 0); });
           if (target) {
+            if (b.hook) {
+              if (target.guardWindow > 0 && target.guarding && target.invuln <= 0.3 && facingEnemy(target, b)) {
+                var rangedHook = target.activeSlot === 'ranged';
+                if (rangedHook && !guardBlock(s, target, b, b.damage, 'hook', true)) { b.dead = true; break; }
+                if (!target.downed) {
+                  grantCounter(s, target, hookCaster, 'parry', rangedHook);
+                  hookPull(s, hookCaster, target, 360, hookCaster, target.id, 'enemy');
+                  hookCaster.rhythm = null; hookCaster.stagger = Math.max(hookCaster.stagger, 1.3); hookCaster.attackCd = 0.8;
+                  event(s, 'hook-reflected', { enemyId: hookCaster.id, playerId: target.id, x: target.x, y: target.y });
+                }
+              } else if (!guardBlock(s, target, b, b.damage, 'hook', false)) {
+                var protectedByWard = target.ward > 0;
+                if (damagePlayer(s, target, b.damage, 'hook') && !protectedByWard && !target.downed) {
+                  hookPull(s, target, hookCaster, 150, hookCaster, target.id, 'player');
+                }
+              }
+              b.dead = true; break;
+            }
             if (b.fireball && target.guardWindow > 0 && target.guarding && target.invuln <= 0.3 && facingEnemy(target, b)) {
               var rangedReflection = target.activeSlot === 'ranged';
               if (rangedReflection && !guardBlock(s, target, b, b.damage, 'fireball', true)) { b.dead = true; break; }
@@ -2061,7 +2189,7 @@
     pushes.forEach(function (entry) {
       var foe = entry.enemy, b = entry.bullet;
       if (foe.hp <= 0) return;
-      var boss = foe.kind === 'boss' || foe.huntTarget, elite = foe.elite || /^(duelist|brute|pyromancer)$/.test(foe.kind);
+      var boss = foe.kind === 'boss' || foe.huntTarget, elite = foe.elite || /^(duelist|brute|pyromancer|hookwarden)$/.test(foe.kind);
       var amount = boss ? 12 : elite ? 20 : 45, angle = Math.atan2(b.vy, b.vx);
       var x = foe.x, y = foe.y;
       move(s, foe, Math.cos(angle) * amount, Math.sin(angle) * amount, false);
@@ -2069,7 +2197,9 @@
       event(s, 'scatter-push', { enemyId: foe.id, playerId: s.players[b.owner] ? b.owner : null, weapon: 'scatter',
         volleyId: b.volleyId, amount: len(foe.x - x, foe.y - y), x: foe.x, y: foe.y });
     });
-    s.bullets = s.bullets.filter(function (b) { return !b.dead; });
+    s.bullets = s.bullets.filter(function (b) {
+      return !b.dead && (!b.hook || s.enemies.some(function (e) { return e.id === b.owner && e.kind === 'hookwarden' && e.hp > 0; }));
+    });
     if (s.bullets.length > 160) s.bullets.splice(0, s.bullets.length - 160);
     s.enemies = s.enemies.filter(function (e) { return e.hp > 0; });
   }

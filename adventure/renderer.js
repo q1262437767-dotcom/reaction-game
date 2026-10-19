@@ -300,6 +300,7 @@
   function interactable(c, item, time, state, localId, still = false) {
     if (!item || (item.kind === 'relic' && item.used)) return;
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
+    if (['forge','forge-reward','storehouse-switch','storehouse-cache'].includes(item.kind)) { expeditionInteractable(c, item, still ? 0 : time, state, localId); return; }
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
     const color = kind === 'cache' || kind === 'supply-cache' ? '#9ac9c3' : kind === 'relic' ? relicColors[item.buff] || relicColors.pierce : kind === 'extraction' || kind === 'relay-extraction' ? '#bed6a3' : '#e9c780';
@@ -381,6 +382,75 @@
     label(c, nearby && active ? 'E · ' + name : name, x, textY, item.used ? '#758f7b' : active ? color : '#7e927b', kind === 'relic' ? 9 : 10);
     if (nearby && item.description && !item.used) label(c, item.description, x, textY+17, active ? '#c6d0aa' : '#94a58c', 8);
   }
+  function expeditionInteractable(c, item, time, state, localId) {
+    const x = num(item.x), y = num(item.y), current = state.roomEvent || {}, kind = item.kind;
+    const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x)-x,num(p.y)-y) < 100;
+    const forge = kind === 'forge' || kind === 'forge-reward';
+    const used = forge ? !!current.collected || kind === 'forge-reward' && item.used : item.used || current.collected;
+    const running = forge && current.kind === 'forge' && current.stage === 'active';
+    const complete = current.stage === 'complete', active = item.active !== false && !item.used;
+    if (kind === 'forge' && values(state.interactables).some(v => v.kind === 'forge-reward')) return;
+    shadow(c,x,y,forge?41:kind==='storehouse-cache'?25:21,.35);
+    c.save(); c.translate(Math.round(x),Math.round(y));
+    if (forge) {
+      // A recessed hearth, bellows and anvil make the encounter recognizable
+      // without putting a permanent task list over the arena.
+      ellipse(c,0,15,47,22,'#192f2b'); rect(c,-40,0,80,17,'#43574b'); rect(c,-37,0,74,4,'#849078');
+      rect(c,-31,-40,62,42,'#273e35'); rect(c,-26,-35,52,34,'#645d46'); rect(c,-21,-30,42,27,'#1f3029');
+      const hot = running || complete && !used;
+      glow(c,0,-16,hot?92:48,hot?'#eda14b35':'#c7974e17');
+      rect(c,-16,-18,32,14,used?'#4d4b35':hot?'#bb733c':'#795537');
+      for (let i=0;i<4;i++) rect(c,-14+i*8,-15,5,10,used?'#796448':hot?'#f1ba66':'#af7c47');
+      for (const side of [-1,1]) { rect(c,side*32-6,-34,12,37,'#7c6747'); rect(c,side*32-5,-34,3,33,'#c1935e'); }
+      rect(c,-38,-42,76,8,'#a27b4e'); rect(c,-34,-42,68,3,'#d4aa6b');
+      rect(c,-10,-59,20,20,'#42584b'); rect(c,-13,-61,26,5,'#78876b'); rect(c,-9,-55,18,3,'#263e33');
+      // The glowing blade is the actual pending reward, rather than a loot box.
+      if (complete && !used) {
+        c.save(); c.translate(0,-22); c.rotate(-.23); rect(c,-3,-18,6,35,'#b8c9b7'); rect(c,-1,-18,2,33,'#fff0bc'); rect(c,-10,11,20,4,'#dfa760'); rect(c,-3,15,6,12,'#806044'); c.restore();
+        glow(c,0,-28,36,'#ffcf7940');
+      }
+      if (running) for (let i=0;i<7;i++) {
+        const phase=((time*.0006+i*.149)%1+1)%1, dx=Math.sin(i*5.7)*phase*45;
+        alpha(c,(1-phase)*.8,()=>rect(c,dx,-20-phase*59,2,i%2?3:2,'#f5cd7e'));
+      }
+      // A hand-operated bellows sits to one side of the fire.
+      path(c,[[35,-16],[55,-23],[64,-14],[54,-5],[35,-9]],'#8d6a43',4); rect(c,49,-25,17,4,'#b7955e');
+    } else if (kind === 'storehouse-switch') {
+      rect(c,-19,2,38,12,'#3c5547'); rect(c,-21,-4,42,7,'#899373'); rect(c,-7,-37,14,35,'#5d6952');
+      rect(c,-5,-36,4,32,'#a59161');
+      const open = current.breach === 'quiet' || current.breach === 'loud';
+      c.save(); c.translate(0,-30); c.rotate(open?Math.PI*.25:0); c.strokeStyle=open?'#b4c99a':'#d2b275';c.lineWidth=4;c.beginPath();c.arc(0,0,14,0,Math.PI*2);c.stroke();
+      for (let i=0;i<4;i++) { const a=i*Math.PI/2; path(c,[[Math.cos(a)*4,Math.sin(a)*4],[Math.cos(a)*13,Math.sin(a)*13]],'#b7a575',3); } c.restore();
+      if (!open) path(c,[[-25,-36],[-30,-30],[-25,-24]],'#a8c4b0',2);
+    } else {
+      // Pale medical cloth and a repair wrench distinguish supplies from the
+      // rough wood seal that can be broken outside the enclosure.
+      rect(c,-27,-3,54,19,'#2a4037'); rect(c,-25,-13,50,28,'#658271'); rect(c,-23,-12,46,5,'#b2c9a3');
+      rect(c,-25,10,50,5,'#3a5b49'); rect(c,-21,-8,6,20,'#9bb28b'); rect(c,15,-8,6,20,'#9bb28b');
+      rect(c,-12,-7,24,19,used?'#788671':'#c9d4ad');
+      if (!used) { rect(c,-3,-5,6,15,'#547b6e'); rect(c,-8,0,16,5,'#547b6e'); path(c,[[26,-22],[18,-13]],'#c8bc8b',4); path(c,[[24,-28],[29,-23],[26,-18],[20,-21]],'#c8bc8b',3); }
+      else { rect(c,-24,-21,48,7,'#a4b995'); rect(c,-20,-13,40,4,'#243e32'); path(c,[[-8,-9],[-2,-3],[10,-15]],'#d2e3b6',3); }
+      if (active && !used) glow(c,0,-6,62,'#b1dbbc25');
+    }
+    c.restore();
+    if (!nearby) return;
+    let name = '', detail = '', color = '#d8d1a4';
+    if (forge) {
+      name = used ? '淬火已领取' : running ? '锻炉运转中' : complete ? '领取武器淬火' : '启动锻炉';
+      detail = used ? '' : running ? '击退追兵后领取' : complete ? '本局近战 +1 · 远程每轮 +1' : '引来追兵 · 本局近战 / 远程每轮伤害 +1';
+      if (used) color = '#91a38b';
+    } else if (kind === 'storehouse-switch') {
+      name = current.breach === 'sealed' ? '转动仓门机关' : current.breach === 'quiet' ? '仓门已安静开启' : '仓门已被击碎';
+      detail = current.breach === 'sealed' ? '安静开门 / 击碎封板会引来守卫' : current.stage === 'active' ? '追兵赶来 · 击退后领取存货' : '';
+    } else {
+      name = used ? '存货已领取' : active ? '领取仓库存货' : current.stage === 'active' ? '击退守卫后领取' : '仓库存货';
+      detail = !used && active ? '全队治疗 2 · 修复远程 · 护盾 1 层' : '';
+      if (!active || used) color = '#9eaf91';
+    }
+    const prefix = active && !used && !running ? 'E · ' : '';
+    label(c,prefix+name,x,y+(forge?39:34),color,10);
+    if (detail) label(c,detail,x,y+(forge?56:51),'#aebc9e',9);
+  }
   function fire(c, f, time) {
     const x = num(f.x), y = num(f.y), r = num(f.r, 20);
     ellipse(c, x, y + 4, r, r * .5, '#1b2925');
@@ -432,6 +502,14 @@
       rect(c, -1, -10, 2, 19, '#453f2e'); rect(c, -10, -2, 20, 2, '#453f2e');
       rect(c, -13, -14, 26, 4, '#b19561'); rect(c, -13, 7, 26, 4, '#98794d'); rect(c, -13, -11, 4, 20, '#a88a56'); rect(c, 9, -11, 4, 20, '#876b47');
       for (const [px, py] of [[-11,-12],[10,-12],[-11,8],[10,8]]) rect(c, px, py, 2, 2, '#d0b779');
+      if (p.eventSeal) {
+        // Broad crossed planks read as a breakable warehouse closure, with
+        // exactly the same ground footprint as the engine's larger crate.
+        const radius=Math.max(16,num(p.r,30));
+        rect(c,-radius,-14,radius*2,28,'#715d3d');rect(c,-radius,-14,radius*2,4,'#bd9a5d');rect(c,-radius,10,radius*2,4,'#a17f4d');
+        for(const angle of [-.38,.38]){c.save();c.rotate(angle);rect(c,-radius+1,-3,radius*2-2,6,'#c2a16a');rect(c,-radius+3,-3,radius*2-6,2,'#dfbf81');c.restore();}
+        for (const side of [-1,1]) rect(c,side*(radius-5)-1,-9,3,18,'#344b3e');
+      }
     }
     c.restore();
     if (p.hp > 0 && p.maxHp && p.hp < p.maxHp) bar(c, x, y - 23, 24, p.hp / p.maxHp, '#b19b67');
@@ -504,6 +582,14 @@
     rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main); rect(c, -7, -31, 12, 2, light); rect(c, -12, -23, 25, 4, light); rect(c, -11, -21, 23, 2, dark); rect(c, 4, -30, 3, 6, '#dac783');
     if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
+    if (state.runUpgrades && state.runUpgrades.tempered) {
+      // Warm steel follows the equipped weapon; a stowed second weapon never
+      // reappears on the player's back and the HUD gains no permanent panel.
+      const reach = p.weapon === 'blade' ? 30 : p.weapon === 'scatter' ? 24 : 18;
+      c.save(); c.rotate(facing - (p.guarding && p.weapon !== 'blade' ? .65 : p.guarding ? .8 : 0));
+      path(c,[[reach-5,-4],[reach+3,-4]],'#e8b467',1);
+      rect(c,reach,-5,2,2,'#ffe0a0'); c.restore();
+    }
     if (p.weapon !== 'blade' && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
       c.save(); c.translate(Math.cos(facing) * (p.weapon === 'scatter' ? 31 : 25), -3 + Math.sin(facing) * (p.weapon === 'scatter' ? 31 : 25)); c.rotate(facing);
       rect(c,-2,-4,10,8,'#f3d496');rect(c,2,-2,10,4,'#fff3c6');rect(c,2,-7,4,14,'#f3d496');c.restore();
@@ -637,7 +723,7 @@
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15);
     const recovering = boss && e.rhythm && e.rhythm.phase === 'recover' && num(e.stagger) <= 0;
-    const step = recovering ? 0 : Math.sin(time * .012 + x) * 1.5;
+    const step = recovering || still ? 0 : Math.sin(time * .012 + x) * 1.5;
     shadow(c, x, y, r, .43);
     if (recovering) {
       // This small mint opening belongs to the body, not an attack footprint.
@@ -694,6 +780,24 @@
         // the horizontal thrust before either floor pattern is fully charged.
         for (const side of [-1, 1]) { rect(c, side * 30 - 7, -49, 14, 29, '#6f8062'); rect(c, side * 30 - 9, -53, 18, 10, '#b1aa7b'); }
       }
+    } else if (kind === 'hookwarden') {
+      const attack=e.rhythm||{},casting=attack.type==='hook'&&attack.phase==='windup',side=Math.cos(num(attack.angle,num(e.facing)))<0?-1:1;
+      if (e.stagger>0 || e.stun>0) c.rotate(-.14);
+      rect(c,-12,4+step,8,13,'#1b302b');rect(c,5,4-step,8,13,'#1b302b');rect(c,-11,5+step,7,8,'#a08659');rect(c,5,5-step,7,8,'#84764f');
+      rect(c,-17,-18,34,28,'#1c352e');rect(c,-14,-17,28,25,'#6a7767');rect(c,-13,-16,8,22,'#a3a786');rect(c,6,-15,8,22,'#435f52');
+      rect(c,-18,-18,10,12,'#9c6d46');rect(c,8,-18,10,12,'#9c6d46');rect(c,-17,-18,8,3,'#d0a569');rect(c,9,-18,8,3,'#c39259');
+      rect(c,-13,3,27,5,'#97764c');rect(c,-3,3,7,7,'#c7a66d');
+      // The broad, low copper helmet and large exposed hook stay different
+      // from the swordsman's tall crest and the lantern caster's pointed hat.
+      rect(c,-13,-31,26,18,'#283e32');rect(c,-11,-31,22,17,'#896c49');rect(c,-10,-30,7,15,'#be955f');rect(c,5,-28,6,13,'#65583f');
+      rect(c,-18,-31,36,6,'#a87848');rect(c,-15,-34,30,4,'#ce9a5b');rect(c,-10,-24,21,5,'#243b32');rect(c,-6,-23,4,2,'#f1c579');rect(c,3,-23,4,2,'#f1c579');
+      const handX=side*(casting?28:23),handY=casting?-20:-3;
+      path(c,[[side*9,-12],[handX,handY]],'#9e8056',6);rect(c,handX-4,handY-4,8,8,'#d0ac77');
+      const hx=handX+side*13,hy=handY+(casting?-9:4);
+      for(let i=0;i<3;i++){c.strokeStyle=i%2?'#788a79':'#c2b383';c.lineWidth=2;c.beginPath();c.ellipse(side*(5+i*8),-5+i*3,5,3,i%2?.6:-.4,0,Math.PI*2);c.stroke();}
+      path(c,[[handX,handY],[hx,hy]],'#b6b486',3);
+      c.save();c.translate(hx,hy);c.scale(side,1);path(c,[[0,-10],[9,-11],[15,-4],[14,7],[7,13],[0,9],[5,3]],'#344d41',7);path(c,[[0,-10],[9,-11],[15,-4],[14,7],[7,13],[0,9],[5,3]],'#d8c797',3);c.restore();
+      if(casting)path(c,[[hx-5,hy-16],[hx+7,hy-19],[hx+16,hy-12]],'#edce8f',2);
     } else if (kind === 'duelist') {
       const staggered = e.stagger > 0, attack = e.rhythm || {}, raised = attack.phase === 'windup';
       if (staggered) c.rotate(-.13);
@@ -789,14 +893,32 @@
     if (e.elite && !boss) {
       const crownY = y - 64;
       path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
-      label(c, chapter ? chapterEnemyNames[kind] || '炉卫' : e.huntTarget ? '逐迹巨兽' : {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司'}[kind] || '精英', x, crownY - 15, e.huntTarget ? '#e7b18a' : '#ebcf8e', 8);
+      label(c, chapter ? chapterEnemyNames[kind] || '炉卫' : e.huntTarget ? '逐迹巨兽' : {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司',hookwarden:'链钩监工'}[kind] || '精英', x, crownY - 15, e.huntTarget ? '#e7b18a' : '#ebcf8e', 8);
     }
     if (chapter && !boss && !e.elite) label(c, chapterEnemyNames[kind] || '炉卫', x, y - (kind === 'charger' ? 40 : 50), '#d6b789', 8);
     if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
   }
-  function bullet(c, b) {
+  function bullet(c, b, state) {
     const x = num(b.x), y = num(b.y), r = num(b.r, 3), friendly = b.friendly !== false;
     const vx = num(b.vx), vy = num(b.vy), speed = Math.hypot(vx, vy) || 1, dx = vx / speed, dy = vy / speed;
+    if (b.hook) {
+      const owner = values(state && state.enemies).find(e=>e.id===b.owner&&e.hp>0&&!e.dead);
+      if (!owner || b.ttl !== undefined && num(b.ttl) <= 0 || b.life !== undefined && num(b.life) <= 0) return;
+      const ox=num(owner.x),oy=num(owner.y)-3,length=Math.hypot(x-ox,y-oy),links=Math.min(64,Math.floor(length/12));
+      // Each link spans only the authoritative live projectile. No trail is
+      // retained after wall collision, room transition or the caster's death.
+      path(c,[[ox,oy],[x,y]],'#263c32',4);
+      for(let i=1;i<=links;i++){
+        const t=i/(links+1),cx=ox+(x-ox)*t,cy=oy+(y-oy)*t;
+        c.save();c.translate(cx,cy);c.rotate(Math.atan2(y-oy,x-ox));c.strokeStyle=i%2?'#a4ab82':'#c8ba8d';c.lineWidth=1.5;
+        c.beginPath();c.ellipse(0,0,4.5,i%2?2.4:1.1,0,0,Math.PI*2);c.stroke();c.restore();
+      }
+      c.save();c.translate(x,y);c.rotate(Math.atan2(vy,vx));
+      path(c,[[-11,-5],[-2,-9],[7,-6],[12,2],[8,11],[-1,12],[-7,7],[-1,2]],'#203b32',8);
+      path(c,[[-11,-5],[-2,-9],[7,-6],[12,2],[8,11],[-1,12],[-7,7],[-1,2]],'#dfce9a',4);
+      path(c,[[-2,-9],[7,-6],[12,2]],'#fff0c0',1.5); c.restore();
+      return;
+    }
     if(b.kind==='fireball'||b.fireball){
       const core=friendly?'#d2f0d2':'#ffe2a0',edge=friendly?'#6db9ac':'#dd8e50';
       glow(c,x,y,Math.max(20,r*4),friendly?'#86d4c441':'#f2a4553b');
@@ -845,7 +967,7 @@
     }
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
-  const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475' };
+  const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475', hook: '#c9d5a0' };
   function rhythmArea(c, e, state, localId) {
     const r = e && e.rhythm;
     if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
@@ -860,7 +982,18 @@
     const circle = r.type === 'quake' || arc >= Math.PI * 2 - .01;
     c.save(); c.translate(x, y); c.rotate(angle);
     const shape = () => { c.beginPath(); if (!circle) c.moveTo(0, 0); c.arc(0, 0, radius, circle ? 0 : -arc / 2, circle ? Math.PI * 2 : arc / 2); c.closePath(); };
-    if (r.type === 'fireball') {
+    if (r.type === 'hook') {
+      // A narrow locked lane plus hooked arrowheads identifies a travelling
+      // chain. Its edge uses the engine's exact 430px range and .18rad arc.
+      shape();c.fillStyle=color+(active?'27':'0d');c.fill();
+      c.strokeStyle=color+(active?'da':'75');c.lineWidth=active?3:1;
+      if(!active)c.setLineDash([8,7]);shape();c.stroke();c.setLineDash([]);
+      path(c,[[num(e.r,20)+8,0],[radius,0]],color+'68',1.5);
+      for(let i=1;i<=3;i++){
+        const px=radius*(.18+i*.2);
+        path(c,[[px-7,-5],[px,0],[px-7,5],[px-12,2]],color+'b8',2);
+      }
+    } else if (r.type === 'fireball') {
       // This line previews a travelling projectile, not an instant floor-wide hit.
       path(c,[[num(e.r,20)+8,0],[radius,0]],color+'28',12);
       if(!active)c.setLineDash([9,7]);path(c,[[num(e.r,20)+8,0],[radius,0]],color+(active?'cf':'88'),2);c.setLineDash([]);
@@ -911,7 +1044,7 @@
     }
     c.restore();
     if (!active) {
-      const glyph = { combo: '刃', thrust: '突', sweep: '扫', quake: '震', rush: '冲', fireball: '炎' }[r.type];
+      const glyph = { combo: '刃', thrust: '突', sweep: '扫', quake: '震', rush: '冲', fireball: '炎', hook: '钩' }[r.type];
       const gy = y - (e.kind === 'boss' ? 108 : 103);
       c.save(); c.translate(x, gy); c.rotate(Math.PI / 4); rect(c,-10,-10,20,20,'#142c2be8'); c.strokeStyle=color;c.lineWidth=2;c.strokeRect(-10,-10,20,20);c.restore();
       label(c, glyph, x, gy, color, 13);
@@ -932,7 +1065,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -1019,7 +1152,16 @@
   function combatEffects(c, events, state, still) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
       if(tacticsEffect(c,e,age,events,state,still))continue;
+      if (e.type === 'hook-pull') {
+        if(age>.42)continue;
+        const ratio=age/.42,x=num(e.x),y=num(e.y),color=e.target==='enemy'?'#d2e5b1':'#d7bc88';
+        alpha(c,1-ratio,()=>{
+          for(const side of [-1,1])path(c,[[x+side*(23+ratio*12),y-4],[x+side*(16+ratio*12),y+2],[x+side*(23+ratio*12),y+8]],color,2);
+        });
+        continue;
+      }
       if (e.type === 'weapon-switch' || e.type === 'weapon-broken' || e.type === 'ranged-block') {
         const broken=e.type==='weapon-broken',blocked=e.type==='ranged-block',life=broken?1:blocked?.55:.45;
         if(age>life)continue;
@@ -1056,7 +1198,7 @@
         });
         continue;
       }
-      if (e.type === 'boss-phase' || e.type === 'event-start' || e.type === 'event-complete' || e.type === 'supply-collected' || e.type === 'decoy') {
+      if (e.type === 'boss-phase' || e.type === 'event-start' || e.type === 'event-complete' || e.type === 'supply-collected' || e.type === 'decoy' || e.type === 'weapon-tempered' || e.type === 'storehouse-open') {
         const phase=e.type==='boss-phase',supplied=e.type==='supply-collected',ghost=e.type==='decoy',life=phase?1:ghost?.48:.85;
         if(age>life)continue;
         const ratio=age/life,x=num(e.x),y=num(e.y),color=phase?'#eeb77d':supplied||ghost?'#b7e1cf':e.kind==='sluice'?'#9bd0c4':'#e3ce91';
@@ -1064,7 +1206,7 @@
           const radius=14+ratio*(phase?94:ghost?27:56);
           c.strokeStyle=color;c.lineWidth=phase?3:2;c.beginPath();c.ellipse(x,y,radius,radius*(phase?.62:.5),0,0,Math.PI*2);c.stroke();
           if(phase){for(let i=0;i<6;i++){const angle=i*Math.PI/3,inner=17+ratio*12,outer=inner+19+ratio*31;path(c,[[x+Math.cos(angle)*inner,y+Math.sin(angle)*inner*.65],[x+Math.cos(angle+.05)*outer,y+Math.sin(angle+.05)*outer*.65]],color,2);}label(c,'炉火觉醒',x,y-88-ratio*12,color,16);}
-          else if(!ghost){const name=supplied?'补给已领取':e.type==='event-complete'?'机关已运转':e.kind==='sluice'?'水路开启':'升降台启动';label(c,name,x,y-66-ratio*10,color,12);}
+          else if(!ghost){const name=e.type==='weapon-tempered'?'武器淬火 · 本局生效':e.type==='storehouse-open'?e.breach==='loud'?'封板碎裂 · 追兵赶来':'仓门安静开启':supplied?'补给已领取':e.type==='event-complete'?e.kind==='forge'?'淬火已就绪':e.kind==='storehouse'?'存货可以领取':'机关已运转':e.kind==='sluice'?'水路开启':e.kind==='forge'?'锻炉启动 · 追兵赶来':'升降台启动';label(c,name,x,y-66-ratio*10,color,12);}
         });
         continue;
       }
@@ -1078,7 +1220,7 @@
         if (!beat) {
           for (let i=0; i<8; i++) { const a=i*Math.PI/4+(hash(e.id)%7)*.1, inner=7+ratio*12, outer=inner+9+ratio*15;
             path(c,[[x+Math.cos(a)*inner,y+Math.sin(a)*inner],[x+Math.cos(a)*outer,y+Math.sin(a)*outer]],color,i%2?2:3); }
-          const name = { 'perfect-parry':'铮', 'perfect-dodge':'闪', mikiri:'看破', counterattack:'反击', 'guard-break':'破防', 'fireball-reflected':'反射' }[e.type];
+          const name = { 'perfect-parry':'铮', 'perfect-dodge':'闪', mikiri:'看破', counterattack:'反击', 'guard-break':'破防', 'fireball-reflected':'反射', 'hook-reflected':'反拉' }[e.type];
           if (name) label(c,name,x,y-45-ratio*12,color,e.type==='counterattack'?17:14);
         }
       });
@@ -1318,6 +1460,10 @@
         path(c,[[point.x-3,point.y-1],[point.x,point.y+1],[point.x+3,point.y-1]],'#8dbcb8',2);
       } else if (room.visited && room.eventKind === 'lift') {
         rect(c,point.x-3,point.y-3,2,6,'#d3c795');rect(c,point.x+1,point.y-3,2,6,'#d3c795');
+      } else if (room.visited && room.eventKind === 'forge') {
+        path(c,[[point.x-4,point.y-3],[point.x+4,point.y-3],[point.x+2,point.y],[point.x-2,point.y],[point.x-4,point.y-3]],'#e0bb7e',1);rect(c,point.x-1,point.y,2,4,'#e0bb7e');
+      } else if (room.visited && room.eventKind === 'storehouse') {
+        c.strokeStyle='#b5c8a1';c.lineWidth=1;c.strokeRect(point.x-3.5,point.y-2.5,7,6);rect(c,point.x-1,point.y-1,2,3,'#b5c8a1');
       }
       if (isCurrent) rect(c, point.x - 1, point.y - 1, 2, 2, '#20372e');
     }
@@ -1356,7 +1502,7 @@
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
-    values(state.bullets).forEach(b => bullet(c, b));
+    values(state.bullets).forEach(b => bullet(c, b, state));
     values(state.particles).forEach(p => particle(c, p, time));
     combatEffects(c, events, state, still);
     aimReticle(c, state.players && state.players[localId], time);
