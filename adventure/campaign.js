@@ -126,6 +126,10 @@
       bestTime: record.bestTime, nextChapter: null };
   }
 
+  function canUseSpear(profile) {
+    return normalize(profile).missions.chapter1.clears > 0;
+  }
+
   function applyResult(profile, state, runId) {
     var p = normalize(profile), before = progress(p), unlocks = [], newBadges = [];
     var result = { profile: p, reward: 0, unlocks: unlocks, newBadges: newBadges, duplicate: false };
@@ -158,7 +162,9 @@
           chapterRecord.bestTime = chapterRecord.bestTime === null ? chapterTime : Math.min(chapterRecord.bestTime, chapterTime);
         }
         if (object(state.stats).damage === 0) earn('flawless');
-        if (!chapterProgress(profile).completed) unlocks.push('第一节完成 · 归途灯重明');
+        if (!chapterProgress(profile).completed) {
+          unlocks.push('第一节完成 · 归途灯重明', '武器解锁 · 遗迹长枪');
+        }
       }
       return result;
     }
@@ -224,6 +230,6 @@
 
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    chapterProgress: chapterProgress, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    chapterProgress: chapterProgress, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure });
 });

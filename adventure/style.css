@@ -385,6 +385,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .loadout-menu .loadout-row{display:grid;grid-template-columns:1fr 1.3fr;gap:20px;align-items:end;max-width:450px;margin:0;padding:0 0 25px;border-bottom:1px solid #8fa17b33}
 .loadout-menu .fixed-melee-slot{display:block;padding:0 0 12px;border:0;color:#d5dbc3;font-size:13px}
 .loadout-menu .fixed-melee-slot small{display:block;margin:0 0 13px;color:#92a18b;font-size:11px}
+.loadout-menu .melee-select-field,.loadout-menu .ranged-select-field{min-width:0}
+.loadout-menu p.melee-unlock-copy{margin:-13px 0 19px;color:#b7b88e;font-size:11px;line-height:1.8}
 .loadout-menu .start-buttons{margin-top:26px;align-items:center;flex-wrap:wrap;gap:12px 18px}
 .loadout-menu .start-buttons>.button{min-width:180px}
 .menu-room-status{margin:15px 0 -8px;color:#adbd9d;font-size:11px;line-height:1.8}

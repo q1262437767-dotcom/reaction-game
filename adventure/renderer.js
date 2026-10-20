@@ -636,6 +636,22 @@
     rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
     c.restore();
   }
+  function spear(c, x, y, angle, guarding, striking) {
+    c.save(); c.translate(x, y); c.rotate(angle + (guarding ? -.8 : 0));
+    // Only the held polearm is drawn. The long, narrow steel head reads as a
+    // thrusting weapon at half scale without resembling a second gun or blade.
+    const extension = striking && !guarding ? 6 : 0;
+    path(c, [[-17 + extension, 0], [46 + extension, 0]], '#152c29', 7);
+    path(c, [[-15 + extension, -1], [47 + extension, -1]], '#9c7c52', 3);
+    path(c, [[-13 + extension, -2], [43 + extension, -2]], '#d0b57e', 1);
+    rect(c, 10 + extension, -4, 9, 8, '#c7a67b');
+    rect(c, 37 + extension, -4, 8, 7, '#685d45');
+    c.fillStyle = '#c7d7c8'; c.beginPath(); c.moveTo(43 + extension, -5);
+    c.lineTo(66 + extension, 0); c.lineTo(43 + extension, 5); c.closePath(); c.fill();
+    path(c, [[45 + extension, -3], [61 + extension, 0]], '#f4efcc', 1.5);
+    rect(c, 36 + extension, 2, 3, 9, '#a9764e'); rect(c, 38 + extension, 4, 3, 7, '#cda46c');
+    c.restore();
+  }
   function decoy(c, d, time) {
     if (!d || num(d.ttl) <= 0) return;
     const x=num(d.x),y=num(d.y),opacity=Math.min(.42,num(d.ttl)*.6);
@@ -681,17 +697,19 @@
     const facing = num(p.facing);
     if (Math.sin(facing) > -.6) { const look = Math.cos(facing) >= 0 ? 2 : -3; rect(c, look, -20, 2, 3, '#263b32'); rect(c, look + 5, -20, 2, 3, '#263b32'); }
     rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main); rect(c, -7, -31, 12, 2, light); rect(c, -12, -23, 25, 4, light); rect(c, -11, -21, 23, 2, dark); rect(c, 4, -30, 3, 6, '#dac783');
-    if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
+    const melee = p.weapon === 'blade' || p.weapon === 'spear';
+    if (p.weapon === 'spear') spear(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
+    else if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
     if (state.runUpgrades && state.runUpgrades.tempered) {
       // Warm steel follows the equipped weapon; a stowed second weapon never
       // reappears on the player's back and the HUD gains no permanent panel.
-      const reach = p.weapon === 'blade' ? 30 : p.weapon === 'scatter' ? 24 : 18;
-      c.save(); c.rotate(facing - (p.guarding && p.weapon !== 'blade' ? .65 : p.guarding ? .8 : 0));
+      const reach = p.weapon === 'spear' ? 62 : p.weapon === 'blade' ? 30 : p.weapon === 'scatter' ? 24 : 18;
+      c.save(); c.rotate(facing - (p.guarding && !melee ? .65 : p.guarding ? .8 : 0));
       path(c,[[reach-5,-4],[reach+3,-4]],'#e8b467',1);
       rect(c,reach,-5,2,2,'#ffe0a0'); c.restore();
     }
-    if (p.weapon !== 'blade' && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
+    if (!melee && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
       c.save(); c.translate(Math.cos(facing) * (p.weapon === 'scatter' ? 31 : 25), -3 + Math.sin(facing) * (p.weapon === 'scatter' ? 31 : 25)); c.rotate(facing);
       rect(c,-2,-4,10,8,'#f3d496');rect(c,2,-2,10,4,'#fff3c6');rect(c,2,-7,4,14,'#f3d496');c.restore();
       if(p.weapon==='scatter')for(const side of [-1,1]){
@@ -701,7 +719,7 @@
     }
     c.restore();
     if (p.guarding) {
-      const ready = p.guardWindow > 0, ranged = p.weapon !== 'blade', color = ranged ? '#e2af7d' : ready ? '#fff1b9' : '#9cb9af';
+      const ready = p.guardWindow > 0, ranged = !melee, color = ranged ? '#e2af7d' : ready ? '#fff1b9' : '#9cb9af';
       c.strokeStyle = color; c.lineWidth = ranged ? 2 : ready ? 4 : 2;
       if(ranged)c.setLineDash([5,5]);
       c.beginPath(); c.arc(x, y, 24, facing - .85, facing + .85); c.stroke(); c.setLineDash([]);
@@ -733,6 +751,49 @@
       const carried = heldProp || { kind: 'crate' };
       if (carried.kind === 'core' && state.relay && (state.relay.delivered || state.relay.coreRoom !== (state.room && state.room.index))) return;
       const ang = num(p.facing); prop(c, { ...carried, x: x + Math.cos(ang) * 22, y: y + Math.sin(ang) * 17 - 9, thrown: false }, time, true);
+    }
+  }
+
+  function lanternActive(e) { return e && e.kind === 'lamplighter' && e.hp > 0 && !e.dead && num(e.stun) <= 0 && num(e.stagger) <= 0; }
+  function lanternBlocked(state, x, y) {
+    if (x < 31 || x > W - 31 || y < 31 || y > H - 31) return true;
+    const inside = w => { const nx = Math.max(num(w.x), Math.min(num(w.x) + num(w.w), x)), ny = Math.max(num(w.y), Math.min(num(w.y) + num(w.h), y)); return (x - nx) ** 2 + (y - ny) ** 2 < 9; };
+    return values(state.walls).some(inside) || values(state.doors).some(d => d.locked && inside(d));
+  }
+  function lanternLineClear(state, a, b) {
+    // Same radius and sampling as the simulation. Low movable props do not
+    // cut the lamp's protection, whereas walls and closed doors do.
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 20));
+    for (let i = 1; i < n; i++) if (lanternBlocked(state, a.x + (b.x - a.x) * i / n, a.y + (b.y - a.y) * i / n)) return false;
+    return true;
+  }
+  function lanternSource(state, target) {
+    const engine = globalThis.AdventureEngine;
+    if (engine && typeof engine.lanternSource === 'function') return engine.lanternSource(state, target);
+    if (!target || target.hp <= 0 || target.dead || target.kind === 'lamplighter' || target.kind === 'boss') return null;
+    return values(state.enemies).find(e => lanternActive(e) && Math.hypot(num(e.x) - num(target.x), num(e.y) - num(target.y)) <= 165 && lanternLineClear(state, e, target)) || null;
+  }
+  function lanternAuras(c, state) {
+    const active = values(state.enemies).filter(lanternActive);
+    if (!active.length) return;
+    for (const e of active) {
+      const x = num(e.x), y = num(e.y), rim = [];
+      // Clip the faint pool to visible floor. A circle painted through a wall
+      // would suggest that enemies on the other side were still protected.
+      for (let i = 0; i < 72; i++) {
+        const a = i * Math.PI / 36, dx = Math.cos(a), dy = Math.sin(a); let reach = 165;
+        for (let d = 4; d <= 165; d += 4) if (lanternBlocked(state, x + dx * d, y + dy * d)) { reach = Math.max(0, d - 4); break; }
+        rim.push([x + dx * reach, y + dy * reach]);
+      }
+      c.fillStyle = '#e4b9770a'; c.beginPath(); rim.forEach((p, i) => i ? c.lineTo(...p) : c.moveTo(...p)); c.closePath(); c.fill();
+      c.save(); c.setLineDash([3, 7]); path(c, rim.concat([rim[0]]), '#d6bd8037', 1); c.restore();
+    }
+    for (const target of values(state.enemies)) {
+      if (target.hp <= 0 || target.dead) continue;
+      const source = lanternSource(state, target); if (!source) continue;
+      path(c, [[num(source.x), num(source.y)], [num(target.x), num(target.y)]], '#d6bc7c32', 1);
+      ellipse(c, num(target.x), num(target.y) + 7, num(target.r, 15) + 5, (num(target.r, 15) + 5) * .46, '#e1c58b13');
+      c.strokeStyle = '#ddc68b94'; c.lineWidth = 1.5; c.beginPath(); c.arc(num(target.x), num(target.y) - 4, num(target.r, 15) + 5, -.8, .8); c.stroke();
     }
   }
 
@@ -881,6 +942,24 @@
         // the horizontal thrust before either floor pattern is fully charged.
         for (const side of [-1, 1]) { rect(c, side * 30 - 7, -49, 14, 29, '#6f8062'); rect(c, side * 30 - 9, -53, 18, 10, '#b1aa7b'); }
       }
+    } else if (kind === 'lamplighter') {
+      const active = lanternActive(e), side = Math.cos(num(e.facing)) < 0 ? -1 : 1;
+      if (!active) c.rotate(-.13);
+      // A low cloth hood, copper shoulder and one hanging square lantern make
+      // this small supporter distinct from the tall, pointed fireball caster.
+      rect(c, -9, 4 + step, 6, 10, '#1b302b'); rect(c, 4, 4 - step, 6, 10, '#1b302b');
+      rect(c, -8, 5 + step, 5, 6, '#775b45'); rect(c, 4, 5 - step, 5, 6, '#775b45');
+      c.fillStyle = '#766c51'; c.beginPath(); c.moveTo(-9, -18); c.lineTo(9, -18); c.lineTo(14, 9); c.lineTo(-13, 9); c.closePath(); c.fill();
+      rect(c, -9, -16, 6, 23, '#aaa17a'); rect(c, 6, -14, 5, 22, '#514f3d'); rect(c, -11, 3, 23, 4, '#9b754d');
+      rect(c, -11, -17, 8, 6, '#b08451'); rect(c, 5, -17, 8, 6, '#936643'); rect(c, -11, -17, 8, 2, '#d1aa6c');
+      rect(c, -10, -30, 20, 18, '#263b2f'); rect(c, -8, -29, 16, 16, '#928063'); rect(c, -7, -28, 5, 13, '#b9a07a');
+      rect(c, -9, -24, 18, 11, '#2a3b30'); rect(c, -5, -22, 3, 2, '#dbbd7c'); rect(c, 3, -22, 3, 2, '#dbbd7c');
+      rect(c, -12, -30, 24, 5, '#b38f60'); rect(c, -10, -33, 20, 4, '#89734f'); rect(c, -5, -34, 10, 3, '#c3a571');
+      const handX = side * 19, handY = active ? -7 : 0;
+      path(c, [[side * 8, -13], [handX, handY]], '#ae8a60', 5); rect(c, handX - 3, handY - 3, 6, 6, '#ddba83');
+      path(c, [[handX, handY], [handX, handY + 7]], '#c9ad71', 2);
+      if (active) lantern(c, handX, handY + 14, still ? 0 : time, .62);
+      else { rect(c, handX - 5, handY + 7, 10, 13, '#5d5c43'); rect(c, handX - 3, handY + 9, 6, 8, '#847756'); rect(c, handX - 6, handY + 6, 12, 2, '#b7a472'); }
     } else if (kind === 'hookwarden') {
       const attack=e.rhythm||{},casting=attack.type==='hook'&&attack.phase==='windup',side=Math.cos(num(attack.angle,num(e.facing)))<0?-1:1;
       if (e.stagger>0 || e.stun>0) c.rotate(-.14);
@@ -997,6 +1076,7 @@
       label(c, chapter ? chapterEnemyNames[kind] || '炉卫' : e.huntTarget ? '逐迹巨兽' : {duelist:'守刃者',brute:'冲撞巨兽',pyromancer:'引火祭司',hookwarden:'链钩监工'}[kind] || '精英', x, crownY - 15, e.huntTarget ? '#e7b18a' : '#ebcf8e', 8);
     }
     if (chapter && !boss && !e.elite) label(c, chapterEnemyNames[kind] || '炉卫', x, y - (kind === 'charger' ? 40 : 50), '#d6b789', 8);
+    if (kind === 'lamplighter') label(c, '提灯侍从', x, y - 48, '#d8c18e', 8);
     if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
   }
   function bullet(c, b, state) {
@@ -1166,7 +1246,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -1256,6 +1336,32 @@
       if (e.kind === 'breach' && e.type === 'event-complete') continue;
       if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
       if(tacticsEffect(c,e,age,events,state,still))continue;
+      if (e.type === 'spear-thrust') {
+        const life = e.perfect ? .28 : .22; if (age > life) continue;
+        const reach = Math.max(0, Math.min(e.perfect ? 250 : 156, num(e.range))); if (reach < 2) continue;
+        const ratio = age / life, color = e.perfect ? '#fff0ba' : '#e1e8c6', from = Math.min(15, reach);
+        alpha(c, (1 - ratio) * (e.perfect ? .9 : .72), () => {
+          c.save(); c.translate(num(e.x), num(e.y)); c.rotate(num(e.angle));
+          // The engine publishes the collision-limited extent. No trail,
+          // spearhead or sparkle is allowed to overshoot that exact endpoint.
+          path(c, [[from, 0], [reach, 0]], e.perfect ? '#e6c98360' : '#d1dfb74d', e.perfect ? 9 : 5);
+          path(c, [[from, 0], [reach, 0]], color, e.perfect ? 2.5 : 1.5);
+          for (const side of [-1, 1]) path(c, [[Math.max(from, reach - (e.perfect ? 25 : 15)), side * (e.perfect ? 5 : 3)], [reach, 0]], color, e.perfect ? 2 : 1);
+          c.restore();
+        });
+        continue;
+      }
+      if (e.type === 'lantern-guard') {
+        if (age > .3 || num(e.reduced) <= 0) continue;
+        const ratio = age / .3, x = num(e.x), y = num(e.y);
+        alpha(c, (1 - ratio) * .8, () => {
+          // One brief shield at the target's feet leaves the actual enemy-hit
+          // damage number clear. The steady aura is derived afresh each draw.
+          path(c, [[x - 10, y + 6], [x - 9, y + 15], [x, y + 21], [x + 9, y + 15], [x + 10, y + 6]], '#e4c78d', 2);
+          path(c, [[x, y + 9], [x, y + 15]], '#fff0bd', 1.5);
+        });
+        continue;
+      }
       if(e.type==='wall-breached'){
         const life=.8;if(age>life)continue;
         const ratio=age/life,motion=still?.22:ratio,x=num(e.x),y=num(e.y);
@@ -1285,7 +1391,7 @@
           if(broken){for(const side of [-1,1])path(c,[[x+side*9,y-9],[x+side*(14+ratio*11),y-14-ratio*9]],color,2);}
           else if(blocked){c.strokeStyle=color;c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.arc(x,y,22+ratio*10,0,Math.PI*2);c.stroke();c.setLineDash([]);}
           // A break can accompany the same block: show its single useful label.
-          if(!blocked||!e.broken){const name=broken?'远程武器损坏':blocked?'半效格挡':e.weapon==='blade'?'近战 · 旅人短刃':e.weapon==='scatter'?'远程 · 散射枪':'远程 · 手枪';label(c,name,x,y-57-ratio*10,color,broken?12:10);}
+          if(!blocked||!e.broken){const name=broken?'远程武器损坏':blocked?'半效格挡':e.weapon==='spear'?'近战 · 遗迹长枪':e.weapon==='blade'?'近战 · 旅人短刃':e.weapon==='scatter'?'远程 · 散射枪':'远程 · 手枪';label(c,name,x,y-57-ratio*10,color,broken?12:10);}
           if(blocked&&num(e.damage)>0)impactLabel(c,damageText(e.damage),x+20,y+25-(still?.25:ratio)*9,'#f0a18b',11);
         });
         continue;
@@ -1597,6 +1703,7 @@
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
     chapterFloor(c, state, time);
+    lanternAuras(c, state);
     values(state.walls).forEach(w => wall(c, w));
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));

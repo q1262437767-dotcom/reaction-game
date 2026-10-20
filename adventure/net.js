@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 14;
+  const VERSION = 15;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -35,6 +35,7 @@
     // lobby as the default mode; the app validates mission/difficulty and state.
     if (message.type === 'loadout') {
       if (message.weapon !== 'pistol' && message.weapon !== 'scatter') return false;
+      if (message.melee !== undefined && message.melee !== 'blade' && message.melee !== 'spear') return false;
       const camp = message.camp;
       return camp === undefined || isRecord(camp) && Object.keys(camp).length === 1 && Array.isArray(camp.upgrades) && camp.upgrades.length <= 3 && new Set(camp.upgrades).size === camp.upgrades.length && camp.upgrades.every(id => ['ward', 'stride', 'relicCase'].includes(id));
     }
