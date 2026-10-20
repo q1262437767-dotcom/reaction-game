@@ -20,6 +20,7 @@
     var epoch = 0, mutation = 0, upload = null, choice = null, timer = null, resendAt = 0, resendTimer = null;
     var lastStatus = '游客模式 · 进度保存在本机', disposed = false, deferredUser;
     var authMode = 'password', codePurpose = 'login', codeEmail = null;
+    var lastPreparationLock = null;
 
     function copy(value) { return C.normalize(value); }
     function cacheKey(id) { return 'ruins-squad-cloud-v1:' + namespace + ':' + id; }
@@ -144,6 +145,13 @@
       $('logout-account').disabled = !user || locked;
       $('use-cloud-save').disabled = busy;
       $('use-local-save').disabled = busy;
+      // Status text can be published while a request is still busy. Notify
+      // the camp again when its actual lock changes, including in finally.
+      var preparationLocked = busy || sending || verifying || signingOut || !!choice;
+      if (lastPreparationLock !== preparationLocked) {
+        lastPreparationLock = preparationLocked;
+        if (options.onLockChange) options.onLockChange(preparationLocked);
+      }
     }
     function cancelTimer() { if (timer) root.clearTimeout(timer); timer = null; }
     function schedule() {

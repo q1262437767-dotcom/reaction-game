@@ -433,7 +433,10 @@
       item.disabled = !found; item.textContent = (E.BUFFS[id] || { label: id }).label + (found ? '' : ' · 未发现');
     }
     const relicLabel = departure.startingRelic ? E.BUFFS[departure.startingRelic].label : null;
-    $('starter-relic-copy').textContent = relicLabel ? `${relicLabel}：${E.BUFFS[departure.startingRelic].description} 联机由房主携带，全队共享，同名效果不叠加。` : '解锁遗物匣后，可选择一件已发现的遗物。联机由房主携带，全队共享；同名效果不叠加。';
+    $('starter-relic-copy').textContent = locked ? account.needsChoice ? '请先在账号面板选择要保留的存档，完成后即可继续整备。' : '账号正在读取或同步存档，完成后会自动恢复选择。' :
+      !departure.upgrades.includes('relicCase') ? camp.relics.length ? '先用 80 星屑解锁上方的遗物匣，再选择已发现的遗物。' : '先在远征中取得遗物并完成结算，再用 80 星屑解锁上方的遗物匣。' :
+      relicLabel ? `${relicLabel}：${E.BUFFS[departure.startingRelic].description} 下次出发生效；联机由房主携带，全队共享，同名效果不叠加。` :
+      camp.relics.length ? '遗物匣已解锁，点击上方选择已发现的遗物。选择自动保存，下次出发生效；联机由房主携带，全队共享。' : '遗物匣已解锁，暂无已发现的遗物。远征中取得遗物并完成结算后，可在这里选择。';
     const preparationNames = C.CAMP_UPGRADES.filter(upgrade => departure.upgrades.includes(upgrade.id) && upgrade.id !== 'relicCase').map(upgrade => upgrade.name);
     if (net && net.connected && net.role === 'guest') preparationNames.push('出发遗物由房主携带');
     else if (relicLabel) preparationNames.push(relicLabel);
@@ -1183,7 +1186,8 @@
       onIdentityChange() {
         if (state || net) { home(); toast('账号已切换，已返回营地。正在进行的探险不结算奖励。'); }
       },
-      onStatus() { if (account) updateCamp(); }
+      onStatus() { if (account) updateCamp(); },
+      onLockChange() { if (account) updateCamp(); }
     });
     account.init().catch(() => { toast('暂时连不上账号服务，本机存档仍保留。'); });
   } else {
