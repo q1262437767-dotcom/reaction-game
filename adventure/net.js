@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 15;
+  const VERSION = 16;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -36,6 +36,11 @@
     if (message.type === 'loadout') {
       if (message.weapon !== 'pistol' && message.weapon !== 'scatter') return false;
       if (message.melee !== undefined && message.melee !== 'blade' && message.melee !== 'spear') return false;
+      if (message.foxRescued !== undefined && typeof message.foxRescued !== 'boolean') return false;
+      if (message.companion !== undefined && message.companion !== null) {
+        const fox = message.companion;
+        if (!isRecord(fox) || Object.keys(fox).length !== 2 || fox.kind !== 'fox' || typeof fox.name !== 'string' || fox.name !== fox.name.trim() || !/^[\u3400-\u9fffA-Za-z0-9 ·_-]{1,12}$/.test(fox.name) || message.foxRescued === false) return false;
+      }
       const camp = message.camp;
       return camp === undefined || isRecord(camp) && Object.keys(camp).length === 1 && Array.isArray(camp.upgrades) && camp.upgrades.length <= 3 && new Set(camp.upgrades).size === camp.upgrades.length && camp.upgrades.every(id => ['ward', 'stride', 'relicCase'].includes(id));
     }

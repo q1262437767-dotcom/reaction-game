@@ -50,7 +50,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|spear-thrust|lantern-guard|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|spear-thrust|lantern-guard|fox-rescued|fox-assist|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       // A shotgun can land five pellets at once. Routine damage feedback may
@@ -130,7 +130,18 @@
     var preparation = s.preparations && s.preparations[key];
     return !s.practice && preparation && Array.isArray(preparation.upgrades) && preparation.upgrades.indexOf(upgrade) >= 0;
   }
-  function addPlayer(s, requestedId) {
+  function companionName(value) {
+    var name = typeof value === 'string' ? value.trim() : '';
+    return /^[\u3400-\u9fffA-Za-z0-9 ·_-]{1,12}$/.test(name) ? name : '灰尾狐';
+  }
+  function addCompanion(s, owner, option) {
+    if (s.practice || !owner || !option || option.kind !== 'fox') return null;
+    var fox = { id: 'fox-' + owner.id, ownerId: owner.id, kind: 'fox', name: companionName(option.name),
+      x: owner.x - 32, y: owner.y + 16, r: 10, facing: owner.facing, mode: 'idle',
+      assistCd: 0, assistTime: 0, targetId: null, hintId: null };
+    s.companions.push(fox); placeCompanion(s, fox); return fox;
+  }
+  function addPlayer(s, requestedId, companionOption) {
     var key = requestedId || (s.players.p1 ? 'p2' : 'p1');
     if (s.players[key]) return s.players[key];
     if (Object.keys(s.players).length >= 2) return null;
@@ -144,6 +155,7 @@
     s.players[key] = p;
     s.playerCount = Object.keys(s.players).length;
     event(s, 'player-joined', { playerId: key });
+    addCompanion(s, p, companionOption);
     return p;
   }
   function removePlayer(s, key) {
@@ -151,6 +163,7 @@
     if (!p) return false;
     releaseCarry(s, p, false, true);
     delete s.players[key];
+    s.companions = s.companions.filter(function (fox) { return fox.ownerId !== key; });
     s.playerCount = Object.keys(s.players).length;
     event(s, 'player-left', { playerId: key });
     if (s.status === 'playing' && !alivePlayers(s).length) finish(s, 'lost');
@@ -175,6 +188,7 @@
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
       preparations: { p1: { upgrades: hostUpgrades }, p2: { upgrades: partnerUpgrades }, startingRelic: startingRelic },
       runBuffs: startingRelic ? [startingRelic] : [], runUpgrades: { tempered: false }, relicRooms: [], interactables: [], decoys: [], roomEvent: null,
+      companions: [], foxRescue: null,
       unlocks: clone(options.unlocks || {}), playerCount: 0, players: {}, enemies: [], bullets: [], props: [],
       particles: [], events: [], combatEvents: [], walls: [], doors: [], portals: [], fires: [], switches: [], pickups: [], fountains: [],
       room: null, roomData: {}, rooms: ROOM_DEFS.map(function (r, i) {
@@ -185,8 +199,8 @@
       hint: '', objective: '', message: '', messageTime: 0 };
     if (missionId === 'salvage') { s.rooms[4].name = '水闸撤离点'; s.rooms[4].kind = 'extraction'; }
     if (missionId === 'holdout') { s.rooms[1].name = '长夜信标庭院'; s.rooms[1].kind = 'holdout'; }
-    addPlayer(s, 'p1');
-    if (options.players === 2) addPlayer(s, 'p2');
+    addPlayer(s, 'p1', options.companion);
+    if (options.players === 2) addPlayer(s, 'p2', options.partnerCompanion);
     if (s.practice) {
       s.mode = 'story';
       s.practiceParries = 0;
@@ -619,8 +633,28 @@
       s.exploration.totalEnemies += data.enemies.length;
     });
     s.exploration.target = Math.ceil(s.exploration.totalEnemies * 0.6);
+    if (s.unlocks.foxRescued !== true) addFoxRescue(s);
     s.mission.name = '迷雾远征'; s.mission.goal = '探索遗迹，唤醒并击败炉心守卫';
     s.mission.total = s.exploration.target; s.mission.phase = 'explore';
+  }
+  function addFoxRescue(s) {
+    // Deterministic side-room placement consumes no random draw or serial id.
+    // The cage never occupies a solid tile or changes a doorway or enemy count.
+    var candidates = s.rooms.filter(function (room) { return room.kind === 'battle' && !room.elite && !room.eventKind; })
+      .sort(function (a, b) { return (a.neighbors.length === 1 ? 0 : 1) - (b.neighbors.length === 1 ? 0 : 1) || a.neighbors.length - b.neighbors.length || a.index - b.index; });
+    for (var i = 0; i < candidates.length; i += 1) {
+      var room = candidates[i], data = s.roomData[room.index], positions = [[710, 240], [730, 380], [230, 440], [450, 430], [450, 180]];
+      for (var j = 0; j < positions.length; j += 1) {
+        var point = { x: positions[j][0], y: positions[j][1], r: 24 };
+        if (data.walls.some(function (w) { return circleRect(point, w); }) ||
+            data.props.some(function (q) { return solidProp(q) && dist(point, q) < point.r + q.r + 15; }) ||
+            data.fires.some(function (f) { return f.active && dist(point, f) < point.r + f.r + 15; }) ||
+            data.enemies.some(function (e) { return dist(point, e) < point.r + e.r + 26; })) continue;
+        data.interactables.push({ id: 'fox-cage-' + room.index, kind: 'fox-cage', x: point.x, y: point.y, r: 22,
+          label: '打开旧笼门', active: true, used: false });
+        s.foxRescue = { roomIndex: room.index, rescued: false }; return;
+      }
+    }
   }
   function randomRoomContent(s, room, withLantern) {
     var data = { walls: [],
@@ -944,6 +978,7 @@
       }
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
+    resetCompanions(s);
     if (s.mode === 'relay' && s.props.some(function (q) { return q.id === s.relay.coreId; })) s.relay.coreRoom = index;
     if (s.mode === 'hunt') {
       if (s.hunt.targetRoom === index) {
@@ -961,6 +996,116 @@
       s.message = '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。'; s.messageTime = 8;
     }
     return true;
+  }
+  function clearFoxAction(fox) {
+    fox.mode = 'idle'; fox.assistTime = 0; fox.targetId = null; fox.hintId = null;
+  }
+  function placeCompanion(s, fox) {
+    var owner = s.players[fox.ownerId];
+    if (!owner) return;
+    fox.x = owner.x; fox.y = owner.y; fox.facing = owner.facing;
+    for (var i = 0; i < 16; i += 1) {
+      var angle = owner.facing + Math.PI + i * TAU / 16;
+      var x = owner.x + Math.cos(angle) * 34, y = owner.y + Math.sin(angle) * 34;
+      if (!collides(s, x, y, fox.r, fox.id, false)) { fox.x = x; fox.y = y; break; }
+    }
+    clearFoxAction(fox);
+  }
+  function resetCompanions(s) {
+    s.companions = s.companions.filter(function (fox) { return !!s.players[fox.ownerId]; });
+    s.companions.forEach(function (fox) { placeCompanion(s, fox); });
+  }
+  function foxSight(s, a, b, radius) {
+    // Fine sampling keeps thin walls and closed doors honest. Portable solid
+    // cover also blocks a physical pounce and a claimed visible clue.
+    var distance = dist(a, b), count = Math.max(1, Math.ceil(distance / 4));
+    for (var i = 1; i <= count; i += 1) {
+      if (collides(s, a.x + (b.x - a.x) * i / count, a.y + (b.y - a.y) * i / count, radius || 3, a.id, false)) return false;
+    }
+    return true;
+  }
+  function foxWaypoint(s, fox, target) {
+    if (foxSight(s, fox, target, fox.r + 1)) return target;
+    var size = 40, cols = 24, rows = 15;
+    var start = clamp(Math.floor(fox.y / size), 1, rows - 2) * cols + clamp(Math.floor(fox.x / size), 1, cols - 2);
+    var queue = [start], seen = {}, closest = start, best = Infinity;
+    seen[start] = -1;
+    for (var head = 0; head < queue.length && head < 360; head += 1) {
+      var at = queue[head], x = at % cols, y = Math.floor(at / cols);
+      var score = len(x * size + 20 - target.x, y * size + 20 - target.y);
+      if (score < best) { best = score; closest = at; }
+      if (score < 24) break;
+      [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]].forEach(function (cell) {
+        var key = cell[1] * cols + cell[0];
+        if (cell[0] < 1 || cell[0] >= cols - 1 || cell[1] < 1 || cell[1] >= rows - 1 || seen[key] !== undefined ||
+            collides(s, cell[0] * size + 20, cell[1] * size + 20, fox.r + 1, fox.id, false)) return;
+        seen[key] = at; queue.push(key);
+      });
+    }
+    if (closest === start) return fox;
+    var current = closest, previous = seen[current];
+    while (previous !== start && previous !== -1) { current = previous; previous = seen[current]; }
+    return { x: current % cols * size + 20, y: Math.floor(current / cols) * size + 20 };
+  }
+  function foxClue(s, fox, owner) {
+    var hints = s.interactables.filter(function (q) {
+      return q.active && !q.used && /^(fox-cage|cache|supply-cache|storehouse-cache|breach-cache|forge-reward|storehouse-switch|sluice|lift|forge|chapter-sluice|chapter-beacon|chapter-supply)$/.test(q.kind);
+    }).map(function (q) { return { id: q.id, x: q.x, y: q.y }; });
+    s.switches.filter(function (q) { return !q.pressed; }).forEach(function (q) { hints.push({ id: q.id, x: q.x, y: q.y }); });
+    s.walls.filter(function (wall) { return wall.breachWall; }).forEach(function (wall) {
+      var x = clamp(owner.x, wall.x, wall.x + wall.w), y = clamp(owner.y, wall.y, wall.y + wall.h);
+      var dx = owner.x - x, dy = owner.y - y, distance = len(dx, dy) || 1;
+      hints.push({ id: wall.id, x: x + dx / distance * 6, y: y + dy / distance * 6 });
+    });
+    return hints.filter(function (q) { return dist(owner, q) <= 180 && dist(fox, q) <= 200 && foxSight(s, owner, q, 3) && foxSight(s, fox, q, 3); })
+      .sort(function (a, b) { return (a.id === fox.hintId ? -1 : 0) - (b.id === fox.hintId ? -1 : 0) || dist(owner, a) - dist(owner, b); })[0] || null;
+  }
+  function queueFoxAssist(s, owner, target) {
+    var fox = s.companions.find(function (q) { return q.ownerId === owner.id; });
+    if (!fox || s.practice || owner.downed || target.hp <= 0 || fox.assistCd > 0 ||
+        dist(fox, target) > 320 || dist(fox, owner) > 220 || !foxSight(s, fox, target, 4)) return;
+    fox.mode = 'pounce'; fox.assistCd = 6; fox.assistTime = 0.24; fox.targetId = target.id; fox.hintId = null;
+    fox.facing = Math.atan2(target.y - fox.y, target.x - fox.x);
+  }
+  function updateCompanions(s, dt) {
+    if (dt <= 0 || !s.companions.length) return;
+    s.companions.forEach(function (fox) {
+      var owner = s.players[fox.ownerId];
+      fox.assistCd = Math.max(0, fox.assistCd - dt);
+      if (!owner || owner.downed || s.status !== 'playing') { clearFoxAction(fox); return; }
+      if (fox.mode === 'pounce') {
+        var target = s.enemies.find(function (e) { return e.id === fox.targetId && e.hp > 0; });
+        if (!target || dist(fox, owner) > 360 || !foxSight(s, fox, target, 4)) { clearFoxAction(fox); return; }
+        var angle = Math.atan2(target.y - fox.y, target.x - fox.x), gap = Math.max(0, dist(fox, target) - target.r - 8);
+        var travel = Math.min(gap, 1300 * dt, gap * dt / Math.max(dt, fox.assistTime));
+        var oldX = fox.x, oldY = fox.y;
+        move(s, fox, Math.cos(angle) * travel, Math.sin(angle) * travel, false);
+        fox.facing = angle; fox.assistTime = Math.max(0, fox.assistTime - dt);
+        if (travel > 1 && len(fox.x - oldX, fox.y - oldY) < travel * 0.4) { clearFoxAction(fox); return; }
+        if (fox.assistTime <= 0) {
+          if (target.hp > 0 && dist(fox, target) <= target.r + 32 && foxSight(s, fox, target, 3)) {
+            var amount = Math.min(target.hp, 1);
+            amount = damageEnemy(s, target, amount, owner.id, null, true);
+            event(s, 'fox-assist', { playerId: owner.id, enemyId: target.id, amount: amount, x: target.x, y: target.y });
+          }
+          clearFoxAction(fox);
+        }
+        return;
+      }
+      fox.assistTime = 0; fox.targetId = null;
+      var goal = { x: owner.x - Math.cos(owner.facing) * 34, y: owner.y - Math.sin(owner.facing) * 34 };
+      if (collides(s, goal.x, goal.y, fox.r + 1, fox.id, false)) goal = owner;
+      if (dist(fox, goal) > 11) {
+        var next = foxWaypoint(s, fox, goal), dx = next.x - fox.x, dy = next.y - fox.y, distance = len(dx, dy) || 1;
+        var speed = clamp(dist(fox, owner) * 2.4, 145, 310), stepLength = Math.min(distance, speed * dt);
+        move(s, fox, dx / distance * stepLength, dy / distance * stepLength, false);
+        fox.facing = Math.atan2(dy, dx); fox.mode = 'follow'; fox.hintId = null;
+      } else {
+        var clue = foxClue(s, fox, owner);
+        fox.mode = clue ? 'sniff' : 'idle'; fox.hintId = clue ? clue.id : null;
+        if (clue) fox.facing = Math.atan2(clue.y - fox.y, clue.x - fox.x);
+      }
+    });
   }
   function setHint(s) {
     if (s.status !== 'playing') return;
@@ -1292,6 +1437,7 @@
     if (s.status !== 'playing') return;
     s.status = status;
     s.bullets = [];
+    s.companions.forEach(function (fox) { fox.mode = 'idle'; fox.assistTime = 0; fox.targetId = null; fox.hintId = null; });
     Object.keys(s.players).forEach(function (key) { resetCombat(s.players[key]); });
     if (s.practice) {
       s.reward = null; s.rewardGranted = false;
@@ -1429,6 +1575,13 @@
         s.messageTime = 2;
         return false;
       }
+      if (target.kind === 'fox-cage' && s.foxRescue && !s.foxRescue.rescued && s.foxRescue.roomIndex === s.room.index) {
+        if (!foxSight(s, p, target, 3)) return false;
+        target.used = true; target.active = false; s.foxRescue.rescued = true;
+        event(s, 'fox-rescued', { playerId: p.id, x: target.x, y: target.y });
+        s.message = '灰尾狐自由了 · 回营后可在伙伴栏领养'; s.messageTime = 3;
+        return true;
+      }
       if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
@@ -1512,6 +1665,7 @@
     burst(s, 'hit', p.x, p.y, '#ff8d83', 7);
     if (p.hp <= 0) {
       releaseCarry(s, p, false, true); p.downed = true; resetCombat(p);
+      s.companions.forEach(function (fox) { if (fox.ownerId === p.id) clearFoxAction(fox); });
       event(s, 'downed', { playerId: p.id });
       if (!alivePlayers(s).length) finish(s, 'lost');
     }
@@ -2106,6 +2260,7 @@
             if (riposte) p.parryChain = 0;
           }
           event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, weapon: p.weapon, amount: counterDamage, x: foe.x, y: foe.y });
+          queueFoxAssist(s, p, foe);
           return true;
         }
       }
@@ -2600,7 +2755,7 @@
       if (interactEdge) interact(s, key);
     });
     if (s.room.index !== roomBefore) return s;
-    updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateEnemies(s, dt); updateBullets(s, dt);
+    updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateEnemies(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     alivePlayers(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');

@@ -57,6 +57,7 @@ declare
   v_item jsonb;
   v_mission jsonb;
   v_camp jsonb;
+  v_companion jsonb;
   v_count numeric;
 begin
   -- Identity comes from the verified JWT, never from a client-supplied user ID.
@@ -188,7 +189,9 @@ begin
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
     if not (v_camp ?& array['upgrades','startingRelic'])
-        or (select count(*) from jsonb_object_keys(v_camp)) <> 2
+        or (select count(*) from jsonb_object_keys(v_camp)) not in (2, 3)
+        or exists (select 1 from jsonb_object_keys(v_camp) as keys(id)
+                   where id not in ('upgrades', 'startingRelic', 'companion'))
         or jsonb_typeof(v_camp->'upgrades') is distinct from 'array' then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
@@ -214,6 +217,28 @@ begin
     end if;
   end if;
 
+  -- Companion ownership remains nested in the existing v2 camp record.
+  -- Older clients may omit it; supplied values must be canonical and bounded.
+  if p_profile ? 'camp' and (v_camp ? 'companion') then
+    v_companion := v_camp->'companion';
+    if jsonb_typeof(v_companion) is distinct from 'object' then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    if not (v_companion ?& array['rescued','name','equipped'])
+        or (select count(*) from jsonb_object_keys(v_companion)) <> 3
+        or jsonb_typeof(v_companion->'rescued') is distinct from 'boolean'
+        or jsonb_typeof(v_companion->'equipped') is distinct from 'boolean'
+        or jsonb_typeof(v_companion->'name') is distinct from 'string' then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    if (v_companion->>'name') <> btrim(v_companion->>'name')
+        or (v_companion->>'name') collate "C" !~ '^[㐀-鿿A-Za-z0-9 ·_-]{1,12}$'
+        or v_companion->'rescued' = 'false'::jsonb and
+           (v_companion->>'name' <> '灰尾狐' or v_companion->'equipped' <> 'false'::jsonb) then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+  end if;
+
   -- Each single statement is atomic. A racing initial insert cannot replace a
   -- save, and a stale update cannot pass its revision predicate after waiting.
   if p_expected_revision = 0 then
@@ -232,6 +257,11 @@ begin
                           else p_profile end)
                     || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
                              then jsonb_build_object('camp', saved.profile->'camp')
+                             else '{}'::jsonb end)
+                    || (case when p_profile ? 'camp' and not ((p_profile->'camp') ? 'companion')
+                                  and (saved.profile#>'{camp,companion}') is not null
+                             then jsonb_build_object('camp', (p_profile->'camp') ||
+                                  jsonb_build_object('companion', saved.profile#>'{camp,companion}'))
                              else '{}'::jsonb end)
                     || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
                                   and jsonb_typeof(saved.profile#>'{camp,startingRelic}') = 'string'

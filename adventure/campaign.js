@@ -38,6 +38,16 @@
   var missionById = function (id) { return MISSIONS.find(function (mission) { return mission.id === id; }); };
   var unique = function (values) { return Array.from(new Set(values)); };
 
+  function validFoxName(value) {
+    return typeof value === 'string' && /^[\u3400-\u9fffA-Za-z0-9 ·_-]{1,12}$/.test(value.trim());
+  }
+
+  function normalizeCompanion(raw) {
+    raw = object(raw);
+    return raw.rescued === true ? { rescued: true, name: validFoxName(raw.name) ? raw.name.trim() : '灰尾狐', equipped: raw.equipped === true } :
+      { rescued: false, name: '灰尾狐', equipped: false };
+  }
+
   function normalize(raw) {
     raw = object(raw);
     var records = object(raw.missions), missions = {};
@@ -62,7 +72,7 @@
     }).slice().reverse()).reverse().slice(-80);
     return { v: 2, coins: count(raw.coins), wins: Math.min(LIMIT, wins), runs: Math.max(count(raw.runs), Math.min(LIMIT, wins)),
       scatter: raw.scatter === true, clearedRuns: runIds, missions: missions, badges: badges, relics: relics,
-      camp: { upgrades: upgrades, startingRelic: startingRelic } };
+      camp: { upgrades: upgrades, startingRelic: startingRelic, companion: normalizeCompanion(campRaw.companion) } };
   }
 
   function progress(profile) {
@@ -118,6 +128,29 @@
   function departure(profile) {
     var camp = normalize(profile).camp;
     return { upgrades: camp.upgrades.slice(), startingRelic: camp.startingRelic };
+  }
+
+  function rescueFox(profile) {
+    var p = normalize(profile);
+    if (!p.camp.companion.rescued) p.camp.companion = { rescued: true, name: '灰尾狐', equipped: true };
+    return p;
+  }
+
+  function renameFox(profile, name) {
+    var p = normalize(profile);
+    if (p.camp.companion.rescued && validFoxName(name)) p.camp.companion.name = name.trim();
+    return p;
+  }
+
+  function equipFox(profile, equipped) {
+    var p = normalize(profile);
+    if (p.camp.companion.rescued && typeof equipped === 'boolean') p.camp.companion.equipped = equipped;
+    return p;
+  }
+
+  function companionDeparture(profile) {
+    var companion = normalize(profile).camp.companion;
+    return companion.rescued && companion.equipped ? { kind: 'fox', name: companion.name } : null;
   }
 
   function chapterProgress(profile) {
@@ -192,6 +225,13 @@
       }
       return result;
     }
+    var fox = object(state.foxRescue);
+    if (state.mode === 'random' && missionId === 'ember' && fox.rescued === true && Number.isInteger(fox.roomIndex) &&
+        Array.isArray(state.rooms) && state.rooms.length === 12 && fox.roomIndex > 0 && fox.roomIndex < state.rooms.length &&
+        object(state.rooms[fox.roomIndex]).index === fox.roomIndex && state.rooms[fox.roomIndex].visited === true && !p.camp.companion.rescued) {
+      p.camp.companion = { rescued: true, name: '灰尾狐', equipped: true };
+      unlocks.push('营地伙伴 · 灰尾狐');
+    }
     p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80); p.runs = Math.min(LIMIT, p.runs + 1);
     var buffs = Array.isArray(state.runBuffs) ? state.runBuffs : Object.keys(object(state.runBuffs)).filter(function (key) { return state.runBuffs[key]; });
     buffs.forEach(function (buff) {
@@ -231,5 +271,6 @@
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
     chapterProgress: chapterProgress, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
-    canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure });
+    canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
+    validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });

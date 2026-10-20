@@ -40,11 +40,12 @@
       });
       return '星屑 ' + p.coins + ' · 营灯 ' + C.progress(p).lit + '/3 · 探险 ' + p.runs + ' 次' +
         ' · 营地强化 ' + upgrades.length + '/3' + (upgrades.length ? '（' + upgrades.join('、') + '）' : '') +
-        ' · 出发遗物：' + (relicNames[p.camp.startingRelic] || '未装备');
+        ' · 出发遗物：' + (relicNames[p.camp.startingRelic] || '未装备') +
+        ' · 营地伙伴：' + (p.camp.companion.rescued ? p.camp.companion.name + (p.camp.companion.equipped ? '（同行）' : '（留营）') : '未救出');
     }
     function hasProgress(value) {
       var p = copy(value);
-      return p.coins > 0 || p.runs > 0 || p.scatter || p.badges.length > 0 || p.relics.length > 0 || p.camp.upgrades.length > 0;
+      return p.coins > 0 || p.runs > 0 || p.scatter || p.badges.length > 0 || p.relics.length > 0 || p.camp.upgrades.length > 0 || p.camp.companion.rescued;
     }
     function safeEnvelope(value) {
       if (!value || !value.profile || !Number.isSafeInteger(value.revision) || value.revision < 0) return null;

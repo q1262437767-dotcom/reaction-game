@@ -682,6 +682,20 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 }
 
 /* Keep enabled touch controls compact even when a phone reports a fine pointer. */
+.companion-card{margin-top:22px;padding:18px;border:1px solid rgba(173,199,190,.14);border-radius:8px;background:rgba(122,155,144,.035)}
+.companion-heading{display:flex;align-items:center;gap:12px}
+.companion-heading h3{margin:3px 0 0;font-size:17px}
+.companion-mark{width:44px;height:44px;flex:0 0 44px}
+.companion-name-row{display:flex;align-items:center;gap:9px;margin-top:14px;min-width:0}
+.companion-name-row>label{font-size:12px;white-space:nowrap;color:var(--muted)}
+.companion-name-row>input{min-width:0;flex:1;width:100%;padding:10px 11px;border:1px solid rgba(173,199,190,.2);border-radius:5px;background:rgba(0,0,0,.2);color:inherit;font:inherit;font-size:13px}
+.companion-name-row>input:focus-visible{outline:2px solid #a0baad;outline-offset:2px}
+.companion-name-row>.button{flex-shrink:0;min-height:40px;padding:9px 13px;font-size:12px}
+.companion-name-row>input:disabled{opacity:.4}
+.companion-toggle{display:flex;align-items:center;gap:9px;min-height:44px;margin-top:6px;font-size:13px;color:#c0ceca;cursor:pointer}
+.companion-toggle>input{width:17px;height:17px;accent-color:#a0baad;flex-shrink:0}
+.companion-toggle:has(input:disabled){opacity:.45;cursor:default}
+@media(max-width:380px){.companion-card{padding:13px}.companion-name-row{gap:6px}.companion-name-row>.button{padding-inline:9px}}
 @media(orientation:landscape) and (max-height:500px){
   #game-wrap[data-touch-controls="true"] .touch-actions{width:129px;height:92px;right:14px;bottom:12px}
   #game-wrap[data-touch-controls="true"] .touch-guard{width:39px;height:39px;font-size:25px;left:0;top:0}

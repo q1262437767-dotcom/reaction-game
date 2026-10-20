@@ -18,6 +18,8 @@
   let account = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol', remoteMelee = 'blade';
   let remoteCamp = { upgrades: [] };
+  let remoteCompanion = null;
+  let remoteFoxRescued = false;
   let remoteCampReady = false;
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
@@ -230,6 +232,10 @@
         if (soundReady('spear', event.time, .18)) tone(490, .075, .018, 'triangle', 0, 190);
       } else if (event.type === 'lantern-guard') {
         if (soundReady('lantern', event.time, .16)) tone(720, .065, .014, 'sine', 0, 430);
+      } else if (event.type === 'fox-rescued') {
+        tone(760, .12, .018, 'sine', 0, 1050); tone(980, .16, .015, 'sine', .13, 680);
+      } else if (event.type === 'fox-assist') {
+        if (soundReady('fox-assist', event.time, .2)) tone(370, .065, .013, 'triangle', 0, 170);
       } else if (event.type === 'hook-reflected') {
         tone(630, .10, .020, 'triangle', 0, 320);
       } else if (event.type === 'hook-pull' && event.amount > 1) {
@@ -331,13 +337,23 @@
   }
   function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
   function selectedMelee() { return C.canUseSpear(camp) && meleeChoice === 'spear' ? 'spear' : 'blade'; }
+  function safeCompanion(value) {
+    if (value === null || value === undefined) return null;
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 || value.kind !== 'fox' || !C.validFoxName(value.name) || value.name !== value.name.trim()) return false;
+    return { kind: 'fox', name: value.name };
+  }
+  function companionUpdates() {
+    if (!state || state.practice || state.mode !== 'random' || !state.foxRescue || !state.foxRescue.rescued || !state.players[localId()] || camp.camp.companion.rescued) return;
+    camp = C.rescueFox(camp); writeCamp();
+    toast('灰尾狐已获救，正在营地等你。下次出发可带它同行。', 5200);
+  }
   function safeCampLoadout(value) {
     if (value === undefined) return { upgrades: [] };
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !Array.isArray(value.upgrades) || value.upgrades.length > 3 || new Set(value.upgrades).size !== value.upgrades.length || value.upgrades.some(id => !C.CAMP_UPGRADES.some(upgrade => upgrade.id === id))) return null;
     return { upgrades: C.CAMP_UPGRADES.filter(upgrade => value.upgrades.includes(upgrade.id)).map(upgrade => upgrade.id) };
   }
   function sendCampLoadout() {
-    if (net && net.connected && net.role === 'guest' && !playing()) net.send({ type: 'loadout', weapon: selectedWeapon(), melee: selectedMelee(), camp: { upgrades: C.departure(camp).upgrades } });
+    if (net && net.connected && net.role === 'guest' && !playing()) net.send({ type: 'loadout', weapon: selectedWeapon(), melee: selectedMelee(), companion: C.companionDeparture(camp), foxRescued: camp.camp.companion.rescued, camp: { upgrades: C.departure(camp).upgrades } });
   }
   function missionInfo(id) { return [...C.MISSIONS, ...(C.CHAPTERS || [])].find(mission => mission.id === id) || C.MISSIONS[0]; }
   function chapterProgress() { return C.chapterProgress(camp); }
@@ -434,6 +450,15 @@
     $('unlock-scatter').disabled = camp.scatter || camp.coins < 30;
     $('unlock-scatter').textContent = camp.scatter ? '已解锁 · 出发前可选择' : `30 星屑解锁${camp.coins < 30 ? ' · 通关一局即可' : ''}`;
     const departure = C.departure(camp), locked = !!(account && (account.busy || account.needsChoice));
+    const fox = camp.camp.companion;
+    $('companion-name').disabled = locked || !fox.rescued;
+    $('companion-name-save').disabled = locked || !fox.rescued;
+    $('companion-equipped').disabled = locked || !fox.rescued;
+    $('companion-equipped').checked = fox.equipped;
+    // Preserve an in-progress name edit through unrelated camp refreshes.
+    if (document.activeElement !== $('companion-name') || !fox.rescued || locked) $('companion-name').value = fox.rescued ? fox.name : '';
+    $('companion-status').textContent = locked ? account.needsChoice ? '请先完成账号存档选择。' : '正在同步，稍后可调整。' :
+      !fox.rescued ? '随机远征的遗迹支路里，有一只被困的灰尾狐。靠近笼子即可救出。' : playing() ? `${fox.name} · 随行配置在下次出发生效。` : `${fox.name}已回营 · ${fox.equipped ? '下次出发同行' : '留在营地休息'}`;
     const spearUnlocked = C.canUseSpear(camp), spearOption = $('start-melee').querySelector('option[value="spear"]');
     spearOption.disabled = !spearUnlocked;
     spearOption.textContent = spearUnlocked ? '遗迹长枪' : '长枪 · 第一节首通解锁';
@@ -461,6 +486,7 @@
     const preparationNames = C.CAMP_UPGRADES.filter(upgrade => departure.upgrades.includes(upgrade.id) && upgrade.id !== 'relicCase').map(upgrade => upgrade.name);
     if (net && net.connected && net.role === 'guest') preparationNames.push('出发遗物由房主携带');
     else if (relicLabel) preparationNames.push(relicLabel);
+    if (fox.rescued && fox.equipped) preparationNames.push(fox.name + '随行');
     $('departure-summary').textContent = preparationNames.length ? '营地整备 · ' + preparationNames.join(' / ') : '营地整备 · 可在营地工坊解锁';
     sendCampLoadout();
     showMission();
@@ -505,6 +531,8 @@
     remoteTutorialPending = false;
     remoteWeapon = 'pistol';
     remoteMelee = 'blade';
+    remoteCompanion = null;
+    remoteFoxRescued = false;
     remoteCamp = { upgrades: [] };
     remoteCampReady = false;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1;
@@ -513,6 +541,7 @@
     updateLobbyMenu();
   }
   function home() {
+    companionUpdates();
     shutdownNet(); state = null; mode = 'solo'; paused = false; disconnected = false;
     finished = ''; runId = ''; resultNext = null; clearInput(); resetSounds(); closeDialogs();
     $('start-screen').hidden = false; $('pause-screen').hidden = true; $('end-screen').hidden = true;
@@ -535,7 +564,7 @@
     // Restart the actual expedition, including after the player edited camp settings.
     if (state && state.mission) { mission = state.mission.id; difficulty = state.difficulty || 1; gameMode = state.mode || 'story'; }
     if (!canStart(gameMode, mission, difficulty)) { toast('这项故事任务尚未解锁，请先完成前一项任务。'); return; }
-    state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', meleeLoadout: selectedMelee(), partnerMeleeLoadout: isCoop ? remoteMelee : 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty, camp: C.departure(camp), partnerCamp: isCoop ? remoteCamp : undefined });
+    state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', meleeLoadout: selectedMelee(), partnerMeleeLoadout: isCoop ? remoteMelee : 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty, camp: C.departure(camp), partnerCamp: isCoop ? remoteCamp : undefined, companion: C.companionDeparture(camp), partnerCompanion: isCoop ? remoteCompanion : null, unlocks: { foxRescued: camp.camp.companion.rescued && (!isCoop || remoteFoxRescued) } });
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
@@ -613,6 +642,7 @@
     chooseMode(gameMode); hud();
   }
   function settle() {
+    companionUpdates();
     if (!state || state.status === 'playing' || finished === runId) return;
     finished = runId; clearInput(); paused = false; $('pause-screen').hidden = true; $('tutorial-panel').hidden = true;
     if (state.practice) {
@@ -666,11 +696,19 @@
     if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.weaponVersion !== 1 || s.tacticsVersion !== 1 || s.practice !== false || !['chapter', 'random', 'story', 'relay', 'hunt'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (!s.players || !s.players.p1 || !s.players.p2 || Object.keys(s.players).length !== 2) return false;
     if (!s.mission || !(s.mode === 'chapter' ? s.mission.id === 'chapter1' : C.MISSIONS.some(m => m.id === s.mission.id)) || ![1, 2].includes(s.difficulty) || !Array.isArray(s.runBuffs) || s.runBuffs.length > 6 || new Set(s.runBuffs).size !== s.runBuffs.length || s.runBuffs.some(id => !C.RELICS.includes(id))) return false;
-    const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, rooms: 16, interactables: 30, decoys: 8 };
+    const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, rooms: 16, interactables: 30, decoys: 8, companions: 2 };
     for (const [key, cap] of Object.entries(limits)) if (!Array.isArray(s[key]) || s[key].length > cap || s[key].some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
     const bounded = (n, max) => Number.isFinite(n) && n >= 0 && n <= max;
     const shortId = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
     const volleyIds = value => Array.isArray(value) && value.length <= 8 && new Set(value).size === value.length && value.every(shortId);
+    if (new Set(s.companions.map(fox => fox.ownerId)).size !== s.companions.length) return false;
+    for (const fox of s.companions) {
+      if (Object.keys(fox).length !== 13 || !['p1', 'p2'].includes(fox.ownerId) || !s.players[fox.ownerId] || fox.id !== 'fox-' + fox.ownerId || fox.kind !== 'fox' || !C.validFoxName(fox.name) || fox.name !== fox.name.trim() || fox.r !== 10 || !bounded(fox.x, 960) || !bounded(fox.y, 600) || !Number.isFinite(fox.facing) || Math.abs(fox.facing) > Math.PI * 4 || !['follow', 'idle', 'sniff', 'pounce'].includes(fox.mode) || !bounded(fox.assistCd, 6) || !bounded(fox.assistTime, .25) || fox.targetId !== null && !shortId(fox.targetId) || fox.hintId !== null && !shortId(fox.hintId)) return false;
+    }
+    if (s.mode === 'random' && s.foxRescue !== null) {
+      const rescue = s.foxRescue;
+      if (!rescue || typeof rescue !== 'object' || Array.isArray(rescue) || Object.keys(rescue).length !== 2 || !Number.isInteger(rescue.roomIndex) || rescue.roomIndex < 1 || rescue.roomIndex >= s.rooms.length || typeof rescue.rescued !== 'boolean' || s.rooms[rescue.roomIndex].kind === 'boss' || rescue.rescued && !s.rooms[rescue.roomIndex].visited) return false;
+    } else if (s.foxRescue !== null) return false;
     if (!['blade', 'spear'].includes(s.meleeLoadout) || !['blade', 'spear'].includes(s.partnerMeleeLoadout)) return false;
     const preparation = s.preparations;
     if (!preparation || typeof preparation !== 'object' || Array.isArray(preparation) || Object.keys(preparation).length !== 3 || !preparation.p1 || !preparation.p2 || !safeCampLoadout(preparation.p1) || !safeCampLoadout(preparation.p2) || ![null, ...C.RELICS].includes(preparation.startingRelic) || preparation.startingRelic !== null && (!preparation.p1.upgrades.includes('relicCase') || !s.runBuffs.includes(preparation.startingRelic))) return false;
@@ -698,8 +736,10 @@
       if (bullet.hook && (s.mode !== 'random' || bullet.friendly !== false || bullet.weapon !== null || bullet.volleyId !== null || !shortId(bullet.owner) || !bounded(bullet.ttl, 5) || !Number.isFinite(bullet.vx) || !Number.isFinite(bullet.vy) || Math.abs(bullet.vx) > 2000 || Math.abs(bullet.vy) > 2000 || !s.enemies.some(enemy => enemy.id === bullet.owner && enemy.kind === 'hookwarden' && enemy.hp > 0))) return false;
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
+      if (event.type === 'fox-rescued' && (s.mode !== 'random' || !s.foxRescue || !s.foxRescue.rescued || !['p1', 'p2'].includes(event.playerId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !Number.isInteger(event.amount) || !bounded(event.amount, 10) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'spear-thrust' && (!['p1', 'p2'].includes(event.playerId) || event.enemyId !== null && !shortId(event.enemyId) || event.weapon !== 'spear' || typeof event.perfect !== 'boolean' || !Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4 || !bounded(event.range, 250))) return false;
       if (event.type === 'lantern-guard' && (s.mode !== 'random' || !shortId(event.enemyId) || !shortId(event.sourceId) || event.enemyId === event.sourceId || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, 'blade', 'spear', 'pistol', 'scatter'].includes(event.weapon) || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount < 1 || !Number.isInteger(event.reduced) || !bounded(event.reduced, 1000) || event.reduced < 1)) return false;
       if (event.type === 'counterattack' && event.weapon != null && !['blade', 'spear'].includes(event.weapon)) return false;
@@ -735,6 +775,7 @@
     }
     for (const prop of s.props) if (prop.eventSeal != null && (typeof prop.eventSeal !== 'boolean' || prop.eventSeal && (prop.kind !== 'crate' || !s.roomEvent || s.roomEvent.kind !== 'storehouse' || prop.id !== s.roomEvent.sealId || prop.carriedBy || prop.thrown))) return false;
     for (const item of s.interactables) {
+      if (item.kind === 'fox-cage' && (s.mode !== 'random' || !s.foxRescue || s.room.index !== s.foxRescue.roomIndex || item.id !== 'fox-cage-' + s.room.index || typeof item.active !== 'boolean' || typeof item.used !== 'boolean' || item.used !== s.foxRescue.rescued || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50) || typeof item.label !== 'string' || item.label.length > 40)) return false;
       if (['forge', 'forge-reward', 'storehouse-switch', 'storehouse-cache'].includes(item.kind) && (s.mode !== 'random' || !s.roomEvent || s.roomEvent.kind !== (item.kind.startsWith('forge') ? 'forge' : 'storehouse') || typeof item.active !== 'boolean' || typeof item.used !== 'boolean')) return false;
       if (item.kind === 'breach-cache' && (s.mode !== 'random' || s.roomEvent?.kind !== 'breach' || typeof item.active !== 'boolean' || typeof item.used !== 'boolean' || !shortId(item.id) || !bounded(item.x, 960) || !bounded(item.y, 600))) return false;
     }
@@ -815,9 +856,9 @@
           }
           remoteInput = input; remoteSeq = msg.seq; remoteAt = performance.now();
         }
-      } else if (msg.type === 'loadout' && !playing() && ['pistol', 'scatter'].includes(msg.weapon) && (msg.melee === undefined || ['blade', 'spear'].includes(msg.melee))) {
-        const preparation = safeCampLoadout(msg.camp);
-        if (preparation) { remoteWeapon = msg.weapon; remoteMelee = msg.melee || 'blade'; remoteCamp = preparation; remoteCampReady = true; updateLobbyMenu(); }
+      } else if (msg.type === 'loadout' && !playing() && ['pistol', 'scatter'].includes(msg.weapon) && (msg.melee === undefined || ['blade', 'spear'].includes(msg.melee)) && (msg.foxRescued === undefined || typeof msg.foxRescued === 'boolean')) {
+        const preparation = safeCampLoadout(msg.camp), companion = safeCompanion(msg.companion);
+        if (preparation && companion !== false && (msg.foxRescued !== false || companion === null)) { remoteWeapon = msg.weapon; remoteMelee = msg.melee || 'blade'; remoteCamp = preparation; remoteCompanion = companion; remoteFoxRescued = msg.foxRescued === true || !!companion; remoteCampReady = true; updateLobbyMenu(); }
       }
     } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && validState(msg.state)) {
       mode = 'guest'; state = msg.state; runId = msg.runId; finished = ''; paused = false; disconnected = false;
@@ -914,6 +955,16 @@
     updateCamp();
   });
   $('mode-select').addEventListener('change', updateCamp);
+  $('companion-name-save').onclick = () => {
+    if (account && (account.busy || account.needsChoice) || !camp.camp.companion.rescued) { updateCamp(); return; }
+    const name = $('companion-name').value.trim();
+    if (!C.validFoxName(name)) { toast('名字用 1–12 个汉字、字母或数字，也可加空格、·、下划线和短横线。'); return; }
+    camp = C.renameFox(camp, name); writeCamp(); toast('名字已保存。');
+  };
+  $('companion-equipped').addEventListener('change', () => {
+    if (account && (account.busy || account.needsChoice) || !camp.camp.companion.rescued) { updateCamp(); return; }
+    camp = C.equipFox(camp, $('companion-equipped').checked === true); writeCamp();
+  });
   $('mission-select').addEventListener('change', showMission);
   $('difficulty-select').addEventListener('change', showMission);
   $('open-coop').onclick = () => { enableAudio(); openDialog('coop-dialog'); };
@@ -1195,12 +1246,12 @@
         }
       }
     } else accumulator = 0;
-    chapterUpdates(); soundEvents();
+    companionUpdates(); chapterUpdates(); soundEvents();
     if (mode === 'host' && net && net.connected && state && now - lastSend >= 50) {
       net.send({ type: 'state', state: E.snapshot(state, true), runId }); lastSend = now;
     }
     settle();
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion() }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, now, reducedMotion: reducedMotion() }); }
+    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion() }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);

@@ -299,6 +299,7 @@
   }
   function interactable(c, item, time, state, localId, still = false) {
     if (!item || (item.kind === 'relic' && item.used)) return;
+    if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
     if (item.kind === 'breach-cache') { breachCache(c,item,state,localId); return; }
     if (['forge','forge-reward','storehouse-switch','storehouse-cache'].includes(item.kind)) { expeditionInteractable(c, item, still ? 0 : time, state, localId); return; }
@@ -661,6 +662,72 @@
       rect(c,x-6,y+7,4,9,'#b3d6c4');rect(c,x+3,y+7,4,9,'#b3d6c4');
       const scan=(time*.015+hash(d.id))%37;path(c,[[x-11,y-29+scan],[x+11,y-29+scan]],'#edffe3',2);
     });
+  }
+  function foxBody(c, fox, time, still = false, caged = false) {
+    const mode = caged ? 'idle' : fox.mode, pouncing = mode === 'pounce', sniffing = mode === 'sniff', sitting = mode === 'idle';
+    const clock = still ? 0 : time, side = Math.cos(num(fox.facing)) < 0 ? -1 : 1;
+    const stride = mode === 'follow' ? Math.sin(clock * .022 + hash(fox.id) % 13) * 2 : pouncing ? 2 : 0;
+    const wag = caged ? 0 : sniffing ? Math.sin(clock * .012) * 3 : Math.sin(clock * .004 + hash(fox.id) % 7);
+    const leap = pouncing ? Math.sin(Math.max(0, Math.min(1, num(fox.assistTime) / .24)) * Math.PI) * (still ? 2 : 4) : 0;
+    c.save(); c.scale(side,1); c.translate(0,-leap);
+    // The broad pale tail and two triangular ears stay recognizable beside
+    // the coats, bronze helmets and square crates at the game's small scale.
+    c.save(); c.translate(-7,sitting?1:-2); c.rotate((sitting?-.25:sniffing?.12:0)+wag*.055);
+    c.fillStyle='#344842'; c.beginPath(); c.moveTo(1,1); c.lineTo(-8,-11); c.lineTo(-19,-16); c.lineTo(-23,-9); c.lineTo(-21,0); c.lineTo(-11,6); c.lineTo(-2,6); c.closePath(); c.fill();
+    c.fillStyle='#a7b2aa'; c.beginPath(); c.moveTo(-1,1); c.lineTo(-9,-9); c.lineTo(-18,-13); c.lineTo(-20,-8); c.lineTo(-18,-1); c.lineTo(-10,3); c.lineTo(-2,4); c.closePath(); c.fill();
+    c.fillStyle='#e4e5d8'; c.beginPath(); c.moveTo(-11,-11); c.lineTo(-18,-13); c.lineTo(-20,-8); c.lineTo(-18,-1); c.lineTo(-13,1); c.lineTo(-14,-5); c.closePath(); c.fill(); c.restore();
+    if(sitting){rect(c,-7,-14,15,21,'#52665b');rect(c,-6,-14,12,18,'#aab7ad');rect(c,-4,-10,10,15,'#e4e6d8');rect(c,-8,4,8,4,'#8e9d90');rect(c,3,4,9,4,'#c7d1c2');}
+    else{
+      rect(c,-10,-10,22,14,'#344a42');rect(c,-9,-10,20,11,'#a7b4a8');rect(c,-8,-10,17,4,'#cbd2c4');rect(c,-6,-1,17,4,'#e0e3d2');
+      for(const [x,phase] of [[-7,1],[6,-1]]){rect(c,x,1+stride*phase,4,pouncing?3:7,'#8c9c8d');rect(c,x,6+stride*phase,6,2,'#cbd4c4');}
+    }
+    const hx=sitting?5:sniffing?11:9,hy=sitting?-16:sniffing?-7:-13;
+    c.save(); c.translate(hx,hy); if(sniffing)c.rotate(Math.sin(num(fox.facing))*side*.45);
+    c.fillStyle='#354c42';c.beginPath();c.moveTo(-8,-2);c.lineTo(-8,-12);c.lineTo(-1,-6);c.lineTo(5,-12);c.lineTo(9,-2);c.lineTo(7,8);c.lineTo(-4,9);c.closePath();c.fill();
+    c.fillStyle='#bdc8bb';c.beginPath();c.moveTo(-6,-2);c.lineTo(-6,-9);c.lineTo(-1,-4);c.lineTo(4,-9);c.lineTo(7,-2);c.lineTo(6,6);c.lineTo(-3,7);c.closePath();c.fill();
+    rect(c,-5,-6,2,4,'#9a8e80');rect(c,3,-6,2,4,'#9a8e80');
+    c.fillStyle='#edf0dd';c.beginPath();c.moveTo(-4,2);c.lineTo(5,1);c.lineTo(13,5);c.lineTo(7,9);c.lineTo(0,7);c.closePath();c.fill();
+    rect(c,11,4,3,3,'#30473d');rect(c,4,-1,2,3,'#334638');rect(c,5,-1,1,1,'#eee3b9');
+    // The owner's small cloth tie identifies two foxes without another HUD.
+    rect(c,-5,7,10,3,fox.ownerId==='p2'?'#bd8b75':'#88b39d');
+    c.restore();
+    if(pouncing){path(c,[[-17,3],[-11,0],[-6,-3]],'#c6d7c064',1);path(c,[[-18,7],[-12,5]],'#c6d7c048',1);}
+    c.restore();
+  }
+  function foxCompanion(c, fox, time, state, localId, still = false) {
+    if(!fox||fox.kind!=='fox')return;
+    const owner=state.players&&state.players[fox.ownerId];if(!owner)return;
+    const x=num(fox.x),y=num(fox.y),crowded=values(state.players).some(p=>!p.downed&&Math.hypot(num(p.x)-x,num(p.y)-y)<33)||values(state.enemies).some(e=>e.hp>0&&!e.dead&&Math.hypot(num(e.x)-x,num(e.y)-y)<num(e.r,16)+21);
+    shadow(c,x,y,10,.2);
+    c.save();c.translate(Math.round(x),Math.round(y));if(crowded)c.globalAlpha*=.48;
+    foxBody(c,fox,time,still);c.restore();
+    const observer=state.players&&state.players[localId],peaceful=!values(state.enemies).some(e=>e.hp>0&&!e.dead&&Math.hypot(num(e.x)-x,num(e.y)-y)<180);
+    if(fox.mode==='idle'&&fox.ownerId===localId&&observer&&!observer.downed&&!crowded&&peaceful&&Math.hypot(num(observer.x)-x,num(observer.y)-y)<110)label(c,String(fox.name||'灰尾狐').slice(0,12),x,y+20,'#b9ccbd',8);
+  }
+  function foxCage(c,item,time,state,localId,still=false){
+    const x=num(item.x),y=num(item.y),p=state.players&&state.players[localId],nearby=p&&!p.downed&&Math.hypot(num(p.x)-x,num(p.y)-y)<76,used=!!item.used,active=item.active!==false&&!used;
+    shadow(c,x,y,24,.3);c.save();c.translate(Math.round(x),Math.round(y));
+    rect(c,-25,-3,50,18,'#273e34');rect(c,-23,-1,46,12,'#685c42');rect(c,-20,2,40,7,'#393e2e');
+    rect(c,-23,-30,46,5,'#8f8056');rect(c,-22,-29,44,2,'#c1aa71');
+    rect(c,-24,-28,4,34,'#536554');rect(c,20,-28,4,34,'#536554');
+    for(const px of[-13,0,13])rect(c,px-1,-28,2,29,'#5a6b54');
+    if(!used){c.save();c.translate(1,1);c.scale(.72,.72);foxBody(c,{id:item.id,kind:'fox',ownerId:'p1',facing:0,mode:'idle',assistTime:0},time,still,true);c.restore();}
+    rect(c,-25,9,50,5,'#998254');rect(c,-24,9,48,2,'#c6ac72');
+    if(used){
+      // An open front, empty straw and tilted door survive return visits.
+      rect(c,-17,3,7,2,'#a69561');rect(c,4,4,11,2,'#9c8c58');
+      path(c,[[-22,-25],[-37,-18],[-37,13],[-22,9]],'#93a080',3);path(c,[[-29,-21],[-29,11]],'#667b63',2);
+    }else{
+      for(const px of[-15,-4,8,19])rect(c,px,-26,2,35,'#8c9b7d');
+      rect(c,-22,-15,44,3,'#859374');rect(c,-3,-11,9,10,'#334b3c');rect(c,-1,-9,5,6,'#d0b77a');rect(c,1,-8,1,3,'#695a3d');
+      rect(c,-10,-33,22,4,'#596c53');rect(c,-7,-34,16,2,'#8a9b77');
+    }
+    c.restore();
+    if(nearby&&(active||used)){
+      const caption=active?'E · '+(item.label||'打开兽笼'):'兽笼已空',width=Math.min(210,String(caption).length*10+16);
+      const belowPlayer=Math.abs(num(p.x)-x)<92&&num(p.y)>y&&num(p.y)<y+70,ty=Math.min(H-22,Math.max(y+40,belowPlayer?num(p.y)+30:0));
+      rect(c,x-width/2,ty-10,width,20,'#102823e8');label(c,caption,x,ty,active?'#e1d5a8':'#9aac95',active?10:9);
+    }
   }
   function player(c, p, time, localId, state) {
     if (!p || p.dead) return;
@@ -1246,7 +1313,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -1336,6 +1403,17 @@
       if (e.kind === 'breach' && e.type === 'event-complete') continue;
       if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
       if(tacticsEffect(c,e,age,events,state,still))continue;
+      if(e.type==='fox-rescued'||e.type==='fox-assist'||e.type==='fox-sniff'){
+        const rescued=e.type==='fox-rescued',assist=e.type==='fox-assist',life=rescued?.8:.3;if(age>life)continue;
+        const ratio=age/life,motion=still?.2:ratio,x=num(e.x),y=num(e.y);
+        alpha(c,1-ratio,()=>{
+          if(rescued){c.strokeStyle='#b7d4bc88';c.lineWidth=1;c.beginPath();c.ellipse(x,y+8,18+motion*16,8+motion*6,0,0,Math.PI*2);c.stroke();label(c,'小狐脱困',x,y-47-motion*6,'#d0e0c6',11);}
+          else if(assist){
+            for(let i=0;i<3;i++)path(c,[[x-8+i*6,y-10],[x-4+i*6,y-3]],'#d9e2c7',1.5);
+            if(num(e.amount)>0)impactLabel(c,damageText(e.amount),x-20,y+21-motion*6,'#d5dfc3',10);
+          }else{for(const side of[-1,1])path(c,[[x+side*7,y-9],[x+side*10,y-13]],'#b8cbb184',1);}
+        });continue;
+      }
       if (e.type === 'spear-thrust') {
         const life = e.perfect ? .28 : .22; if (age > life) continue;
         const reach = Math.max(0, Math.min(e.perfect ? 250 : 156, num(e.range))); if (reach < 2) continue;
@@ -1716,6 +1794,9 @@
     const torchList = values(state.torches || state.lanterns);
     if (torchList.length) torchList.forEach(t => lantern(c, t.x, t.y, time));
     else { lantern(c, 77, 53, time); lantern(c, W - 77, 53, time); lantern(c, 77, H - 47, time); lantern(c, W - 77, H - 47, time); }
+    // Small friendly bodies stay below both danger footprints and all actors.
+    // Their position belongs to the engine; the renderer adds only a tiny hop.
+    values(state.companions).forEach(fox=>foxCompanion(c,fox,time,state,localId,still));
     values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
@@ -1800,6 +1881,10 @@
     for (const [x,y] of [[676,376],[684,391],[705,396],[727,385],[729,369],[712,357],[689,357]]) { ellipse(c,x,y,7,4,'#182e2b'); rect(c,x-5,y-4,10,6,'#788369'); rect(c,x-4,y-4,8,2,'#9a9e7b'); }
     player(c, { id:'p1',x:647,y:375,r:14,hp:100,maxHp:100,weapon:'pistol',facing:.2 }, time, '', { players:[],props:[] });
     player(c, { id:'p2',x:754,y:411,r:14,hp:100,maxHp:100,weapon:'pistol',facing:-2.2 }, time, '', { players:[],props:[] });
+    if(profile.companion&&profile.companion.kind==='fox'){
+      shadow(c,679,439,10,.22);c.save();c.translate(679,439);
+      foxBody(c,{id:'camp-fox',kind:'fox',ownerId:'p1',name:profile.companion.name,facing:-.4,mode:'idle',assistTime:0},time,!!profile.reducedMotion);c.restore();
+    }
     // Broken column in the foreground, with a scattering of young plants.
     wall(c, { x: 551, y: 481, w: 53, h: 40 }); rect(c, 546, 477, 63, 9, '#78906b'); rect(c, 552, 474, 48, 4, '#9caa7b'); grass(c, 558, 476, '#a1af74');
     for (const [x,y,s] of [[629,491,1.4],[907,510,1.3],[892,241,1],[587,154,1],[803,527,1]]) grass(c,x,y,'#6f8c50',s);
