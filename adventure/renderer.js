@@ -300,6 +300,7 @@
   function interactable(c, item, time, state, localId, still = false) {
     if (!item || (item.kind === 'relic' && item.used)) return;
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
+    if (item.kind === 'breach-cache') { breachCache(c,item,state,localId); return; }
     if (['forge','forge-reward','storehouse-switch','storehouse-cache'].includes(item.kind)) { expeditionInteractable(c, item, still ? 0 : time, state, localId); return; }
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
@@ -381,6 +382,106 @@
     const textY = y + (machine ? 62 : kind === 'relic' ? 25 : 30);
     label(c, nearby && active ? 'E · ' + name : name, x, textY, item.used ? '#758f7b' : active ? color : '#7e927b', kind === 'relic' ? 9 : 10);
     if (nearby && item.description && !item.used) label(c, item.description, x, textY+17, active ? '#c6d0aa' : '#94a58c', 8);
+  }
+  function breachGeometry(state) {
+    const run=state.roomEvent;
+    if(state.mode!=='random'||!run||run.kind!=='breach')return null;
+    const solid=values(state.walls).find(w=>w.id===run.wallId&&w.breachWall);
+    if(solid)return{run,wall:solid};
+    // The permanent chamber frame also describes the missing wall after a
+    // revisit. No renderer history is needed to remember the collapsed gap.
+    if(run.stage!=='complete')return null;
+    const frame=values(state.walls).filter(w=>w.breachFrame&&num(w.w)>num(w.h)&&num(w.h)<30);
+    if(frame.length<2)return null;
+    const y=Math.max(...frame.map(w=>num(w.y))),bottom=frame.filter(w=>num(w.y)===y).sort((a,b)=>num(a.x)-num(b.x));
+    if(bottom.length<2)return null;
+    const left=bottom[0],right=bottom[bottom.length-1],x=num(left.x)+num(left.w),width=num(right.x)-x;
+    if(width<=0)return null;
+    return{run,wall:{x,y,w:width,h:num(left.h,18)}};
+  }
+  function breachCache(c,item,state,localId) {
+    if(!state.roomEvent||state.roomEvent.kind!=='breach')return;
+    const x=num(item.x),y=num(item.y),used=!!item.used||state.roomEvent.collected,active=item.active!==false&&!used;
+    const p=state.players&&state.players[localId],near=p&&!p.downed&&Math.hypot(num(p.x)-x,num(p.y)-y)<96;
+    shadow(c,x,y,26,.32);c.save();c.translate(Math.round(x),Math.round(y));
+    if(!used)glow(c,0,-9,active?60:34,active?'#b6d7b828':'#b6d7b80e');
+    rect(c,-27,-8,54,25,'#253d32');rect(c,-24,-8,48,22,'#7a8565');rect(c,-24,9,48,6,'#4d6651');
+    rect(c,-26,used?-26:-15,52,8,'#9d9f77');rect(c,-23,used?-26:-15,46,3,'#d0cda0');
+    for(const side of[-1,1])rect(c,side*19-3,-5,6,18,'#b7b98a');
+    if(used){rect(c,-18,-8,36,12,'#19372c');rect(c,-17,-7,34,3,'#102c25');rect(c,-13,5,26,3,'#526c54');}
+    else{
+      rect(c,-12,-9,24,23,'#d3d6af');rect(c,-3,-6,6,17,'#627e65');rect(c,-8,-1,16,6,'#627e65');
+      rect(c,16,-24,8,16,'#678e7a');rect(c,17,-23,3,13,'#bad1aa');rect(c,17,-27,6,4,'#d6ce9e');
+      rect(c,-22,-10,10,5,'#aeb99a');
+    }
+    c.restore();
+    // Locked supplies remain visible behind the stone, with no misleading
+    // interaction invitation through that intact wall.
+    if(near&&(active||used)){
+      const hintY=Math.max(y+55,num(p.y)+38);
+      rect(c,x-(active?88:58),hintY-12,active?176:116,active?42:24,'#102823ed');
+      if(active){label(c,'E · 领取藏室补给',x,hintY,'#d8dfaf',10);label(c,'全队恢复 2 点生命',x,hintY+16,'#adbf9d',9);}
+      else label(c,'补给已取走',x,hintY,'#91a58d',9);
+    }
+  }
+  function breachWindupClear(state,guardian,wall) {
+    const run=state.roomEvent;
+    if(state.mode!=='random'||!run||run.kind!=='breach'||run.stage!=='ready'||guardian.id!==run.guardianId||guardian.kind!=='brute'||!guardian.elite||guardian.hp<=0)return false;
+    const x=num(wall.x),y=num(wall.y),width=num(wall.w),height=num(wall.h);
+    if(x<=28||y<=28||x+width>=W-28||y+height>=H-28)return false;
+    const target={x:Math.max(x,Math.min(x+width,num(guardian.x))),y:Math.max(y,Math.min(y+height,num(guardian.y)))};
+    const distance=Math.hypot(num(guardian.x)-target.x,num(guardian.y)-target.y);if(distance>180)return false;
+    const count=Math.max(1,Math.ceil(distance/4));
+    const circleRect=(px,py,w)=>{
+      const nearestX=Math.max(num(w.x),Math.min(num(w.x)+num(w.w),px)),nearestY=Math.max(num(w.y),Math.min(num(w.y)+num(w.h),py));
+      return(px-nearestX)*(px-nearestX)+(py-nearestY)*(py-nearestY)<4;
+    };
+    // Mirror the simulation's small swept ray. The broad quake footprint is
+    // deliberately insufficient: intervening cover prevents this invitation.
+    for(let i=0;i<=count;i++){
+      const px=num(guardian.x)+(target.x-num(guardian.x))*i/count,py=num(guardian.y)+(target.y-num(guardian.y))*i/count;
+      if(values(state.walls).some(w=>w!==wall&&circleRect(px,py,w))||values(state.doors).some(d=>d.locked&&circleRect(px,py,d))||
+        values(state.props).some(q=>!q.destroyed&&(q.kind==='crate'||q.kind==='barrel')&&Math.hypot(num(q.x)-px,num(q.y)-py)<num(q.r)+2))return false;
+    }
+    return true;
+  }
+  function breachScene(c,state,time,localId,still) {
+    const info=breachGeometry(state);if(!info)return;
+    const{run,wall:w}=info,x=num(w.x),y=num(w.y),width=num(w.w),height=num(w.h),cx=x+width/2;
+    if(run.stage==='complete'){
+      // Rubble stays at the jambs. The clear central strip matches the newly
+      // walkable collision gap and is not painted like a remaining barrier.
+      for(const side of[-1,1])for(let i=0;i<4;i++){
+        const px=cx+side*(width/2-4+i*3),py=y+height/2+(i%2?9:-3);
+        rect(c,px-5,py-3,9-i,5+i%2,'#596d56');rect(c,px-4,py-3,7-i,2,'#98a080');
+      }
+      for(const [dx,dy]of[[-23,7],[17,18],[32,-1],[-38,23]])rect(c,cx+dx,y+dy,3,2,'#7d8c6a66');
+      path(c,[[x+3,y-2],[x+7,y+4],[x+3,y+11],[x+5,y+height+4]],'#b2b18b',2);
+      path(c,[[x+width-3,y-2],[x+width-8,y+5],[x+width-3,y+12],[x+width-6,y+height+4]],'#9fa27c',2);
+      return;
+    }
+    const guardian=values(state.enemies).find(e=>e.id===run.guardianId&&e.hp>0&&!e.dead);
+    const charged=guardian&&guardian.rhythm&&guardian.rhythm.type==='quake'&&guardian.rhythm.phase==='windup'&&breachWindupClear(state,guardian,w);
+    const progress=charged?1-Math.max(0,Math.min(1,num(guardian.rhythm.remaining)/Math.max(.01,num(guardian.rhythm.duration,1)))):0;
+    const fractures=[[[.13,0],[.27,.31],[.20,.55],[.36,1]],[[.68,0],[.57,.35],[.65,.69],[.51,1]],[[.27,.31],[.48,.52],[.57,.35]],[[.65,.69],[.84,.55],[.95,.78]]];
+    for(const points of fractures){const a=points.map(([px,py])=>[x+px*width,y+py*height]);path(c,a,'#1a322c',4);path(c,a,charged?'#f0cf91':'#c1b88b',charged?2.5:1.5);}
+    for(const px of[.05,.44,.91])rect(c,x+px*width,y+height-1,4,3,'#8f9b78');
+    if(charged){
+      glow(c,cx,y+height/2,58,'#e2bd6222');
+      const phaseTime=still?0:time;
+      for(let i=0;i<5;i++){
+        const phase=((phaseTime*.0008+i*.173)%1+1)%1,px=x+width*(.12+i*.18);
+        alpha(c,(.2+progress*.5)*(1-phase),()=>rect(c,px+Math.sin(i*4)*phase*7,y+height+phase*17,2,2,'#d9ca9a'));
+      }
+    }
+    const p=state.players&&state.players[localId],px=p?Math.max(x,Math.min(x+width,num(p.x))):0,py=p?Math.max(y,Math.min(y+height,num(p.y))):0;
+    if(p&&!p.downed&&Math.hypot(num(p.x)-px,num(p.y)-py)<112){
+      const hintY=Math.max(y+height+39,num(p.y)+38);
+      const crowded=hintX=>values(state.enemies).some(e=>!e.dead&&e.hp>0&&Math.abs(num(e.x)-hintX)<104+num(e.r,20)+16&&hintY+12>num(e.y)-num(e.r,20)-25&&hintY-12<num(e.y)+num(e.r,20)+15);
+      const hintX=crowded(cx)?[Math.max(116,num(p.x)-140),Math.min(W-116,num(p.x)+140)].find(x=>!crowded(x))??cx:cx;
+      rect(c,hintX-104,hintY-12,208,24,'#102823ed');
+      label(c,guardian?'贴近裂墙的重砸能震开它':'守卫已倒下 · 本局无法震开',hintX,hintY,guardian?'#c8c39d':'#93a58e',10);
+    }
   }
   function expeditionInteractable(c, item, time, state, localId) {
     const x = num(item.x), y = num(item.y), current = state.roomEvent || {}, kind = item.kind;
@@ -1065,7 +1166,7 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -1152,8 +1253,22 @@
   function combatEffects(c, events, state, still) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (e.kind === 'breach' && e.type === 'event-complete') continue;
       if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
       if(tacticsEffect(c,e,age,events,state,still))continue;
+      if(e.type==='wall-breached'){
+        const life=.8;if(age>life)continue;
+        const ratio=age/life,motion=still?.22:ratio,x=num(e.x),y=num(e.y);
+        alpha(c,1-ratio,()=>{
+          for(let i=0;i<12;i++){
+            const side=i%2?-1:1,dx=side*(9+(i%6)*8+motion*15),dy=Math.sin(i*3.7)*10+motion*15;
+            rect(c,x+dx,y+dy,3+i%3,2+i%2,i%3?'#a5ad89':'#d7c9a1');
+          }
+          ellipse(c,x,y+7,21+motion*31,8+motion*8,'#b6b59a12');
+          label(c,'裂墙震开',x,y-44-motion*8,'#d8d6af',12);
+        });
+        continue;
+      }
       if (e.type === 'hook-pull') {
         if(age>.42)continue;
         const ratio=age/.42,x=num(e.x),y=num(e.y),color=e.target==='enemy'?'#d2e5b1':'#d7bc88';
@@ -1456,6 +1571,7 @@
         c.beginPath(); c.moveTo(point.x, point.y - 5); c.lineTo(point.x + 4, point.y); c.lineTo(point.x, point.y + 5); c.lineTo(point.x - 4, point.y); c.closePath(); c.fill();
       } else if (room.visited && room.elite) {
         rect(c, point.x - 2, point.y - 2, 4, 4, '#e5bc70');
+        if(room.eventKind==='breach')path(c,[[point.x-5,point.y-5],[point.x-2,point.y-1],[point.x-4,point.y+1],[point.x-1,point.y+5]],'#c6c19b',1.5);
       } else if (room.visited && room.eventKind === 'sluice') {
         path(c,[[point.x-3,point.y-1],[point.x,point.y+1],[point.x+3,point.y-1]],'#8dbcb8',2);
       } else if (room.visited && room.eventKind === 'lift') {
@@ -1482,6 +1598,7 @@
     floor(c, state);
     chapterFloor(c, state, time);
     values(state.walls).forEach(w => wall(c, w));
+    breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
     values(state.portals).forEach(p => portal(c, p, time));
     huntTracks(c,state);

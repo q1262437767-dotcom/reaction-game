@@ -50,7 +50,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       // A shotgun can land five pellets at once. Routine damage feedback may
@@ -599,8 +599,12 @@
       var pick = Math.floor(random(s) * (q + 1)), old = eliteKinds[q]; eliteKinds[q] = eliteKinds[pick]; eliteKinds[pick] = old;
     }
     eliteKinds = ['hookwarden'].concat(eliteKinds.slice(0, 2));
+    // Reuse one of the three initial elite slots. Keep the same shuffle and
+    // random draws while ensuring the wall puzzle has its real heavy guard.
+    if (eliteKinds.indexOf('brute') < 0) eliteKinds[2] = 'brute';
     battleRooms.slice(0, 3).forEach(function (r, index) {
       r.elite = true; r.eliteKind = eliteKinds[index]; r.eliteBuff = relicPool[index];
+      if (r.eliteKind === 'brute') r.eventKind = 'breach';
     });
     battleRooms.slice(3, 5).forEach(function (r, index) { r.eventKind = index ? 'lift' : 'sluice'; });
     battleRooms.slice(5, 7).forEach(function (r, index) { r.eventKind = index ? 'storehouse' : 'forge'; });
@@ -675,7 +679,7 @@
     }
     if (room.eventKind) {
       data.roomEvent = { kind: room.eventKind, stage: 'ready', enemyIds: [], collected: false };
-      if (room.eventKind !== 'storehouse') data.interactables.push({ id: 'event-' + room.index, kind: room.eventKind, x: 480, y: room.eventKind === 'forge' ? 405 : 440, r: 25,
+      if (room.eventKind !== 'storehouse' && room.eventKind !== 'breach') data.interactables.push({ id: 'event-' + room.index, kind: room.eventKind, x: 480, y: room.eventKind === 'forge' ? 405 : 440, r: 25,
         label: room.eventKind === 'sluice' ? '开启水闸' : room.eventKind === 'forge' ? '启动锻炉' : '启动升降台', active: true, used: false });
       if (room.eventKind === 'sluice') {
         room.name = '失压水闸';
@@ -702,6 +706,23 @@
         data.interactables.push({ id: 'storehouse-cache-' + room.index, kind: 'storehouse-cache', x: 700, y: 230, r: 23,
           label: '领取仓库存货', active: false, used: false });
         data.enemies.forEach(function (foe) { if (foe.x > 550 && foe.y < 345) { foe.x = 450; foe.y = 170; } });
+      } else if (room.eventKind === 'breach') {
+        room.name = '裂墙藏室';
+        data.walls = data.walls.filter(function (w) { return w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28; });
+        data.fires = []; data.fountains = [];
+        data.props = data.props.filter(function (q) { return q.kind === 'crate' || q.kind === 'barrel'; });
+        // Keep the lower approach clear so the guardian can be baited toward
+        // the crack; portable cover belongs beside the northern approach.
+        data.props.forEach(function (q) { q.x = q.kind === 'crate' ? 330 : 480; q.y = q.kind === 'crate' ? 175 : 220; });
+        [rect(600, 110, 200, 16), rect(600, 110, 16, 212), rect(784, 110, 16, 212),
+          rect(600, 304, 44, 18), rect(756, 304, 44, 18)].forEach(function (wall) { wall.breachFrame = true; data.walls.push(wall); });
+        var cracked = rect(644, 304, 112, 18); cracked.id = 'breach-wall-' + room.index; cracked.breachWall = true; data.walls.push(cracked);
+        var guardian = data.enemies.find(function (foe) { return foe.kind === 'brute' && foe.elite; });
+        data.roomEvent.wallId = cracked.id; data.roomEvent.guardianId = guardian.id;
+        guardian.x = 200; guardian.y = 465;
+        data.enemies.forEach(function (foe) { if (foe !== guardian && foe.x > 580 && foe.y < 345) { foe.x = 480; foe.y = 170; } });
+        data.interactables.push({ id: 'breach-cache-' + room.index, kind: 'breach-cache', x: 700, y: 210, r: 23,
+          label: '领取藏室补给', active: false, used: false });
       } else room.name = '遗落升降台';
     }
     data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
@@ -1392,6 +1413,7 @@
         s.message = target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
           target.kind === 'chapter-lamp' ? '归途灯没有火种。守灯人还在等工坊的备用火。' :
           target.kind === 'storehouse-cache' ? s.roomEvent && s.roomEvent.stage === 'active' ? '先击退被声响引来的巡逻队' : '转动外侧机关，或击碎仓门封板' :
+          target.kind === 'breach-cache' ? '藏室仍被裂墙封住' :
           target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
           target.kind === 'extraction' ? '还缺补给：沿西侧光门返回搜索遗漏的蓝箱' : '先守住这一波，再操作信标';
         s.messageTime = 2;
@@ -1401,6 +1423,13 @@
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
       if (target.kind === 'storehouse-switch') return openStorehouse(s, false);
+      if (target.kind === 'breach-cache' && s.roomEvent && s.roomEvent.kind === 'breach' && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
+        target.used = true; target.active = false; s.roomEvent.collected = true;
+        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
+        event(s, 'supply-collected', { kind: 'breach', room: s.room.index, x: target.x, y: target.y });
+        burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
+        s.message = '藏室补给已领取 · 全队恢复 2 点生命'; s.messageTime = 3; return true;
+      }
       if (target.kind === 'forge-reward' && s.roomEvent && s.roomEvent.kind === 'forge' && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
         target.used = true; target.active = false; s.roomEvent.collected = true; s.runUpgrades.tempered = true;
         event(s, 'weapon-tempered', { room: s.room.index, x: target.x, y: target.y });
@@ -1746,6 +1775,36 @@
     event(s, type, { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
     particle(s, 'counter', p.x, p.y, { r: 45, ttl: 0.3, life: 0.3, color: '#bfffee' });
   }
+  function breachWallInReach(s, e) {
+    var state = s.roomEvent;
+    if (s.mode !== 'random' || !state || state.kind !== 'breach' || state.stage !== 'ready' ||
+        state.guardianId !== e.id || e.kind !== 'brute' || !e.elite || e.hp <= 0) return null;
+    var wall = s.walls.find(function (w) { return w.id === state.wallId && w.breachWall; });
+    // Never let a malformed marker remove a room boundary or another wall.
+    if (!wall || wall.x <= 28 || wall.y <= 28 || wall.x + wall.w >= W - 28 || wall.y + wall.h >= H - 28) return null;
+    var target = { x: clamp(e.x, wall.x, wall.x + wall.w), y: clamp(e.y, wall.y, wall.y + wall.h) };
+    var distance = dist(e, target);
+    if (distance > 180) return null;
+    var count = Math.max(1, Math.ceil(distance / 4));
+    for (var i = 0; i <= count; i += 1) {
+      var point = { x: e.x + (target.x - e.x) * i / count, y: e.y + (target.y - e.y) * i / count, r: 2 };
+      if (s.walls.some(function (w) { return w !== wall && circleRect(point, w); }) ||
+          s.doors.some(function (door) { return door.locked && circleRect(point, door); }) ||
+          s.props.some(function (q) { return solidProp(q) && dist(point, q) < q.r + point.r; })) return null;
+    }
+    return wall;
+  }
+  function breachFromQuake(s, e) {
+    var wall = breachWallInReach(s, e);
+    if (!wall) return;
+    s.walls = s.walls.filter(function (candidate) { return candidate !== wall; });
+    s.roomEvent.stage = 'complete';
+    s.interactables.forEach(function (q) { if (q.kind === 'breach-cache' && !q.used) q.active = true; });
+    var x = wall.x + wall.w / 2, y = wall.y + wall.h / 2;
+    burst(s, 'wood', x, y, '#c7aa79', 15);
+    event(s, 'wall-breached', { kind: 'breach', room: s.room.index, enemyId: e.id, wallId: wall.id, x: x, y: y });
+    s.message = '裂墙被重砸震开 · 藏室补给已经露出'; s.messageTime = 3;
+  }
   function resolveRhythm(s, e, r) {
     event(s, 'rhythm-beat', { attack: r.type, beat: r.beat, beats: r.beats, enemyId: e.id, x: e.x, y: e.y });
     if (r.type === 'hook') {
@@ -1801,6 +1860,9 @@
       }
       damagePlayer(s, p, !s.practice && r.type === 'quake' ? 2 : 1, r.type);
     });
+    // Resolve the actual blow against the original cover first. Someone behind
+    // the wall cannot be hurt by the same quake that reveals the new opening.
+    if (r.type === 'quake') breachFromQuake(s, e);
   }
   function rhythmWindup(s, e, type, beat, beats, target) {
     var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' || type === 'hook' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
