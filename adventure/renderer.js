@@ -668,7 +668,7 @@
     const clock = still ? 0 : time, side = Math.cos(num(fox.facing)) < 0 ? -1 : 1;
     const stride = mode === 'follow' ? Math.sin(clock * .022 + hash(fox.id) % 13) * 2 : pouncing ? 2 : 0;
     const wag = caged ? 0 : sniffing ? Math.sin(clock * .012) * 3 : Math.sin(clock * .004 + hash(fox.id) % 7);
-    const leap = pouncing ? Math.sin(Math.max(0, Math.min(1, num(fox.assistTime) / .24)) * Math.PI) * (still ? 2 : 4) : 0;
+    const leap = pouncing ? Math.sin(Math.max(0, Math.min(1, num(fox.assistTime) / .24)) * Math.PI) * (still ? 2 : fox.assistKind === 'counter' ? 7 : 4) : 0;
     c.save(); c.scale(side,1); c.translate(0,-leap);
     // The broad pale tail and two triangular ears stay recognizable beside
     // the coats, bronze helmets and square crates at the game's small scale.
@@ -1409,8 +1409,9 @@
         alpha(c,1-ratio,()=>{
           if(rescued){c.strokeStyle='#b7d4bc88';c.lineWidth=1;c.beginPath();c.ellipse(x,y+8,18+motion*16,8+motion*6,0,0,Math.PI*2);c.stroke();label(c,'小狐脱困',x,y-47-motion*6,'#d0e0c6',11);}
           else if(assist){
-            for(let i=0;i<3;i++)path(c,[[x-8+i*6,y-10],[x-4+i*6,y-3]],'#d9e2c7',1.5);
-            if(num(e.amount)>0)impactLabel(c,damageText(e.amount),x-20,y+21-motion*6,'#d5dfc3',10);
+            const strong=e.assistKind==='counter',ink=strong?'#efd599':'#d9e2c7';
+            for(let i=0;i<3;i++)path(c,[[x-8+i*6,y-10],[x-4+i*6,y-3]],ink,strong?2:1.5);
+            if(num(e.amount)>0)impactLabel(c,damageText(e.amount),x-20,y+21-motion*6,strong?'#efd599':'#d5dfc3',strong?11:10);
           }else{for(const side of[-1,1])path(c,[[x+side*7,y-9],[x+side*10,y-13]],'#b8cbb184',1);}
         });continue;
       }

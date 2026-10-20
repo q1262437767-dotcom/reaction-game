@@ -138,7 +138,7 @@
     if (s.practice || !owner || !option || option.kind !== 'fox') return null;
     var fox = { id: 'fox-' + owner.id, ownerId: owner.id, kind: 'fox', name: companionName(option.name),
       x: owner.x - 32, y: owner.y + 16, r: 10, facing: owner.facing, mode: 'idle',
-      assistCd: 0, assistTime: 0, targetId: null, hintId: null };
+      assistCd: 0, assistTime: 0, assistKind: null, targetId: null, hintId: null };
     s.companions.push(fox); placeCompanion(s, fox); return fox;
   }
   function addPlayer(s, requestedId, companionOption) {
@@ -998,7 +998,7 @@
     return true;
   }
   function clearFoxAction(fox) {
-    fox.mode = 'idle'; fox.assistTime = 0; fox.targetId = null; fox.hintId = null;
+    fox.mode = 'idle'; fox.assistTime = 0; fox.assistKind = null; fox.targetId = null; fox.hintId = null;
   }
   function placeCompanion(s, fox) {
     var owner = s.players[fox.ownerId];
@@ -1037,8 +1037,10 @@
       if (score < 24) break;
       [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]].forEach(function (cell) {
         var key = cell[1] * cols + cell[0];
+        var from = at === start ? fox : { x: x * size + 20, y: y * size + 20 };
+        var to = { x: cell[0] * size + 20, y: cell[1] * size + 20 };
         if (cell[0] < 1 || cell[0] >= cols - 1 || cell[1] < 1 || cell[1] >= rows - 1 || seen[key] !== undefined ||
-            collides(s, cell[0] * size + 20, cell[1] * size + 20, fox.r + 1, fox.id, false)) return;
+            collides(s, to.x, to.y, fox.r + 1, fox.id, false) || !foxSight(s, from, to, fox.r + 1)) return;
         seen[key] = at; queue.push(key);
       });
     }
@@ -1060,11 +1062,11 @@
     return hints.filter(function (q) { return dist(owner, q) <= 180 && dist(fox, q) <= 200 && foxSight(s, owner, q, 3) && foxSight(s, fox, q, 3); })
       .sort(function (a, b) { return (a.id === fox.hintId ? -1 : 0) - (b.id === fox.hintId ? -1 : 0) || dist(owner, a) - dist(owner, b); })[0] || null;
   }
-  function queueFoxAssist(s, owner, target) {
+  function queueFoxAssist(s, owner, target, counter) {
     var fox = s.companions.find(function (q) { return q.ownerId === owner.id; });
-    if (!fox || s.practice || owner.downed || target.hp <= 0 || fox.assistCd > 0 ||
+    if (!fox || s.practice || owner.downed || target.hp <= 0 || !counter && fox.assistCd > 0 ||
         dist(fox, target) > 320 || dist(fox, owner) > 220 || !foxSight(s, fox, target, 4)) return;
-    fox.mode = 'pounce'; fox.assistCd = 6; fox.assistTime = 0.24; fox.targetId = target.id; fox.hintId = null;
+    fox.mode = 'pounce'; fox.assistCd = counter ? 6 : 2.4; fox.assistTime = 0.24; fox.assistKind = counter ? 'counter' : 'bite'; fox.targetId = target.id; fox.hintId = null;
     fox.facing = Math.atan2(target.y - fox.y, target.x - fox.x);
   }
   function updateCompanions(s, dt) {
@@ -1084,15 +1086,15 @@
         if (travel > 1 && len(fox.x - oldX, fox.y - oldY) < travel * 0.4) { clearFoxAction(fox); return; }
         if (fox.assistTime <= 0) {
           if (target.hp > 0 && dist(fox, target) <= target.r + 32 && foxSight(s, fox, target, 3)) {
-            var amount = Math.min(target.hp, 1);
+            var assistKind = fox.assistKind, amount = Math.min(target.hp, assistKind === 'counter' ? 3 : 1);
             amount = damageEnemy(s, target, amount, owner.id, null, true);
-            event(s, 'fox-assist', { playerId: owner.id, enemyId: target.id, amount: amount, x: target.x, y: target.y });
+            event(s, 'fox-assist', { playerId: owner.id, enemyId: target.id, assistKind: assistKind, amount: amount, x: target.x, y: target.y });
           }
           clearFoxAction(fox);
         }
         return;
       }
-      fox.assistTime = 0; fox.targetId = null;
+      fox.assistTime = 0; fox.assistKind = null; fox.targetId = null;
       var goal = { x: owner.x - Math.cos(owner.facing) * 34, y: owner.y - Math.sin(owner.facing) * 34 };
       if (collides(s, goal.x, goal.y, fox.r + 1, fox.id, false)) goal = owner;
       if (dist(fox, goal) > 11) {
@@ -1437,7 +1439,7 @@
     if (s.status !== 'playing') return;
     s.status = status;
     s.bullets = [];
-    s.companions.forEach(function (fox) { fox.mode = 'idle'; fox.assistTime = 0; fox.targetId = null; fox.hintId = null; });
+    s.companions.forEach(clearFoxAction);
     Object.keys(s.players).forEach(function (key) { resetCombat(s.players[key]); });
     if (s.practice) {
       s.reward = null; s.rewardGranted = false;
@@ -1795,6 +1797,9 @@
         }
       }
     }
+    // A real weapon hit directs one finite assist. Pet/environment damage does
+    // not renew this command, so an idle player cannot sustain automatic combat.
+    if (!earnedCounter && ['blade', 'spear', 'pistol', 'scatter'].indexOf(weapon) >= 0 && s.players[owner] && amount > 0 && e.hp > 0) queueFoxAssist(s, s.players[owner], e, false);
     return amount;
   }
   function clearPropCarrier(s, q) {
@@ -2260,7 +2265,7 @@
             if (riposte) p.parryChain = 0;
           }
           event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, weapon: p.weapon, amount: counterDamage, x: foe.x, y: foe.y });
-          queueFoxAssist(s, p, foe);
+          queueFoxAssist(s, p, foe, true);
           return true;
         }
       }

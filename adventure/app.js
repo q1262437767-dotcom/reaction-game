@@ -235,7 +235,7 @@
       } else if (event.type === 'fox-rescued') {
         tone(760, .12, .018, 'sine', 0, 1050); tone(980, .16, .015, 'sine', .13, 680);
       } else if (event.type === 'fox-assist') {
-        if (soundReady('fox-assist', event.time, .2)) tone(370, .065, .013, 'triangle', 0, 170);
+        if (soundReady('fox-assist', event.time, .2)) tone(event.assistKind === 'counter' ? 550 : 370, .065, .013, 'triangle', 0, 170);
       } else if (event.type === 'hook-reflected') {
         tone(630, .10, .020, 'triangle', 0, 320);
       } else if (event.type === 'hook-pull' && event.amount > 1) {
@@ -703,7 +703,7 @@
     const volleyIds = value => Array.isArray(value) && value.length <= 8 && new Set(value).size === value.length && value.every(shortId);
     if (new Set(s.companions.map(fox => fox.ownerId)).size !== s.companions.length) return false;
     for (const fox of s.companions) {
-      if (Object.keys(fox).length !== 13 || !['p1', 'p2'].includes(fox.ownerId) || !s.players[fox.ownerId] || fox.id !== 'fox-' + fox.ownerId || fox.kind !== 'fox' || !C.validFoxName(fox.name) || fox.name !== fox.name.trim() || fox.r !== 10 || !bounded(fox.x, 960) || !bounded(fox.y, 600) || !Number.isFinite(fox.facing) || Math.abs(fox.facing) > Math.PI * 4 || !['follow', 'idle', 'sniff', 'pounce'].includes(fox.mode) || !bounded(fox.assistCd, 6) || !bounded(fox.assistTime, .25) || fox.targetId !== null && !shortId(fox.targetId) || fox.hintId !== null && !shortId(fox.hintId)) return false;
+      if (Object.keys(fox).length !== 14 || !['p1', 'p2'].includes(fox.ownerId) || !s.players[fox.ownerId] || fox.id !== 'fox-' + fox.ownerId || fox.kind !== 'fox' || !C.validFoxName(fox.name) || fox.name !== fox.name.trim() || fox.r !== 10 || !bounded(fox.x, 960) || !bounded(fox.y, 600) || !Number.isFinite(fox.facing) || Math.abs(fox.facing) > Math.PI * 4 || !['follow', 'idle', 'sniff', 'pounce'].includes(fox.mode) || ![null, 'bite', 'counter'].includes(fox.assistKind) || (fox.mode === 'pounce') !== (fox.assistKind !== null) || !bounded(fox.assistCd, 6) || !bounded(fox.assistTime, .25) || fox.targetId !== null && !shortId(fox.targetId) || fox.hintId !== null && !shortId(fox.hintId)) return false;
     }
     if (s.mode === 'random' && s.foxRescue !== null) {
       const rescue = s.foxRescue;
@@ -739,7 +739,7 @@
       if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
       if (event.type === 'fox-rescued' && (s.mode !== 'random' || !s.foxRescue || !s.foxRescue.rescued || !['p1', 'p2'].includes(event.playerId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
-      if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !Number.isInteger(event.amount) || !bounded(event.amount, 10) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !['bite', 'counter'].includes(event.assistKind) || !Number.isInteger(event.amount) || !bounded(event.amount, event.assistKind === 'counter' ? 3 : 1) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'spear-thrust' && (!['p1', 'p2'].includes(event.playerId) || event.enemyId !== null && !shortId(event.enemyId) || event.weapon !== 'spear' || typeof event.perfect !== 'boolean' || !Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4 || !bounded(event.range, 250))) return false;
       if (event.type === 'lantern-guard' && (s.mode !== 'random' || !shortId(event.enemyId) || !shortId(event.sourceId) || event.enemyId === event.sourceId || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, 'blade', 'spear', 'pistol', 'scatter'].includes(event.weapon) || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount < 1 || !Number.isInteger(event.reduced) || !bounded(event.reduced, 1000) || event.reduced < 1)) return false;
       if (event.type === 'counterattack' && event.weapon != null && !['blade', 'spear'].includes(event.weapon)) return false;
