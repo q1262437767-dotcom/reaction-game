@@ -26,6 +26,26 @@
     riposte: { label: '回刃纹章', description: '连续成功招架 2 次，下一次主动反击附带范围斩击' },
     decoy: { label: '留影灯芯', description: '精准闪避或看破后留下残影，吸引敌人的下一招' }
   };
+  var STYLES = [
+    { id: 'echo', label: '回响反击', requires: ['resonance', 'riposte'], description: '每次主动反击都附带回刃斩击' },
+    { id: 'pursuit', label: '闪身射击', requires: ['pierce', 'swift'], description: '闪避中开火，每轮中央弹伤害 +1' },
+    { id: 'phantom', label: '残影牵制', requires: ['swift', 'decoy'], description: '残影持续 5 秒，能牵制更远的可见敌人' }
+  ];
+  function activeStyles(s) {
+    if (!s || s.practice || s.mode !== 'random' || !Array.isArray(s.runBuffs)) return [];
+    return STYLES.filter(function (style) { return style.requires.every(function (key) { return s.runBuffs.indexOf(key) >= 0; }); })
+      .map(function (style) { return style.id; });
+  }
+  function relicStyleHint(s, buff) {
+    if (!s || s.practice || s.mode !== 'random' || !BUFFS[buff] || s.runBuffs.indexOf(buff) >= 0) return '';
+    var related = STYLES.filter(function (style) { return style.requires.indexOf(buff) >= 0; });
+    var next = related.find(function (style) { return style.requires.every(function (key) { return key === buff || s.runBuffs.indexOf(key) >= 0; }); });
+    if (next) return '补齐' + next.label + '：' + next.description;
+    if (!related.length) return '';
+    next = related[0];
+    var other = next.requires.find(function (key) { return key !== buff; });
+    return '与' + BUFFS[other].label + '搭配：' + next.label;
+  }
   var ROOM_DEFS = [
     { id: 'camp', name: '苔灯营地', kind: 'camp', next: 1 },
     { id: 'courtyard', name: '回声庭院', kind: 'battle', next: 2 },
@@ -50,7 +70,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|spear-thrust|lantern-guard|fox-rescued|fox-assist|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|spear-thrust|lantern-guard|fox-rescued|fox-assist|refuge-chosen|style-formed|style-trigger|boss-overload-open|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       // A shotgun can land five pellets at once. Routine damage feedback may
@@ -625,6 +645,17 @@
     });
     battleRooms.slice(3, 5).forEach(function (r, index) { r.eventKind = index ? 'lift' : 'sluice'; });
     battleRooms.slice(5, 7).forEach(function (r, index) { r.eventKind = index ? 'storehouse' : 'forge'; });
+    // Route choices use a separate seed-derived order: changing an encounter
+    // never consumes the content RNG used by elites and machinery rooms.
+    var plain = s.rooms.filter(function (r) { return r.kind === 'battle' && !r.elite && !r.eventKind; });
+    var far = plain.filter(function (r) { return distances[r.index] >= 2; });
+    var refuge = (far.length ? far : plain).slice().sort(function (a, b) {
+      return (a.neighbors.length === 1 ? 0 : 1) - (b.neighbors.length === 1 ? 0 : 1) ||
+        a.neighbors.length - b.neighbors.length || ((a.index + s.seed) % 13) - ((b.index + s.seed) % 13);
+    })[0];
+    refuge.kind = 'refuge'; refuge.name = '避风灯室'; refuge.cleared = true;
+    var encounters = ['patrol', 'crossfire', 'bulwark'];
+    plain.filter(function (r) { return r !== refuge; }).forEach(function (r, index) { r.encounter = encounters[(s.seed + index) % 3]; });
     s.exploration = { kills: 0, target: 0, totalEnemies: 0, bossAwake: false, bossSpawned: false, bossDefeated: false };
     var lanternRoom = s.rooms.find(function (r) { return r.kind === 'battle' && !r.elite && !r.eventKind; });
     s.rooms.forEach(function (r) {
@@ -709,16 +740,36 @@
     var count = 3 + (random(s) < 0.5 ? 1 : 0);
     for (var n = 0; n < count; n += 1) {
       var kind = room.elite && !n ? room.eliteKind || 'duelist' : kinds[Math.floor(random(s) * kinds.length)];
+      var encounterKinds = room.encounter === 'patrol' ? ['chaser', 'shooter', 'charger', 'chaser'] :
+        room.encounter === 'crossfire' ? ['shield', 'shooter', 'shooter', 'chaser'] :
+        room.encounter === 'bulwark' ? ['shield', 'shooter', 'charger', 'shield'] : null;
+      if (encounterKinds) kind = encounterKinds[n];
       // Consume the original kind draw, then reuse one ordinary slot. Counts,
       // elite slots and subsequent map RNG remain unchanged.
       if (withLantern && n === count - 1) kind = 'lamplighter';
-      var foe = enemy(s, kind, spots[n][0], spots[n][1]);
+      var encounterSpots = room.encounter === 'patrol' ? [[440, 235], [720, 300], [520, 385], [650, 430]] :
+        room.encounter === 'crossfire' ? [[470, 300], [710, 155], [710, 445], [560, 410]] :
+        room.encounter === 'bulwark' ? [[520, 300], [740, 240], [660, 420], [700, 350]] : spots;
+      var point = encounterSpots[n];
+      if (room.encounter && s.seed % 2) point = [W - point[0], H - point[1]];
+      var foe = enemy(s, kind, point[0], point[1]);
       if (room.elite && !n) {
         foe.elite = true; foe.relicBuff = room.eliteBuff;
         foe.hp = foe.maxHp = foe.maxHp + 5; foe.r += 4; foe.speed *= 1.08;
       }
       data.enemies.push(foe);
     }
+    if (room.kind === 'refuge') {
+      // Generate then discard the former ordinary room to retain all subsequent
+      // random draws and ids in the existing expedition content.
+      room.name = '避风灯室';
+      data.walls = data.walls.filter(function (w) { return w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28; });
+      data.enemies = []; data.props = []; data.fires = []; data.fountains = [];
+      data.interactables.push({ id: 'refuge-rest-' + room.index, kind: 'refuge-rest', x: 380, y: 300, r: 26,
+        label: '歇息 · 全队恢复2点生命', active: true, used: false });
+      data.interactables.push({ id: 'refuge-relic-' + room.index, kind: 'refuge-relic', x: 580, y: 300, r: 26,
+        label: '借取遗物 · 放弃治疗', active: s.runBuffs.length < 6, used: false });
+    } else if (room.encounter) room.name = { patrol: '巡逻交汇处', crossfire: '交叉哨阵', bulwark: '护灯防线' }[room.encounter];
     if (room.eventKind) {
       data.roomEvent = { kind: room.eventKind, stage: 'ready', enemyIds: [], collected: false };
       if (room.eventKind !== 'storehouse' && room.eventKind !== 'breach') data.interactables.push({ id: 'event-' + room.index, kind: room.eventKind, x: 480, y: room.eventKind === 'forge' ? 405 : 440, r: 25,
@@ -978,6 +1029,12 @@
       }
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
+    if (s.mode === 'random') alivePlayers(s).forEach(function (p) {
+      // An eastern arrival can meet the outside wall of the sealed warehouse.
+      // Keep the doorway and authored room intact; nudge only a blocked arrival
+      // to the closest valid spot before movement resumes.
+      if (collides(s, p.x, p.y, p.r, p.id, false)) placeEnemyInRoom(s, p, alivePlayers(s).filter(function (other) { return other !== p; }));
+    });
     resetCompanions(s);
     if (s.mode === 'relay' && s.props.some(function (q) { return q.id === s.relay.coreId; })) s.relay.coreRoom = index;
     if (s.mode === 'hunt') {
@@ -1196,6 +1253,7 @@
   }
   function takeRelic(s, item) {
     if (!item.active || item.used || !BUFFS[item.buff] || s.runBuffs.indexOf(item.buff) >= 0 || s.runBuffs.length >= 6) return false;
+    var beforeStyles = activeStyles(s);
     s.runBuffs.push(item.buff);
     s.interactables.forEach(function (q) {
       if (q.kind === 'relic' && (q.group === item.group || q.buff === item.buff)) {
@@ -1208,7 +1266,49 @@
     });
     s.message = '全队获得：' + item.label; s.messageTime = 3;
     event(s, 'relic-selected', { buff: item.buff, label: item.label });
+    activeStyles(s).forEach(function (style) {
+      if (beforeStyles.indexOf(style) < 0) event(s, 'style-formed', { style: style, playerId: null, x: item.x, y: item.y });
+    });
     particle(s, 'text', item.x, item.y - 25, { text: item.label, ttl: 1.6, life: 1.6, color: '#d8bcff' });
+    return true;
+  }
+  function chooseRefuge(s, p, item) {
+    if (s.mode !== 'random' || s.room.kind !== 'refuge' || !item.active || item.used) return false;
+    var choices = s.interactables.filter(function (q) { return q.kind === 'refuge-rest' || q.kind === 'refuge-relic'; });
+    if (choices.some(function (q) { return q.used; })) return false;
+    var available = Object.keys(BUFFS).filter(function (key) { return s.runBuffs.indexOf(key) < 0; });
+    var rest = item.kind === 'refuge-rest';
+    if (!rest && !available.length) { item.active = false; return false; }
+    // Consume the shared choice before healing/offering, so simultaneous team
+    // inputs cannot collect both rewards in one simulation step.
+    choices.forEach(function (q) { q.used = true; q.active = false; });
+    if (rest) {
+      alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
+      burst(s, 'heal', item.x, item.y, '#8ce6b0', 14);
+      s.message = '歇息片刻 · 全队恢复2点生命';
+    } else {
+      for (var i = available.length - 1; i > 0; i -= 1) {
+        var j = Math.floor(random(s) * (i + 1)), swap = available[i]; available[i] = available[j]; available[j] = swap;
+      }
+      // A deliberate detour should help finish a route already being built.
+      // The shuffle still selects between multiple missing pieces fairly.
+      var completing = available.find(function (key) {
+        return STYLES.some(function (style) { return style.requires.indexOf(key) >= 0 &&
+          style.requires.every(function (part) { return part === key || s.runBuffs.indexOf(part) >= 0; }); });
+      });
+      if (completing) { available.splice(available.indexOf(completing), 1); available.unshift(completing); }
+      var group = 'refuge-' + s.room.index;
+      s.relicRooms.push(group);
+      available.slice(0, 2).forEach(function (key, index) {
+        s.interactables.push({ id: id(s, 'relic-'), kind: 'relic', buff: key, group: group,
+          x: index ? 590 : 430, y: 390, r: 18, label: BUFFS[key].label, description: BUFFS[key].description,
+          active: true, used: false });
+      });
+      event(s, 'relic-offer', { group: group });
+      s.message = '借来一份力量 · 选择一件遗物';
+    }
+    s.messageTime = 3;
+    event(s, 'refuge-chosen', { playerId: p.id, choice: rest ? 'rest' : 'relic', room: s.room.index, x: item.x, y: item.y });
     return true;
   }
   function syncMission(s) {
@@ -1229,6 +1329,7 @@
     // Disable only that already-owned option instead of offering an inert choice.
     s.interactables.forEach(function (q) {
       if (q.kind === 'relic' && s.runBuffs.indexOf(q.buff) >= 0) { q.used = true; q.active = false; }
+      if (q.kind === 'refuge-relic') q.active = !q.used && s.runBuffs.length < Object.keys(BUFFS).length;
     });
     if (s.mode === 'random') {
       m.progress = Math.min(s.exploration.kills, s.exploration.target);
@@ -1568,7 +1669,8 @@
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (target) {
       if (!target.active) {
-        s.message = target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
+        s.message = target.kind === 'refuge-relic' ? '本局遗物已齐全，仍可在另一盏灯旁歇息' :
+          target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
           target.kind === 'chapter-lamp' ? '归途灯没有火种。守灯人还在等工坊的备用火。' :
           target.kind === 'storehouse-cache' ? s.roomEvent && s.roomEvent.stage === 'active' ? '先击退被声响引来的巡逻队' : '转动外侧机关，或击碎仓门封板' :
           target.kind === 'breach-cache' ? '藏室仍被裂墙封住' :
@@ -1585,6 +1687,7 @@
         return true;
       }
       if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
+      if (target.kind === 'refuge-rest' || target.kind === 'refuge-relic') return chooseRefuge(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
       if (target.kind === 'storehouse-switch') return openStorehouse(s, false);
@@ -1722,7 +1825,11 @@
       weapon: null, source: source, x: e.x, y: e.y });
   }
   function breakPosture(s, e, owner, weapon) {
-    e.posture = 0; e.stagger = Math.max(e.stagger, 1); e.rhythm = null; e.windup = 0; e.chargeTime = 0;
+    var overloadRecovery = s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && e.rhythm &&
+      e.rhythm.type === 'quake' && e.rhythm.phase === 'recover' && e.rhythm.beats === 2;
+    e.posture = 0; e.stagger = overloadRecovery ? 0 : Math.max(e.stagger, 1);
+    if (!overloadRecovery) e.rhythm = null;
+    e.windup = 0; e.chargeTime = 0;
     if (!/^(duelist|brute|pyromancer|hookwarden|boss)$/.test(e.kind)) e.stun = Math.max(e.stun, 1);
     e.attackCd = Math.max(e.attackCd, 0.8); e.shieldOpen = Math.max(e.shieldOpen, 1.6);
     event(s, 'posture-break', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
@@ -1843,6 +1950,7 @@
   }
   function shoot(s, p) {
     var scatter = p.weapon === 'scatter', n = scatter ? 5 : 1, volley = id(s, 'volley-');
+    var pursuit = p.dashTime > 0 && activeStyles(s).indexOf('pursuit') >= 0;
     // A precision defence offers either a sword counter or a ranged follow-up.
     // Firing a gun spends that choice; it never teleports the gunner into a slash.
     p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
@@ -1851,13 +1959,14 @@
       s.bullets.push({ id: id(s, 'bullet-'), x: p.x + Math.cos(a) * 23,
         y: p.y + Math.sin(a) * 23, r: scatter ? 4 : 4.5,
         vx: Math.cos(a) * (scatter ? 550 : 650), vy: Math.sin(a) * (scatter ? 550 : 650),
-        friendly: true, owner: p.id, damage: 1 + (s.runUpgrades.tempered && i === (scatter ? 2 : 0) ? 1 : 0), ttl: scatter ? 0.65 : 1.3,
+        friendly: true, owner: p.id, damage: 1 + ((s.runUpgrades.tempered ? 1 : 0) + (pursuit ? 1 : 0)) * (i === (scatter ? 2 : 0) ? 1 : 0), ttl: scatter ? 0.65 : 1.3,
         weapon: scatter ? 'scatter' : 'pistol', volleyId: volley, originX: p.x, originY: p.y,
         color: s.runBuffs.indexOf('pierce') >= 0 ? '#d8bcff' : scatter ? '#ffe6a0' : '#c4fff0',
         hitsLeft: s.runBuffs.indexOf('pierce') >= 0 ? 2 : 1, hitIds: [], dead: false });
     }
     p.fireCd = scatter ? 0.54 : 0.205;
     event(s, 'shoot', { playerId: p.id, weapon: p.weapon, x: p.x, y: p.y });
+    if (pursuit) event(s, 'style-trigger', { style: 'pursuit', playerId: p.id, enemyId: null, x: p.x, y: p.y });
     huntNoise(s, 2, p.x, p.y);
   }
   function hostileBullet(s, e, a, speed, radius) {
@@ -1946,9 +2055,11 @@
     p.guardCd = Math.min(p.guardCd, 0.12);
     if (kind === 'parry') p.parryChain = Math.min(2, (p.parryChain || 0) + 1);
     if (kind !== 'parry' && s.runBuffs.indexOf('decoy') >= 0) {
-      s.decoys.push({ id: id(s, 'decoy-'), playerId: p.id, x: p.dashOriginX, y: p.dashOriginY, r: 14, ttl: 3 });
+      var phantom = activeStyles(s).indexOf('phantom') >= 0;
+      s.decoys.push({ id: id(s, 'decoy-'), playerId: p.id, x: p.dashOriginX, y: p.dashOriginY, r: 14, ttl: phantom ? 5 : 3 });
       if (s.decoys.length > 4) s.decoys.shift();
       event(s, 'decoy', { playerId: p.id, x: p.dashOriginX, y: p.dashOriginY });
+      if (phantom) event(s, 'style-trigger', { style: 'phantom', playerId: p.id, enemyId: e.id, x: p.dashOriginX, y: p.dashOriginY });
     }
     if (s.practice) {
       if (kind === 'parry') s.practiceParries = (s.practiceParries || 0) + 1;
@@ -2054,6 +2165,7 @@
   }
   function rhythmWindup(s, e, type, beat, beats, target) {
     var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' || type === 'hook' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
+    if (s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && type === 'quake' && beat === 2) duration = 1.05;
     e.rhythm = { type: type, phase: 'windup', remaining: duration, duration: duration,
       beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x), targetId: target.id,
       range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'hook' ? 430 : type === 'quake' ? 450 : type === 'rush' || type === 'fireball' ? 560 : 235,
@@ -2130,6 +2242,14 @@
       if (r.phase === 'windup') {
         r.phase = 'active'; r.duration = 0.12; r.remaining = r.duration;
         resolveRhythm(s, e, r);
+        // The last shock has visibly exhausted the core. Even a successful
+        // precision dodge must retain this earned, shared opening.
+        if (s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && r.type === 'quake' && r.beat === 2 && r.beats === 2 && e.hp > 0) {
+          e.rhythm = r; e.stagger = 0;
+          r.phase = 'recover'; r.duration = 2; r.remaining = 2;
+          openWeakpoint(s, e, null, 'counter');
+          event(s, 'boss-overload-open', { enemyId: e.id, x: e.x, y: e.y, duration: 2 });
+        }
       } else if (r.phase === 'active') {
         if (r.beat < r.beats) rhythmWindup(s, e, r.type, r.beat + 1, r.beats, target);
         else {
@@ -2146,12 +2266,14 @@
     var distance = dist(e, target), boss = e.kind === 'boss';
     var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'hookwarden' ? ['hook', 'combo', 'sweep'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
       ['combo', 'thrust', boss && ((s.mode !== 'random' && s.mode !== 'chapter') || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
+    var overload = s.mode === 'random' && boss && e.stage === 2;
+    if (overload) type = ['combo', 'thrust', 'sweep', 'quake'][e.rhythmCycle % 4];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
     // A telegraph must start within the strike's reach. Previously a stationary
     // beginner saw slashes at ~168px even though they could only connect at 159px.
     var engageRange = type === 'combo' ? 128 : type === 'hook' ? 430 : type === 'thrust' ? 250 : type === 'rush' || type === 'fireball' ? 560 : type === 'quake' ? 460 : 230;
     if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
-      e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? 2 : 1, target); return true;
+      e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? overload ? 3 : 2 : type === 'quake' && overload ? 2 : 1, target); return true;
     }
     var approachRange = type === 'combo' ? 118 : type === 'hook' ? 320 : type === 'fireball' ? 320 : type === 'rush' ? 360 : boss ? 150 : 118;
     if (distance > approachRange || !lineClear(s, e, target, e.r + 1)) {
@@ -2234,7 +2356,10 @@
         else move(s, p, Math.cos(angle) * Math.min(85, gap), Math.sin(angle) * Math.min(85, gap), false);
         if (dist(p, foe) <= (spear ? 250 : 112) + foe.r && meleeLineClear(s, p, foe, 7)) {
           p.facing = angle; p.meleeTime = 0.24; p.fireCd = 0.34; p.guarding = false; p.guardWindow = 0; p.guardAttackLock = 0.28;
-          foe.stagger = foe.kind === 'boss' ? 1.05 : 0.7; foe.rhythm = null; foe.attackCd = 0.8;
+          var overloadRecovery = s.mode === 'random' && foe.kind === 'boss' && foe.stage === 2 && foe.rhythm && foe.rhythm.type === 'quake' && foe.rhythm.phase === 'recover' && foe.rhythm.beats === 2;
+          foe.stagger = overloadRecovery ? 0 : foe.kind === 'boss' ? 1.05 : 0.7;
+          if (!overloadRecovery) foe.rhythm = null;
+          foe.attackCd = 0.8;
           var counterKind = p.counterKind;
           p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
           var counterDamage = Math.min(foe.hp, foe.kind === 'boss' ? Math.max(6, Math.round(foe.maxHp * 0.04)) : 6);
@@ -2248,7 +2373,8 @@
           }
           openWeakpoint(s, foe, p.id, 'counter');
           var resonance = s.runBuffs.indexOf('resonance') >= 0;
-          var riposte = s.runBuffs.indexOf('riposte') >= 0 && p.parryChain >= 2;
+          var echo = activeStyles(s).indexOf('echo') >= 0;
+          var riposte = s.runBuffs.indexOf('riposte') >= 0 && (p.parryChain >= 2 || echo);
           if (resonance || riposte) {
             var radius = riposte ? 165 : 140;
             particle(s, riposte ? 'slash' : 'shockwave', p.x, p.y,
@@ -2263,6 +2389,7 @@
               }
             });
             if (riposte) p.parryChain = 0;
+            if (echo) event(s, 'style-trigger', { style: 'echo', playerId: p.id, enemyId: foe.id, x: p.x, y: p.y });
           }
           event(s, 'counterattack', { playerId: p.id, enemyId: foe.id, counterKind: counterKind, weapon: p.weapon, amount: counterDamage, x: foe.x, y: foe.y });
           queueFoxAssist(s, p, foe, true);
@@ -2308,7 +2435,8 @@
         });
         if (!e.alerted) return;
       }
-      var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < 600 && lineClear(s, e, d, 4); });
+      var decoyRange = activeStyles(s).indexOf('phantom') >= 0 ? 760 : 600;
+      var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < decoyRange && lineClear(s, e, d, 4); });
       var p = (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
       if (e.kind === 'lamplighter') {
         e.stagger = Math.max(0, e.stagger - dt);
@@ -2670,7 +2798,7 @@
     var special = s.interactables.filter(function (q) { return !q.used && q.kind !== 'relay-extraction' && dist(p, q) < 76; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (special) {
-      if (!special.active) return special.kind === 'chapter-fire' ? '炉心仍在暴走' :
+      if (!special.active) return special.kind === 'refuge-relic' ? '遗物已齐全，可在另一盏灯旁歇息' : special.kind === 'chapter-fire' ? '炉心仍在暴走' :
         special.kind === 'chapter-lamp' ? '归途灯还缺火种' : special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
         special.kind === 'extraction' ? '补给尚未齐全：返回前 3 间房搜索蓝箱' : '守住当前波次后可操作信标';
       return 'E · ' + special.label + (special.kind === 'relic' && s.mode !== 'random' ? '（同组只能选一件）' : '');
@@ -2790,7 +2918,7 @@
     return result;
   }
 
-  return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), create: create, addPlayer: addPlayer,
+  return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
     snapshot: snapshot, getHint: getHint, lanternSource: lanternSource };
 });

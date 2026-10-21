@@ -236,6 +236,14 @@
         tone(760, .12, .018, 'sine', 0, 1050); tone(980, .16, .015, 'sine', .13, 680);
       } else if (event.type === 'fox-assist') {
         if (soundReady('fox-assist', event.time, .2)) tone(event.assistKind === 'counter' ? 550 : 370, .065, .013, 'triangle', 0, 170);
+      } else if (event.type === 'refuge-chosen') {
+        tone(event.choice === 'rest' ? 420 : 740, .15, .018, 'sine'); tone(event.choice === 'rest' ? 630 : 990, .2, .014, 'sine', .1);
+      } else if (event.type === 'style-formed') {
+        tone(660, .15, .021, 'sine'); tone(880, .18, .018, 'sine', .08); tone(1100, .22, .013, 'sine', .16);
+      } else if (event.type === 'style-trigger') {
+        if (soundReady('style-' + event.style, event.time, .32)) tone(event.style === 'echo' ? 190 : event.style === 'pursuit' ? 810 : 490, .08, .012, 'triangle', 0, 140);
+      } else if (event.type === 'boss-overload-open') {
+        tone(240, .2, .022, 'triangle', 0, 580); tone(870, .13, .014, 'sine', .14);
       } else if (event.type === 'hook-reflected') {
         tone(630, .10, .020, 'triangle', 0, 320);
       } else if (event.type === 'hook-pull' && event.amount > 1) {
@@ -337,6 +345,9 @@
   }
   function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
   function selectedMelee() { return C.canUseSpear(camp) && meleeChoice === 'spear' ? 'spear' : 'blade'; }
+  function styleNames(value) {
+    return E.activeStyles(value).map(id => E.STYLES.find(style => style.id === id)?.label || id);
+  }
   function safeCompanion(value) {
     if (value === null || value === undefined) return null;
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 || value.kind !== 'fox' || !C.validFoxName(value.name) || value.name !== value.name.trim()) return false;
@@ -400,11 +411,11 @@
     $('story-mission-field').hidden = gameMode !== 'story';
     $('game-wrap').setAttribute('data-mode', state ? state.mode : gameMode);
     $('mission-name').textContent = random ? '迷雾远征' : relay ? '接力夺宝 · 试玩' : hunt ? '苔火猎场 · 试玩' : mission.name;
-    $('mission-description').textContent = random ? '裂墙后藏着补给，把巨兽引近再借重砸开路。也可以寻找锻炉、仓库，沿自己的路线深入炉心。' : relay ? '炉芯藏在遗迹深处。抱着它穿过追兵，也可以抛给搭档，接住那一拍。' : hunt ? '猎兽在六间遗迹中游荡。循足迹追踪，以声音引诱，选择自己的伏击地点。' : mission.description;
+    $('mission-description').textContent = random ? '沿巡逻、交叉火力和盾阵选择路线。找到避风灯室，在恢复生命与寻找遗物之间取舍，再以成形的打法迎战炉心。' : relay ? '炉芯藏在遗迹深处。抱着它穿过追兵，也可以抛给搭档，接住那一拍。' : hunt ? '猎兽在六间遗迹中游荡。循足迹追踪，以声音引诱，选择自己的伏击地点。' : mission.description;
     $('mission-goal').textContent = random ? '探索遗迹，击杀守卫唤醒深处的 Boss。' : relay ? '把炉芯带回入口撤离台，按 E 交付。' : hunt ? '追踪并击败游荡猎兽。' : mission.goal;
     $('mission-reward').textContent = `带回 ${relay ? 24 : hunt ? 32 : mission.reward + (selectedDifficulty() === 2 ? 20 : 0)} 星屑`;
     const unlocked = canStart(gameMode, mission.id, selectedDifficulty());
-    $('mission-lock').textContent = chapter ? chapterProgress().completed ? `本节已完成 ${chapterProgress().clears} 次 · 可重新出发` : '第一节已开放 · 归途灯等待点亮' : random ? '4 种精英中遇见 3 种 · 5 种事件 · 6 件遗物' : relay ? '3 间遗迹 · 单人 / 双人 · 自由穿行' : hunt ? '6 间猎场 · 足迹追踪 · 声音诱敌' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
+    $('mission-lock').textContent = chapter ? chapterProgress().completed ? `本节已完成 ${chapterProgress().clears} 次 · 可重新出发` : '第一节已开放 · 归途灯等待点亮' : random ? '3 名精英 · 避风灯室 · 3 种遗物组合' : relay ? '3 间遗迹 · 单人 / 双人 · 自由穿行' : hunt ? '6 间猎场 · 足迹追踪 · 声音诱敌' : unlocked ? (completion.clears ? `已完成 ${completion.clears} 次${completion.hardClears ? ` · 险境 ${completion.hardClears} 次` : ''}` : '首次完成，点亮一盏营灯') : '先完成前一项任务，三盏营灯点亮后可挑战险境。';
     $('mission-lock').hidden = false;
     $('solo-start').disabled = !unlocked;
     updateLobbyMenu();
@@ -611,7 +622,7 @@
       kills: String(count(state.stats && state.stats.kills)), time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
       combatLabel: practice ? '精准招架' : '累计受伤', combat: String(practice ? count(state.practiceParries) : Math.max(0, Number.isFinite(state.stats && state.stats.damage) ? Math.round(state.stats.damage * 100) / 100 : 0)),
       explored: `${state.rooms.filter(room => room.visited).length} / ${state.rooms.length}`,
-      discoveries: practice ? '试炼不记录遗物与奖励' : discoveries.length ? '新发现：' + discoveries.join('、') : '本次没有新增遗物发现',
+      discoveries: practice ? '试炼不记录遗物与奖励' : (discoveries.length ? '新发现：' + discoveries.join('、') : '本次没有新增遗物发现') + (styleNames(state).length ? ' · 本局打法：' + styleNames(state).join(' / ') : ''),
       progress: practice ? '练习成绩仅展示于本轮' : result.duplicate ? '本次记录已保存，不重复结算' : changes.length ? changes.join(' · ') : `探险记录已保存 · 遗物图鉴 ${after.relics.length} / ${C.RELICS.length}`,
       next
     };
@@ -736,8 +747,12 @@
       if (bullet.hook && (s.mode !== 'random' || bullet.friendly !== false || bullet.weapon !== null || bullet.volleyId !== null || !shortId(bullet.owner) || !bounded(bullet.ttl, 5) || !Number.isFinite(bullet.vx) || !Number.isFinite(bullet.vy) || Math.abs(bullet.vx) > 2000 || Math.abs(bullet.vy) > 2000 || !s.enemies.some(enemy => enemy.id === bullet.owner && enemy.kind === 'hookwarden' && enemy.hp > 0))) return false;
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
+      if (event.type === 'refuge-chosen' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !['rest', 'relic'].includes(event.choice) || !Number.isInteger(event.room) || event.room < 1 || event.room >= s.rooms.length || s.rooms[event.room].kind !== 'refuge' || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'style-formed' && (s.mode !== 'random' || event.playerId !== null || !E.activeStyles(s).includes(event.style) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'style-trigger' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !E.activeStyles(s).includes(event.style) || event.enemyId !== null && !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'boss-overload-open' && (s.mode !== 'random' || !shortId(event.enemyId) || event.duration !== 2 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-rescued' && (s.mode !== 'random' || !s.foxRescue || !s.foxRescue.rescued || !['p1', 'p2'].includes(event.playerId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !['bite', 'counter'].includes(event.assistKind) || !Number.isInteger(event.amount) || !bounded(event.amount, event.assistKind === 'counter' ? 3 : 1) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'spear-thrust' && (!['p1', 'p2'].includes(event.playerId) || event.enemyId !== null && !shortId(event.enemyId) || event.weapon !== 'spear' || typeof event.perfect !== 'boolean' || !Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4 || !bounded(event.range, 250))) return false;
@@ -775,12 +790,23 @@
     }
     for (const prop of s.props) if (prop.eventSeal != null && (typeof prop.eventSeal !== 'boolean' || prop.eventSeal && (prop.kind !== 'crate' || !s.roomEvent || s.roomEvent.kind !== 'storehouse' || prop.id !== s.roomEvent.sealId || prop.carriedBy || prop.thrown))) return false;
     for (const item of s.interactables) {
+      if (['refuge-rest', 'refuge-relic'].includes(item.kind) && (s.mode !== 'random' || s.room.kind !== 'refuge' || !shortId(item.id) || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50) || typeof item.label !== 'string' || item.label.length > 40 || typeof item.used !== 'boolean' || typeof item.active !== 'boolean')) return false;
       if (item.kind === 'fox-cage' && (s.mode !== 'random' || !s.foxRescue || s.room.index !== s.foxRescue.roomIndex || item.id !== 'fox-cage-' + s.room.index || typeof item.active !== 'boolean' || typeof item.used !== 'boolean' || item.used !== s.foxRescue.rescued || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50) || typeof item.label !== 'string' || item.label.length > 40)) return false;
       if (['forge', 'forge-reward', 'storehouse-switch', 'storehouse-cache'].includes(item.kind) && (s.mode !== 'random' || !s.roomEvent || s.roomEvent.kind !== (item.kind.startsWith('forge') ? 'forge' : 'storehouse') || typeof item.active !== 'boolean' || typeof item.used !== 'boolean')) return false;
       if (item.kind === 'breach-cache' && (s.mode !== 'random' || s.roomEvent?.kind !== 'breach' || typeof item.active !== 'boolean' || typeof item.used !== 'boolean' || !shortId(item.id) || !bounded(item.x, 960) || !bounded(item.y, 600))) return false;
     }
     for (const d of s.decoys) if (!d || typeof d.id !== 'string' || !['p1', 'p2'].includes(d.playerId || d.owner) || !bounded(d.x, 960) || !bounded(d.y, 600) || !bounded(d.ttl, 5)) return false;
     if (s.room.index >= s.rooms.length || s.rooms.length < 2) return false;
+    if (s.mode === 'random' && (s.room.kind !== s.rooms[s.room.index].kind || s.room.encounter !== s.rooms[s.room.index].encounter)) return false;
+    const refuges = s.rooms.filter(room => room.kind === 'refuge');
+    for (const room of s.rooms) if (room.encounter !== undefined && (s.mode !== 'random' || room.kind !== 'battle' || room.elite || room.eventKind || !['patrol', 'crossfire', 'bulwark'].includes(room.encounter))) return false;
+    if (s.mode === 'random') {
+      if (refuges.length !== 1 || refuges[0].index === 0 || refuges[0].index === s.bossIndex || refuges[0].elite || refuges[0].eventKind || !refuges[0].cleared) return false;
+      if (s.room.kind === 'refuge') {
+        const rest = s.interactables.filter(item => item.kind === 'refuge-rest'), relic = s.interactables.filter(item => item.kind === 'refuge-relic');
+        if (s.enemies.length !== 0 || s.roomEvent !== null || rest.length !== 1 || relic.length !== 1 || rest[0].used !== relic[0].used || rest[0].used && (rest[0].active || relic[0].active) || !rest[0].used && (!rest[0].active || relic[0].active !== (s.runBuffs.length < C.RELICS.length))) return false;
+      }
+    } else if (refuges.length) return false;
     if (s.mode === 'story' && (s.rooms.length !== 7 || s.room.index > 6)) return false;
     if (s.mode === 'chapter') {
       const chapter = s.chapter;
@@ -1210,6 +1236,7 @@
     $('hud-opportunity').textContent = opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '';
     const buffs = Object.fromEntries(Object.entries(E.BUFFS).map(([id, buff]) => [id, buff.label]));
     $('route-progress').textContent = chapter ? `第一节 · 借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
+    if (random && styleNames(state).length) $('route-progress').textContent = '流派 · ' + styleNames(state).join(' / ') + (state.difficulty === 2 ? ' · 险境' : '');
     $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
     $('interaction-hint').textContent = hint || ''; $('interaction-hint').hidden = !hint;

@@ -4,6 +4,8 @@
   const W = 960, H = 600, TILE = 32;
   const palette = { ink: '#142326', outline: '#0f2024', stone: '#4e6555', moss: '#6a8250', gold: '#e4b96b', mint: '#abc592' };
   const relicColors = { pierce: '#a0c8df', swift: '#b9d698', vigor: '#e3a38a', resonance: '#e5c88a', riposte: '#edb6a0', decoy: '#a8d6cc' };
+  const styleColors = { echo: '#d5c4ec', pursuit: '#edcf91', phantom: '#b0dfd2' };
+  const styleNames = { echo: '回响反击', pursuit: '闪身射击', phantom: '残影牵制' };
   const floorCache = new Map();
   const font = '"Microsoft YaHei", "Noto Sans SC", sans-serif';
   const num = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -99,6 +101,40 @@
       for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; rect(c, 657 + Math.cos(a) * 135, 298 + Math.sin(a) * 89, 6, 4, '#8d7752'); }
     }
   }
+  function expeditionFloor(c, state, time, still) {
+    if (state.mode !== 'random') return;
+    const room = state.room || {};
+    if (room.kind === 'refuge') {
+      // Warm woven rugs and a sheltered light give the empty room its pause.
+      // They are floor decoration, never new collision or danger geometry.
+      glow(c, 480, 286, 245, '#e3b46a17');
+      ellipse(c, 480, 305, 175, 91, '#8a785215');
+      rect(c, 329, 273, 102, 68, '#4a4c393e'); rect(c, 333, 277, 94, 60, '#6e654836');
+      for (const x of [336, 420]) for (let y = 279; y < 336; y += 9) rect(c, x, y, 4, 4, '#9c8c593a');
+      for (const side of [-1, 1]) { rect(c, 480 + side * 143 - 18, 213, 36, 9, '#4b594536'); grass(c, 480 + side * 156, 226, '#61744d', 1.2); }
+      lantern(c, 480, 245, still ? 0 : time, 1.15);
+      return;
+    }
+    // Quiet edge markings identify the room's former use without announcing
+    // an encounter type or drawing false cover on the traversable floor.
+    if (room.encounter === 'crossfire') {
+      for (const side of [-1, 1]) {
+        const x = side < 0 ? 111 : 849;
+        path(c, [[x - 12, 108], [x + 12, 131]], '#9276534a', 2);
+        path(c, [[x + 12, 108], [x - 12, 131]], '#9276534a', 2);
+      }
+    } else if (room.encounter === 'bulwark') {
+      for (const x of [104, 846]) {
+        path(c, [[x, 104], [x, 121], [x + 10, 130], [x + 20, 121], [x + 20, 104], [x, 104]], '#8c8c6255', 2);
+        rect(c, x + 9, 109, 2, 13, '#b7a16e3d');
+      }
+    } else if (room.encounter === 'patrol') {
+      for (let i = 0; i < 4; i++) {
+        const x = 102 + i * 13, y = 113 + i * 6;
+        ellipse(c, x, y, 2, 4, '#ac9e6833'); ellipse(c, x + 5, y + 8, 2, 4, '#ac9e6826');
+      }
+    }
+  }
   function wall(c, w) {
     const x = num(w.x), y = num(w.y), width = num(w.w ?? w.width, 32), height = num(w.h ?? w.height, 32);
     // The lower facade adds height without shifting the collision silhouette.
@@ -187,6 +223,19 @@
     ellipse(c, x, y - 2, r - 4, (r - 4) * .6, pressed ? '#536d48' : '#374f3c');
     c.save(); c.translate(x, y - 2); c.rotate(Math.PI / 4); rect(c, -4, -4, 8, 8, pressed ? '#d3d69a' : '#8a9666'); c.restore();
     if (pressed) glow(c, x, y, 35, '#b6d28420');
+  }
+  function portalDestination(c, gate, state, localId) {
+    if (state.mode !== 'random' || gate.active === false || !gate.direction) return;
+    const p = state.players && state.players[localId];
+    if (!p || p.downed || Math.hypot(num(p.x) - num(gate.x), num(p.y) - num(gate.y)) >= 104) return;
+    if (values(state.interactables).some(item => item.active !== false && !item.used && Math.hypot(num(p.x) - num(item.x), num(p.y) - num(item.y)) < 100)) return;
+    const target = values(state.rooms).find(room => room.index === gate.target && (room.visited || room.discovered));
+    if (!target) return;
+    const caption = (target.kind === 'refuge' ? '灯室 · ' : '') + (target.name || '遗迹通道');
+    const x = Math.max(122, Math.min(W - 122, num(gate.x)));
+    const y = gate.direction === 'south' ? num(gate.y) - 38 : gate.direction === 'north' ? num(gate.y) + 40 : num(gate.y) - 39;
+    const width = Math.min(235, caption.length * 9 + 18);
+    rect(c, x - width / 2, y - 10, width, 20, '#102823d9'); label(c, caption, x, y, target.kind === 'refuge' ? '#d8c99d' : '#bccbab', 9);
   }
   function fountain(c, f, time) {
     const x=num(f.x),y=num(f.y),r=num(f.r,24);
@@ -300,6 +349,7 @@
   function interactable(c, item, time, state, localId, still = false) {
     if (!item || (item.kind === 'relic' && item.used)) return;
     if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
+    if (state.mode === 'random' && (item.kind === 'refuge-rest' || item.kind === 'refuge-relic')) { refugeInteractable(c, item, time, state, localId, still); return; }
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
     if (item.kind === 'breach-cache') { breachCache(c,item,state,localId); return; }
     if (['forge','forge-reward','storehouse-switch','storehouse-cache'].includes(item.kind)) { expeditionInteractable(c, item, still ? 0 : time, state, localId); return; }
@@ -380,9 +430,49 @@
     const machine = kind==='sluice'||kind==='lift', current = state.roomEvent || {};
     const stageText = machine && current.kind===kind ? current.stage==='complete'?'已运转':current.stage==='active'?'运转中':'' : '';
     const name = stageText || (item.used ? '已回收' : item.label || (kind === 'cache' ? '物资箱' : kind==='supply-cache'?'全队补给':kind==='sluice'?'水闸手轮':kind==='lift'?'废弃升降台':kind === 'extraction' ? '撤离点' : '遗物'));
-    const textY = y + (machine ? 62 : kind === 'relic' ? 25 : 30);
+    const engine = globalThis.AdventureEngine;
+    const relicHint = kind === 'relic' && nearby && active && state.mode === 'random' && engine && typeof engine.relicStyleHint === 'function' ? engine.relicStyleHint(state, item.buff) : '';
+    let textY = y + (machine ? 62 : kind === 'relic' ? 25 : 30);
+    if (kind === 'relic' && nearby && active && state.mode === 'random' && Math.abs(num(p.x) - x) < 105 && num(p.y) > y && num(p.y) < y + 105) {
+      const lastLine = relicHint ? item.description ? 33 : 17 : item.description ? 17 : 0;
+      textY = Math.max(textY, num(p.y) + 35);
+      if (textY + lastLine > H - 22) textY = y - 77;
+    }
     label(c, nearby && active ? 'E · ' + name : name, x, textY, item.used ? '#758f7b' : active ? color : '#7e927b', kind === 'relic' ? 9 : 10);
     if (nearby && item.description && !item.used) label(c, item.description, x, textY+17, active ? '#c6d0aa' : '#94a58c', 8);
+    if (relicHint) label(c, relicHint, Math.max(170, Math.min(W - 170, x)), textY + (item.description ? 33 : 17), '#d7cce6', 8);
+  }
+  function refugeInteractable(c, item, time, state, localId, still) {
+    const x = num(item.x), y = num(item.y), rest = item.kind === 'refuge-rest', active = item.active !== false && !item.used;
+    const p = state.players && state.players[localId];
+    const nearby = p && !p.downed && !p.carry && Math.hypot(num(p.x) - x, num(p.y) - y) < 76;
+    time = still ? 0 : time;
+    shadow(c, x, y, rest ? 33 : 25, .27);
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    if (rest) {
+      rect(c, -34, -14, 68, 36, '#3f4936'); rect(c, -32, -16, 64, 35, '#948663');
+      rect(c, -28, -12, 20, 26, '#d1c397'); rect(c, -5, -13, 32, 30, active ? '#778c6b' : '#65745c');
+      rect(c, -3, -13, 4, 30, '#9ca984'); rect(c, 2, 11, 25, 3, '#4b6753');
+      rect(c, -36, 19, 72, 4, '#6d6447');
+      if (active) { rect(c, 32, -9, 10, 15, '#a78c5f'); rect(c, 34, -12, 6, 3, '#d4bf8b'); rect(c, 35, -5, 4, 7, '#dfe2b6'); }
+    } else {
+      ellipse(c, 0, 13, 33, 13, '#263b30'); rect(c, -26, 0, 52, 13, '#53634b'); rect(c, -29, -6, 58, 9, '#8f9670');
+      rect(c, -25, -7, 50, 3, '#bac299'); rect(c, -19, 5, 3, 9, '#a8a47a'); rect(c, 16, 5, 3, 9, '#a8a47a');
+      if (active) {
+        const bob = Math.sin(time * .0025) * 2;
+        glow(c, 0, -23, 48, '#c9bbdc1a'); crystal(c, -10, -22 + bob, .85, '#c0b5d8'); crystal(c, 11, -19 - bob, .65, '#d6cf9e');
+        path(c, [[-12, -2], [-12, 3], [12, 3], [12, -2]], '#e5d7ac', 1);
+      } else { rect(c, -18, -2, 36, 3, '#56634d'); }
+    }
+    c.restore();
+    if (nearby && active) {
+      const belowPlayer = Math.abs(num(p.x) - x) < 104 && num(p.y) > y && num(p.y) < y + 70;
+      const ty = Math.min(H - 34, Math.max(y + 49, belowPlayer ? num(p.y) + 32 : 0));
+      const caption = 'E · ' + (item.label || (rest ? '歇息 · 全队恢复2点生命' : '借取遗物 · 放弃治疗'));
+      const width = Math.min(280, caption.length * 10 + 20);
+      rect(c, x - width / 2, ty - 11, width, 21, '#102823e8'); label(c, caption, x, ty, rest ? '#dce6ba' : '#e0d0eb', 10);
+      label(c, '本局只能选择一项', x, ty + 17, '#b0b494', 8);
+    }
   }
   function breachGeometry(state) {
     const run=state.roomEvent;
@@ -948,10 +1038,11 @@
       rect(c, handX - 14, handY - 45, 28, 4, brightCopper); lantern(c, handX, handY - 26, time, .8);
     }
   }
-  function enemy(c, e, time, events = [], still = false, chapter = false) {
+  function enemy(c, e, time, events = [], still = false, chapter = false, random = false) {
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15);
     const recovering = boss && e.rhythm && e.rhythm.phase === 'recover' && num(e.stagger) <= 0;
+    const overload = random && recovering && e.stage >= 2 && e.rhythm.type === 'quake' && num(e.rhythm.beats) === 2 && num(e.rhythm.beat) === 2 && num(e.weakTime) > 0;
     const step = recovering || still ? 0 : Math.sin(time * .012 + x) * 1.5;
     shadow(c, x, y, r, .43);
     if (recovering) {
@@ -1002,6 +1093,13 @@
         rect(c,-12,-18,24,22,'#302e25');rect(c,-9,-16,18,19,'#c3713f');rect(c,-5,-14,10,16,'#e8a355');rect(c,-2,-12,4,12,'#ffe3a1');
         for(const side of [-1,1]){path(c,[[side*10,-17],[side*17,-12],[side*15,-3],[side*21,2]],'#f4bb6f',2);rect(c,side*7-3,-36,6,4,'#ffe0a0');}
         for(let i=0;i<3;i++){const rise=(time*.024+i*13)%31;alpha(c,1-rise/31,()=>rect(c,-9+i*9,y%3-25-rise,2,3,'#eab36d'));}
+      }
+      if (overload) {
+        // The final shock has opened the real, consumable weak point. Use the
+        // chest rather than a second floor warning to separate it from danger.
+        glow(c, 0, -8, 41, '#b2f2dc3a');
+        rect(c, -11, -17, 22, 22, '#334b42'); rect(c, -8, -16, 16, 19, '#86c9b3'); rect(c, -4, -14, 8, 15, '#dbffe0');
+        for (const side of [-1, 1]) path(c, [[side * 12, -19], [side * 18, -14], [side * 18, 3], [side * 12, 8]], '#b4e3c7', 2);
       }
       if (recovering) { glow(c, 0, -9, 33, '#b4e5c527'); rect(c, -5, -13, 10, 14, '#b9dcb4'); rect(c, -2, -11, 4, 10, '#f0f3cf'); }
       if (e.rhythm && e.rhythm.type === 'quake' && e.rhythm.phase === 'windup') {
@@ -1223,6 +1321,7 @@
     const angle = num(r.angle), arc = Math.max(.03, Math.min(Math.PI * 2, num(r.arc, Math.PI / 2)));
     const progress = 1 - Math.max(0, Math.min(1, num(r.remaining) / Math.max(.01, num(r.duration, 1))));
     const active = r.phase === 'active', color = rhythmColors[r.type];
+    const doubleQuake = state && state.mode === 'random' && e.kind === 'boss' && e.stage >= 2 && r.type === 'quake' && num(r.beats) === 2;
     // Reach the target at the start of the usable parry window, so players do
     // not wait for the impact flash before pressing. The cue is slightly inside
     // the simulation's 0.38s window to leave room for input/frame timing.
@@ -1298,6 +1397,7 @@
       label(c, glyph, x, gy, color, 13);
       const beats = Math.max(1, Math.min(4, Math.floor(num(r.beats, 1)))), beat = Math.max(1, Math.floor(num(r.beat, 1)));
       if (beats > 1) for (let i = 0; i < beats; i++) rect(c,x-(beats*9-3)/2+i*9,gy+22,6,3,i<beat?color:'#566e62');
+      if (doubleQuake) label(c, `${Math.max(1, Math.min(2, beat))} / 2`, x, gy - 24, '#ead7ae', 10);
       const p = state && state.players && state.players[localId];
       if (state && state.practice && parryReady && p && !p.downed && !p.carry && num(p.guardAttackLock) <= 0 && num(p.dashTime) <= 0 && num(p.invuln) <= .3) {
         const direction = Math.atan2(num(p.y)-y,num(p.x)-x);
@@ -1307,13 +1407,14 @@
         }
       }
     }
+    if (active && doubleQuake) label(c, `${Math.max(1, Math.min(2, Math.floor(num(r.beat, 1))))} / 2`, x, y - 108, '#ead7ae', 10);
   }
   function combatEvents(state) {
     const source = Array.isArray(state.combatEvents) ? state.combatEvents : values(state.events);
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open'].includes(event.type));
   }
   function combatMotion(events, disabled) {
     if (disabled) return { x:0, y:0, flash:0 };
@@ -1400,9 +1501,52 @@
   function combatEffects(c, events, state, still) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (e.type === 'weakpoint-open' && events.some(other => other.event.type === 'boss-overload-open' && other.event.enemyId === e.enemyId && Math.abs(other.age - age) < .09)) continue;
       if (e.kind === 'breach' && e.type === 'event-complete') continue;
       if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
       if(tacticsEffect(c,e,age,events,state,still))continue;
+      if (e.type === 'style-formed' || e.type === 'style-trigger') {
+        if (state.mode !== 'random' || !styleColors[e.style]) continue;
+        const formed = e.type === 'style-formed', life = formed ? .8 : .34; if (age > life) continue;
+        const ratio = age / life, motion = still ? .2 : ratio, x = num(e.x), y = num(e.y), color = styleColors[e.style];
+        alpha(c, (1 - ratio) * (formed ? .85 : .72), () => {
+          if (formed || e.style === 'echo') {
+            for (const offset of formed ? [0, 8] : [0, 6]) {
+              c.strokeStyle = offset ? color + '70' : color; c.lineWidth = formed ? 1.5 : 1;
+              c.beginPath(); c.ellipse(x, y + 6, 13 + motion * 23 + offset, 6 + motion * 9 + offset * .4, 0, 0, Math.PI * 2); c.stroke();
+            }
+          } else if (e.style === 'pursuit') {
+            const p = state.players && state.players[e.playerId], angle = num(p && p.facing);
+            c.save(); c.translate(x, y - 5); c.rotate(angle);
+            for (const side of [-1, 1]) path(c, [[8 + motion * 8, side * 7], [17 + motion * 15, 0], [8 + motion * 8, -side * 7]], color, 1.5);
+            c.restore();
+          } else {
+            for (const side of [-1, 1]) {
+              const dx = side * (8 + motion * 10);
+              path(c, [[x + dx, y - 18], [x + dx + side * 4, y - 12], [x + dx + side * 4, y + 5], [x + dx, y + 10]], color, 1.5);
+            }
+          }
+          if (formed) {
+            const same = events.filter(other => other.event.type === 'style-formed' && styleNames[other.event.style] && Math.abs(other.age - age) < .09 && Math.hypot(num(other.event.x) - x, num(other.event.y) - y) < 8);
+            if (same.length < 2 || same[0].event === e) {
+              const caption = [...new Set(same.map(other => styleNames[other.event.style]))].join(' / ') || styleNames[e.style];
+              impactLabel(c, caption + ' · 成形', x, y - 55 - motion * 5, color, 11);
+            }
+          }
+        });
+        continue;
+      }
+      if (e.type === 'refuge-chosen' || e.type === 'boss-overload-open') {
+        if (state.mode !== 'random') continue;
+        const overload = e.type === 'boss-overload-open', life = overload ? .8 : .7; if (age > life) continue;
+        const ratio = age / life, motion = still ? .2 : ratio, x = num(e.x), y = num(e.y), color = overload ? '#bfe8ca' : e.choice === 'rest' ? '#d9e4b7' : '#dfccec';
+        alpha(c, (1 - ratio) * .82, () => {
+          c.strokeStyle = color; c.lineWidth = 1.5; c.beginPath(); c.ellipse(x, y + 9, 18 + motion * 31, 8 + motion * 12, 0, 0, Math.PI * 2); c.stroke();
+          if (overload) impactLabel(c, '炉芯外露', x, y - 104 - motion * 7, color, 12);
+          else impactLabel(c, e.choice === 'rest' ? '灯下歇息' : '借取遗物', x, y - 56 - motion * 7, color, 11);
+        });
+        continue;
+      }
       if(e.type==='fox-rescued'||e.type==='fox-assist'||e.type==='fox-sniff'){
         const rescued=e.type==='fox-rescued',assist=e.type==='fox-assist',life=rescued?.8:.3;if(age>life)continue;
         const ratio=age/life,motion=still?.2:ratio,x=num(e.x),y=num(e.y);
@@ -1750,10 +1894,14 @@
       rect(c, point.x - half, point.y - half, size, size, isCurrent ? '#d9dca6' : room.visited ? '#657f63' : '#203a32');
       c.strokeStyle = isCurrent ? '#f2e4ad' : isBoss ? wakeColor : '#7c927466'; c.lineWidth = isCurrent || isBoss ? 2 : 1;
       c.strokeRect(Math.round(point.x - half) + .5, Math.round(point.y - half) + .5, size, size);
-      // Content symbols only appear after visiting. The boss is the sole known landmark.
+      // A discovered refuge is an optional safe landmark. Its hidden room and
+      // connections still never enter this pass; combat content needs a visit.
       if (isBoss) {
         c.fillStyle = progress.bossAwake ? '#f2c77c' : '#8fa295';
         c.beginPath(); c.moveTo(point.x, point.y - 5); c.lineTo(point.x + 4, point.y); c.lineTo(point.x, point.y + 5); c.lineTo(point.x - 4, point.y); c.closePath(); c.fill();
+      } else if (room.kind === 'refuge') {
+        path(c, [[point.x - 4, point.y + 4], [point.x + 4, point.y + 4]], '#d9bc83', 1.5);
+        c.fillStyle = '#e6c58c'; c.beginPath(); c.moveTo(point.x - 3, point.y + 2); c.lineTo(point.x - 1, point.y - 4); c.lineTo(point.x + 1, point.y - 1); c.lineTo(point.x + 2, point.y - 3); c.lineTo(point.x + 3, point.y + 2); c.closePath(); c.fill();
       } else if (room.visited && room.elite) {
         rect(c, point.x - 2, point.y - 2, 4, 4, '#e5bc70');
         if(room.eventKind==='breach')path(c,[[point.x-5,point.y-5],[point.x-2,point.y-1],[point.x-4,point.y+1],[point.x-1,point.y+5]],'#c6c19b',1.5);
@@ -1765,6 +1913,13 @@
         path(c,[[point.x-4,point.y-3],[point.x+4,point.y-3],[point.x+2,point.y],[point.x-2,point.y],[point.x-4,point.y-3]],'#e0bb7e',1);rect(c,point.x-1,point.y,2,4,'#e0bb7e');
       } else if (room.visited && room.eventKind === 'storehouse') {
         c.strokeStyle='#b5c8a1';c.lineWidth=1;c.strokeRect(point.x-3.5,point.y-2.5,7,6);rect(c,point.x-1,point.y-1,2,3,'#b5c8a1');
+      } else if (room.visited && room.encounter === 'crossfire') {
+        path(c, [[point.x - 3, point.y - 3], [point.x + 3, point.y + 3]], '#c6b38a', 1);
+        path(c, [[point.x + 3, point.y - 3], [point.x - 3, point.y + 3]], '#c6b38a', 1);
+      } else if (room.visited && room.encounter === 'bulwark') {
+        path(c, [[point.x - 3, point.y - 3], [point.x + 3, point.y - 3], [point.x + 3, point.y + 1], [point.x, point.y + 4], [point.x - 3, point.y + 1], [point.x - 3, point.y - 3]], '#c6bc92', 1);
+      } else if (room.visited && room.encounter === 'patrol') {
+        rect(c, point.x - 3, point.y - 2, 2, 2, '#b9c6a2'); rect(c, point.x + 1, point.y + 1, 2, 2, '#b9c6a2');
       }
       if (isCurrent) rect(c, point.x - 1, point.y - 1, 2, 2, '#20372e');
     }
@@ -1782,11 +1937,13 @@
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
     chapterFloor(c, state, time);
+    expeditionFloor(c, state, time, still);
     lanternAuras(c, state);
     values(state.walls).forEach(w => wall(c, w));
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
     values(state.portals).forEach(p => portal(c, p, time));
+    values(state.portals).forEach(p => portalDestination(c, p, state, localId));
     huntTracks(c,state);
     values(state.switches).forEach(s => pressureSwitch(c, s, time));
     values(state.fountains).forEach(f => fountain(c, f, time));
@@ -1804,7 +1961,7 @@
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
-      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still, state.mode === 'chapter') })),
+      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still, state.mode === 'chapter', state.mode === 'random') })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
