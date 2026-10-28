@@ -741,6 +741,10 @@
     }
     for (const enemy of s.enemies) {
       if (!enemy || !bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
+      if (enemy.ai !== undefined) {
+        const ai = enemy.ai;
+        if (s.practice || !['chaser', 'shooter', 'shield'].includes(enemy.kind) || !ai || typeof ai !== 'object' || Array.isArray(ai) || Object.keys(ai).length !== 3 || !['mode', 'time', 'side'].every(key => Object.prototype.hasOwnProperty.call(ai, key)) || !['approach', 'circle', 'recover', 'reposition', 'retreat', 'guard', 'wait', 'windup'].includes(ai.mode) || !bounded(ai.time, 2) || ![-1, 1].includes(ai.side)) return false;
+      }
       if ((enemy.alertRadius != null || enemy.alerted != null) && (s.mode !== 'chapter' || s.room.index !== 1 || !bounded(enemy.alertRadius, 600) || enemy.alertRadius < 1 || typeof enemy.alerted !== 'boolean')) return false;
       if (enemy.kind === 'lamplighter' && (s.mode !== 'random' || enemy.elite === true || enemy.rhythm !== null)) return false;
       if (enemy.rhythm != null) {

@@ -1001,7 +1001,7 @@
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     // Do not cache a pending strike and resume it on a later room visit.
-    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); });
+    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); delete e.ai; });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
@@ -1009,6 +1009,7 @@
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
+    s.enemies.forEach(function (e) { delete e.ai; });
     s.roomEvent = data.roomEvent || null; s.decoys = [];
     carried.forEach(function (p) { if (!s.props.some(function (q) { return q.id === p.id; })) s.props.push(p); });
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
@@ -1869,6 +1870,7 @@
       event(s, 'boss-phase', { enemyId: e.id, stage: 2, x: e.x, y: e.y });
     }
     if (e.hp <= 0) {
+      delete e.ai;
       s.stats.kills += 1;
       if (s.players[owner]) s.players[owner].kills += 1;
       burst(s, 'enemy-death', e.x, e.y, e.kind === 'boss' ? '#ffc477' : '#ec9c8d', 12);
@@ -2420,14 +2422,160 @@
     huntNoise(s, 2, p.x, p.y);
     return true;
   }
+  function hasOrdinaryBrain(e) { return e.kind === 'chaser' || e.kind === 'shooter' || e.kind === 'shield'; }
+  function ordinaryBrain(s, e) {
+    if (!e.ai) {
+      // Stable handedness needs no random draw, including after a JSON restore.
+      var hash = s.seed | 0;
+      for (var i = 0; i < e.id.length; i += 1) hash = (hash * 31 + e.id.charCodeAt(i)) | 0;
+      e.ai = { mode: e.kind === 'shield' ? 'guard' : 'approach', time: 0, side: hash & 1 ? 1 : -1 };
+    }
+    return e.ai;
+  }
+  function ordinaryTarget(s, e, targets) {
+    var range = activeStyles(s).indexOf('phantom') >= 0 ? 760 : 600;
+    var decoys = s.decoys.filter(function (q) { return q.ttl > 0 && dist(q, e) < range && lineClear(s, e, q, 4); });
+    return (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
+  }
+  function ordinaryMove(s, e, dx, dy) {
+    // Legacy movement only tests scenery. These deliberate steps also respect
+    // bodies, with fine sweeps so sidestepping never cuts through a neighbour.
+    var count = Math.max(1, Math.ceil(len(dx, dy) / 3)), moved = false;
+    var bodies = s.enemies.filter(function (q) { return q !== e && q.hp > 0; })
+      .concat(Object.keys(s.players).map(function (key) { return s.players[key]; }));
+    function clear(x, y) {
+      if (collides(s, x, y, e.r, e.id, false)) return false;
+      return bodies.every(function (q) {
+        var gap = e.r + q.r + 1, before = dist(e, q), after = len(x - q.x, y - q.y);
+        // Old room spawns and player movement can already overlap a body. Let
+        // an enemy leave that overlap, but never deepen it or push the player.
+        return after >= gap || before < gap && after > before + 0.00001;
+      });
+    }
+    for (var i = 0; i < count; i += 1) {
+      var nx = e.x + dx / count, ny = e.y + dy / count;
+      if (clear(nx, ny)) { e.x = nx; e.y = ny; moved = true; }
+      else if (dx && clear(nx, e.y)) { e.x = nx; moved = true; }
+      else if (dy && clear(e.x, ny)) { e.y = ny; moved = true; }
+    }
+    return moved;
+  }
+  function ordinaryWalk(s, e, goal, dt, scale) {
+    var direct = foxSight(s, e, goal, e.r + 1), wp;
+    e.navTime = finite(e.navTime, 0) - dt;
+    if (direct) wp = goal;
+    else {
+      if (e.navTime <= 0 || !Number.isFinite(e.navX) || !Number.isFinite(e.navY)) {
+        wp = foxWaypoint(s, e, goal); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.3;
+      }
+      wp = { x: e.navX, y: e.navY };
+    }
+    var dx = wp.x - e.x, dy = wp.y - e.y, distance = len(dx, dy), step = Math.min(distance, e.speed * dt * (scale || 1));
+    if (distance < 0.01) return false;
+    var beforeX = e.x, beforeY = e.y;
+    ordinaryMove(s, e, dx / distance * step, dy / distance * step);
+    if ((e.x - beforeX) * dx / distance + (e.y - beforeY) * dy / distance >= step * 0.3 && step > 0) return true;
+    // Navigation knows scenery, but another soldier may occupy its next tile.
+    // Peel around that body instead of forming a permanent single-file queue.
+    var side = e.ai ? e.ai.side : 1, flank = step * 0.8;
+    if (ordinaryMove(s, e, -dy / distance * side * flank, dx / distance * side * flank)) return true;
+    if (e.ai) e.ai.side = -side;
+    return ordinaryMove(s, e, dy / distance * side * flank, -dx / distance * side * flank);
+  }
+  function ordinarySide(s, e, p, dt, away) {
+    var angle = Math.atan2(p.y - e.y, p.x - e.x), side = e.ai.side;
+    var dx = -Math.sin(angle) * side - Math.cos(angle) * away;
+    var dy = Math.cos(angle) * side - Math.sin(angle) * away;
+    var length = len(dx, dy), step = e.speed * dt;
+    if (ordinaryMove(s, e, dx / length * step, dy / length * step)) return true;
+    e.ai.side = -side;
+    if (ordinaryMove(s, e, (Math.sin(angle) * side - Math.cos(angle) * away) / length * step,
+        (-Math.cos(angle) * side - Math.sin(angle) * away) / length * step)) return true;
+    // A blocked flank becomes an approach, not an endless left/right shuffle.
+    return ordinaryWalk(s, e, p, dt, 0.65);
+  }
+  function ordinaryReady(s, e, p) {
+    if (e.hp <= 0 || e.stun > 0 || e.windup > 0 || e.chargeTime > 0 || e.alertRadius && !e.alerted) return false;
+    var d = dist(e, p), ai = e.ai;
+    if (ai && (ai.mode === 'circle' || ai.mode === 'recover' || ai.mode === 'retreat' || ai.mode === 'reposition') && ai.time > 0) return false;
+    if (e.kind === 'shooter' && ai && ai.mode === 'wait' && ai.time > 0) return false;
+    if (e.kind === 'chaser') return d < 64 && foxSight(s, e, p, 3) && ai && ai.mode === 'wait';
+    if (e.kind === 'charger') return d < 520 && lineClear(s, e, p, e.r);
+    return d < 460 && foxSight(s, e, p, 5) && (e.kind !== 'shield' ||
+      Math.abs(angleDelta(Math.atan2(p.y - e.y, p.x - e.x), e.facing)) <= Math.PI / 3);
+  }
+  function ordinaryPermit(s, e, p, targets, readyAt) {
+    var melee = e.kind === 'chaser' || e.kind === 'charger';
+    // Already committed attacks finish. Large elite tells reserve the next
+    // opening rather than burying their readable response under fresh attacks.
+    if (s.enemies.some(function (q) {
+      if (q.hp <= 0) return false;
+      if (q.rhythm && (q.rhythm.phase === 'windup' || q.rhythm.phase === 'active') && strikeContains(s, q, q.rhythm, p)) return true;
+      return q !== e && q.targetId === p.id && (q.windup > 0 || q.kind === 'charger' && q.chargeTime > 0) &&
+        (q.kind === 'chaser' || q.kind === 'charger') === melee;
+    })) return false;
+    // Compare ready ages captured before this tick's sequential updates. A
+    // blocked archer cannot reserve a slot; the oldest actual opportunity wins.
+    return !s.enemies.some(function (q) {
+      if (q === e || !hasOrdinaryBrain(q) && q.kind !== 'charger' ||
+          (q.kind === 'chaser' || q.kind === 'charger') !== melee || readyAt[q.id] > 0) return false;
+      var target = ordinaryTarget(s, q, targets);
+      if (!target || target.id !== p.id || !ordinaryReady(s, q, target)) return false;
+      return readyAt[q.id] < readyAt[e.id] || readyAt[q.id] === readyAt[e.id] && q.id < e.id;
+    });
+  }
+  function updateOrdinaryBrain(s, e, p, dt, targets, readyAt) {
+    var ai = ordinaryBrain(s, e), d = dist(e, p), angle = Math.atan2(p.y - e.y, p.x - e.x);
+    ai.time = Math.max(0, ai.time - dt);
+    if (ai.mode === 'windup') { ai.mode = e.kind === 'shield' ? 'guard' : 'approach'; ai.time = 0; }
+    if (e.kind !== 'shield') e.facing = angle;
+    else e.facing += clamp(angleDelta(angle, e.facing), -1.15 * dt, 1.15 * dt);
+    if (ai.mode === 'recover' && ai.time > 0) return;
+    if (e.kind === 'chaser') {
+      if (ai.mode === 'circle' && ai.time > 0) { ordinarySide(s, e, p, dt, 0); return; }
+      if (ai.mode === 'circle' || ai.mode === 'recover') { ai.mode = 'wait'; ai.time = 0; }
+      if (d >= 64 || !foxSight(s, e, p, 3)) { ai.mode = 'approach'; ai.time = 0; ordinaryWalk(s, e, p, dt); return; }
+      if (ai.mode === 'approach') { ai.mode = 'circle'; ai.time = 0.24; ordinarySide(s, e, p, dt, 0); return; }
+      if (d > 49) ordinaryWalk(s, e, p, dt, 0.55);
+    } else if (e.kind === 'shooter') {
+      if (ai.mode === 'retreat' && ai.time <= 0) { ai.mode = 'wait'; ai.time = 0.8; }
+      if (ai.mode === 'reposition' && ai.time <= 0) { ai.mode = 'wait'; ai.time = 0.8; }
+      if (d < 145 && ai.mode !== 'wait' && ai.mode !== 'retreat') { ai.mode = 'retreat'; ai.time = 0.45; }
+      if (ai.mode === 'retreat') { ordinarySide(s, e, p, dt, 1.6); return; }
+      if (ai.mode === 'reposition' && ai.time > 0) { ordinarySide(s, e, p, dt, 0); return; }
+      if (d > 300 || !foxSight(s, e, p, 5)) { ai.mode = 'approach'; ai.time = 0; ordinaryWalk(s, e, p, dt); }
+      else if (ai.mode !== 'wait' || ai.time <= 0) { ai.mode = 'guard'; ai.time = 0; }
+    } else {
+      ai.mode = 'guard'; ai.time = 0;
+      var ally = s.enemies.filter(function (q) { return q.hp > 0 && q.kind === 'shooter' && dist(q, e) < 260; })
+        .sort(function (a, b) { return dist(a, e) - dist(b, e) || (a.id < b.id ? -1 : 1); })[0];
+      var goal = p;
+      if (ally && dist(ally, p) < 470) {
+        var toward = Math.atan2(p.y - ally.y, p.x - ally.x);
+        goal = { x: ally.x + Math.cos(toward) * 66, y: ally.y + Math.sin(toward) * 66 };
+      }
+      if (goal !== p ? dist(e, goal) > 24 : d > 250 || !foxSight(s, e, p, 5)) ordinaryWalk(s, e, goal, dt, 0.8);
+    }
+    if (e.attackCd <= 0 && ordinaryReady(s, e, p) && ordinaryPermit(s, e, p, targets, readyAt)) {
+      e.windup = e.kind === 'chaser' ? 0.36 : e.kind === 'shooter' ? 0.6 : 0.85;
+      ai.mode = 'windup'; ai.time = e.windup;
+      e.aimX = p.x; e.aimY = p.y; e.targetId = p.id; e.attack = 'aim';
+      event(s, 'enemy-windup', { enemyId: e.id, kind: e.kind, attack: e.attack });
+    }
+  }
   function updateEnemies(s, dt) {
     var targets = alivePlayers(s);
     if (!targets.length) return;
+    var readyAt = {};
+    if (!s.practice && dt > 0) s.enemies.forEach(function (e) { readyAt[e.id] = e.attackCd - dt; });
     s.enemies.forEach(function (e) {
       if (e.hp <= 0) return;
       e.flash = Math.max(0, e.flash - dt); e.stun = Math.max(0, e.stun - dt);
       e.weakTime = Math.max(0, (e.weakTime || 0) - dt);
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
+      if (!s.practice && dt > 0 && e.ai && e.ai.mode === 'windup' && e.windup <= 0) {
+        e.ai.mode = e.kind === 'shield' ? 'guard' : 'approach'; e.ai.time = 0;
+      }
       if (e.stun > 0) return;
       if (e.alertRadius && !e.alerted) {
         e.alerted = e.hp < e.maxHp || targets.some(function (q) {
@@ -2457,6 +2605,8 @@
         return;
       }
       if (e.kind === 'duelist' || e.kind === 'boss' || e.kind === 'brute' || e.kind === 'pyromancer' || e.kind === 'hookwarden') { updateRhythm(s, e, p, dt); return; }
+      if (!s.practice && dt <= 0) return;
+      var brain = !s.practice && hasOrdinaryBrain(e) ? ordinaryBrain(s, e) : null;
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
       if (e.kind === 'charger' && e.chargeTime > 0) {
         e.chargeTime = Math.max(0, e.chargeTime - dt);
@@ -2470,12 +2620,14 @@
       }
       if (e.windup > 0) {
         e.windup -= dt;
+        if (brain) { brain.mode = 'windup'; brain.time = Math.max(0, e.windup); }
         if (e.windup <= 0) {
           var angle = Math.atan2(e.aimY - e.y, e.aimX - e.x);
           s.decoys = s.decoys.filter(function (d) { return d.id !== e.targetId; });
           if (e.kind === 'chaser') {
             targets.forEach(function (q) {
-              if (dist(e, q) < e.r + q.r + 27 && !guardBlock(s, q, e, 1, 'melee', false)) damagePlayer(s, q, 1, 'melee');
+              if (dist(e, q) < e.r + q.r + 27 && (s.practice || foxSight(s, e, q, 3)) &&
+                  !guardBlock(s, q, e, 1, 'melee', false)) damagePlayer(s, q, 1, 'melee');
             });
             particle(s, 'slash', e.x + Math.cos(angle) * 24, e.y + Math.sin(angle) * 24,
               { r: 40, ttl: 0.2, life: 0.2, color: '#ffb095' });
@@ -2497,13 +2649,19 @@
             e.phase += 1; e.attackCd = e.hp < e.maxHp * 0.5 ? 0.65 : 0.95;
             event(s, 'boss-attack', { attack: e.attack });
           }
+          if (brain) {
+            e.windup = 0;
+            brain.mode = e.kind === 'shooter' ? 'reposition' : 'recover';
+            brain.time = e.kind === 'chaser' ? 0.22 : 0.6;
+          }
         }
         return;
       }
       e.attackCd -= dt;
+      if (brain) { updateOrdinaryBrain(s, e, p, dt, targets, readyAt); return; }
       var inRange = e.kind === 'chaser' ? d < 64 : e.kind === 'charger' ? d < 520 && lineClear(s, e, p, e.r) :
         e.kind === 'boss' ? d < 900 : d < 460 && lineClear(s, e, p, 5);
-      if (e.attackCd <= 0 && inRange) {
+      if (e.attackCd <= 0 && inRange && (s.practice || ordinaryPermit(s, e, p, targets, readyAt))) {
         e.windup = e.kind === 'chaser' ? 0.36 : e.kind === 'shooter' ? 0.6 : e.kind === 'shield' ? 0.85 : e.kind === 'charger' ? 0.85 : 0.78;
         e.aimX = p.x; e.aimY = p.y;
         e.targetId = p.id;
