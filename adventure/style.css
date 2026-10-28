@@ -693,6 +693,196 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .companion-name-row>.button{flex-shrink:0;min-height:40px;padding:9px 13px;font-size:12px}
 .companion-name-row>input:disabled{opacity:.4}
 .companion-toggle{display:flex;align-items:center;gap:9px;min-height:44px;margin-top:6px;font-size:13px;color:#c0ceca;cursor:pointer}
+
+/* v30: a focused title screen and a visible, private account entrance. */
+#game-wrap:has(#start-screen:not([hidden])){width:100vw;height:100vh;height:100dvh;aspect-ratio:auto}
+#game-wrap:has(#start-screen:not([hidden])) canvas{object-fit:cover;object-position:66% 50%}
+#start-screen{padding:100px max(8vw,28px) 54px;background:linear-gradient(90deg,#0c1517f5 0,#101b1ee8 25%,#101b1b9e 46%,#101b1b20 78%,#101b1b38);isolation:isolate}
+.home-topbar{position:absolute;z-index:2;left:max(5vw,24px);right:max(5vw,24px);top:26px;display:flex;align-items:center;justify-content:space-between;gap:20px;min-width:0}
+.home-wordmark{display:inline-flex;align-items:center;gap:11px;color:#9ca99c;font-size:12px;letter-spacing:3px;white-space:nowrap}
+.home-wordmark i{position:relative;width:15px;height:21px;border:1px solid #b298645e;display:inline-block;transform:skewY(-9deg);background:#d6b17208}
+.home-wordmark i:after{content:"";position:absolute;left:5px;top:5px;width:5px;height:10px;background:#d3af71;box-shadow:0 0 13px #d3af7140}
+.home-tools{display:flex;align-items:center;gap:12px;min-width:0}
+.home-account{display:flex;align-items:center;gap:11px;min-width:0;max-width:290px;min-height:58px;padding:8px 13px 8px 9px;color:#e2e5d3;background:#172523ce;border:1px solid #9caf9640;border-radius:6px;text-align:left;box-shadow:0 5px 24px #0002;transition:background .18s,border-color .18s}
+.home-account:hover,.home-account:focus-visible{background:#22332be8;border-color:#d1b17b94}
+.identity-avatar{display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid #c3ab785c;border-radius:5px;background:linear-gradient(145deg,#6c57342b,#332c202b);color:#e4bc79;font-size:24px;line-height:1;text-shadow:0 2px 7px #0003}
+.identity-avatar[data-avatar="leaf"]{color:#b4d3a0;border-color:#a1c19355;background:linear-gradient(145deg,#52634840,#263b2a55)}
+.identity-avatar[data-avatar="moon"]{color:#b9d0d8;border-color:#9bbbc355;background:linear-gradient(145deg,#38526355,#24354055)}
+.identity-avatar[data-avatar="star"]{color:#d1bce1;border-color:#b7a1c755;background:linear-gradient(145deg,#54475d55,#302a3e55)}
+.identity-avatar{font-size:0!important}
+.identity-avatar:before{content:"";display:block;width:54%;height:56%;background:currentColor;clip-path:polygon(50% 0,96% 55%,50% 100%,4% 55%,30% 32%,34% 65%)}
+.identity-avatar[data-avatar="leaf"]:before{width:48%;height:58%;border-radius:2px 15px 2px 15px;transform:rotate(28deg);clip-path:none}
+.identity-avatar[data-avatar="moon"]:before{width:58%;height:58%;background:transparent;border-radius:50%;box-shadow:inset -7px -3px 0 0 currentColor;transform:rotate(-25deg);clip-path:none}
+.identity-avatar[data-avatar="star"]:before{width:57%;height:57%;clip-path:polygon(50% 0,61% 35%,100% 50%,64% 61%,50% 100%,38% 64%,0 50%,36% 38%)}
+.home-account-copy{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+.home-account-copy strong{font-size:13px;font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:188px}
+.home-account-copy>span{font-size:10px;line-height:1.4;color:#9ead9b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:188px}
+.home-account-status[data-state="offline"],#home-account-status[data-state="offline"]{color:#d2b58d}
+.home-account-arrow{color:#b3b49b;font-size:22px;margin-left:3px}
+.home-settings{display:grid;place-items:center;flex:none;width:44px;height:44px;padding:11px;color:#aab49f;background:#15221b70;border:1px solid #99aa8b2c;border-radius:5px;transition:color .18s,border-color .18s,background .18s}
+.home-settings svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.home-settings:hover,.home-settings:focus-visible{color:#e5c38b;background:#24342a;border-color:#d1b17b70}
+.title-menu{width:min(360px,100%);padding:0;margin:0}
+.title-kicker{font-size:11px;line-height:1.8;letter-spacing:2.5px;color:#a8ac94;margin:0 0 20px}
+.game-title{font-size:clamp(42px,4.2vw,58px);font-weight:700;line-height:1.2;letter-spacing:.05em;margin:0 0 0;color:#f1ecdb;text-shadow:0 2px 22px #0005}
+.game-title small{font-size:10px;font-weight:500;letter-spacing:.34em;margin-top:15px;color:#9ca797;padding-left:2px}
+.game-title:after{display:none}
+.title-description{max-width:310px;margin:24px 0 33px;color:#a9b2a0;font-size:12px;line-height:1.9;letter-spacing:.5px}
+.title-actions{width:min(310px,100%);gap:12px}
+.title-primary.menu-action{min-height:57px;padding:0 23px;background:linear-gradient(105deg,#d6b47c,#caa16a);border:1px solid #e8c58c;border-radius:3px;color:#202b25;font-size:17px;font-weight:700;letter-spacing:2px;box-shadow:0 6px 25px #0002,inset 0 1px #f7dfaf73}
+.title-primary.menu-action>span{opacity:1;transform:none;color:#263528;font-size:24px;font-weight:400}
+.title-primary.menu-action:hover,.title-primary.menu-action:focus-visible{background:#e5c48d;padding-left:23px;color:#18241e;border-color:#f2d8a6;box-shadow:0 7px 28px #d9b87b20}
+.title-secondary{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.title-secondary .menu-action{min-height:47px;padding:0 13px;font-size:12px;letter-spacing:1px;border:1px solid #9ba88b33;border-radius:3px;background:#17251b80;color:#c2cbb6}
+.title-secondary .menu-action>span{opacity:1;transform:none;color:#8c9f89;font-size:16px}
+.title-secondary .menu-action:hover,.title-secondary .menu-action:focus-visible{padding-left:13px;border-color:#c1ae7b88;background:#283a2bd9;color:#e8dfc3}
+.title-camp-status{margin:23px 0 0 1px;font-size:10px;letter-spacing:.6px;color:#849482;line-height:1.7}
+.title-camp-status:before{width:4px;height:4px;opacity:.8}
+
+/* Account identity is shown first; credentials and backup tools have their own sections. */
+.account-modal{width:min(490px,calc(100% - 32px));max-width:490px;padding:31px 33px 24px;background:linear-gradient(145deg,#23322d,#15231f 80%);border:1px solid #8e9f8b4d;border-top-color:#cfb78085;border-radius:8px;box-shadow:0 26px 100px #0009}
+.account-modal .dialog-kicker{font-size:9px;letter-spacing:2px;color:#98a791;font-weight:500}
+.account-modal>.account-emblem{display:none}
+.account-modal>h2{font-size:28px;letter-spacing:1px;font-weight:600;line-height:1.4;margin:22px 0 9px;color:#eeead9}
+.account-modal #account-intro{font-size:12px;line-height:1.85;color:#9eac98;margin:0 0 26px;max-width:370px}
+.account-modal .account-login-panel{gap:22px}
+.account-modal .auth-tabs{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:0;padding:0;border:0;border-bottom:1px solid #a0b18e3b;background:none;border-radius:0}
+.account-modal .auth-tab{min-height:45px;padding:10px 6px;font-size:12px;color:#91a08b;box-shadow:none;border:0;border-bottom:2px solid transparent;border-radius:0;background:none}
+.account-modal .auth-tab[aria-selected="true"]{color:#e5c28a;border-bottom-color:#d3b173;background:none;box-shadow:none}
+.account-modal .auth-tab:hover:not(:disabled){color:#dfd8b8;background:#b7c09809}
+.account-modal .account-field>label{font-size:12px;font-weight:500;color:#c9d0ba;margin-bottom:9px}
+.account-modal .account-input-row input{min-height:46px;border-radius:4px;border-color:#8ea17f55;background:#0e1d1aa8;color:#f0edda;font-size:14px;padding-inline:13px;transition:border-color .16s,background .16s}
+.account-modal .account-input-row input::placeholder{font-size:12px;color:#758b78}
+.account-modal .account-input-row input:focus{border-color:#ccb17a;background:#10221b}
+.account-modal .auth-panel{gap:18px}
+.account-modal .auth-submit{font-size:13px;min-height:46px;padding:11px 15px;border-radius:4px;letter-spacing:.5px}
+.account-modal .auth-forgot{font-size:11px;min-height:44px;margin-top:-8px;color:#b5bda2}
+.account-modal .auth-method-note,.account-modal .account-field-note{font-size:11px;color:#90a28c;line-height:1.85}
+.account-modal .account-message{font-size:12px;border-radius:4px;margin-bottom:20px;padding:12px 14px;line-height:1.8}
+.account-modal .account-notice{font-size:11px;border-radius:4px}
+.account-modal .account-identity{padding:4px 0 25px;border:0;border-bottom:1px solid #91a27f33;background:none;border-radius:0;gap:17px;align-items:center}
+.account-modal .account-profile-avatar{width:62px;height:62px;font-size:37px;border-radius:8px}
+.account-modal .account-identity .eyebrow{font-size:9px;letter-spacing:1.5px;color:#91a28a}
+.account-modal #account-display-name{font-size:22px;font-weight:600;line-height:1.4;margin:5px 0;color:#e7e8cf;overflow-wrap:anywhere}
+.account-modal .account-private-email{font-size:11px;line-height:1.6;margin:4px 0 0;color:#829780;overflow-wrap:anywhere}
+.account-modal .cloud-save-status{position:relative;margin:21px 0 20px;padding:16px 88px 16px 16px;background:#0d211a70;border:1px solid #91a27f2d;border-radius:5px;min-height:82px}
+.account-modal .cloud-save-status>.eyebrow{font-size:9px;color:#a1b18e;letter-spacing:1px}
+.account-modal #cloud-status{font-size:11px;line-height:1.8;color:#c0cbb0;margin-top:7px}
+.account-modal .cloud-sync-action{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:10px;min-height:44px;max-width:78px;line-height:1.5;padding:9px 6px;color:#cbb787}
+.account-modal .cloud-sync-action:active:not(:disabled){transform:translateY(-50%)}
+.account-modal .account-section{display:block;margin:0;padding:0;border:0;border-top:1px solid #91a27f33;border-radius:0}
+.account-modal .account-section>summary{display:flex;justify-content:space-between;align-items:center;gap:15px;min-height:54px;cursor:pointer;color:#c4ceb7;font-size:12px;line-height:1.6;list-style:none}
+.account-modal .account-section>summary::-webkit-details-marker{display:none}
+.account-modal .account-section>summary>span{color:#8da186;font-size:17px;transition:transform .18s}
+.account-modal .account-section[open]>summary>span{transform:rotate(180deg)}
+.account-modal .account-section>summary:focus-visible{outline:2px solid #d4b178;outline-offset:3px}
+.account-modal .account-section-body{display:grid;gap:17px;padding:5px 0 22px;min-width:0}
+.account-modal .set-password-panel .auth-method-note{margin:0}
+.avatar-picker{padding:0;margin:0;border:0;min-width:0}
+.avatar-picker legend{font-size:12px;color:#c9d0ba;padding:0;margin-bottom:10px}
+.avatar-options{display:flex;gap:11px;flex-wrap:wrap}
+.avatar-option.identity-avatar{width:49px;height:49px;border-color:#8da0824d;cursor:pointer;transition:background .16s,border-color .16s,box-shadow .16s}
+.avatar-option[aria-pressed="true"]{border-color:#ddbd85;box-shadow:0 0 0 2px #ddbd8526,inset 0 0 16px #d3b77911}
+.avatar-option:hover:not(:disabled){border-color:#d4bc8b}
+.identity-message{font-size:11px;line-height:1.8;color:#b4c89b;overflow-wrap:anywhere;margin:0}
+.identity-message:empty{display:none}
+.identity-message[data-state="error"]{color:#e5b596}
+.account-modal .account-user-actions{justify-content:center;border-top:1px solid #91a27f33;margin:0;padding-top:13px}
+.account-modal #logout-account{color:#99a58c;font-size:11px;min-height:44px;padding:9px 18px}
+.account-modal .save-backup{margin-top:20px;padding-top:9px;border-color:#91a27f33}
+.account-modal .save-backup>summary{min-height:42px;padding-block:10px;font-size:11px;color:#8fa086}
+.account-modal .save-backup>p,.account-modal .backup-note{font-size:10px;line-height:1.8}
+.account-modal .backup-actions{gap:9px;flex-wrap:wrap}
+.account-modal .backup-actions .button{min-height:44px;font-size:11px;height:auto;padding:10px 14px}
+.account-modal .account-input-row .button{min-height:44px}
+.account-modal .account-footnote{font-size:10px;line-height:1.8;color:#7f947e;margin:18px 0 0}
+.account-modal .cloud-choice-panel{border-radius:5px;padding:17px;margin-top:18px}
+
+@media(min-width:1600px){#start-screen{padding-left:max(8vw,calc((100vw - 1280px)/2))}}
+@media(max-width:700px){
+  #start-screen{padding:105px 7vw 38px;background:linear-gradient(90deg,#0d181bf0,#10201bd4 42%,#10201b70)}
+  .home-topbar{top:18px;left:6vw;right:6vw;gap:12px}
+  .home-account{min-height:54px;max-width:250px;padding:7px 10px 7px 7px;gap:9px}
+  .home-account-copy strong,.home-account-copy>span{max-width:152px}
+  .home-account-copy strong{font-size:12px}
+  .home-account-copy>span{font-size:9px}
+  .home-tools{gap:9px}
+  .home-wordmark{font-size:10px;letter-spacing:1px;gap:8px}
+  .title-menu{width:min(330px,100%)}
+  .game-title{font-size:46px;letter-spacing:.05em;margin:0}
+  .game-title small{font-size:9px;letter-spacing:.3em;margin-top:13px}
+  .title-kicker{font-size:10px;margin-bottom:17px;letter-spacing:1.6px}
+  .title-description{font-size:11px;margin:22px 0 28px}
+  .title-actions{width:min(300px,100%);gap:11px}
+  .title-primary.menu-action{min-height:54px;font-size:16px}
+  .title-secondary .menu-action{min-height:46px;font-size:12px}
+  .title-camp-status{margin-top:20px;font-size:9px}
+  .account-modal{padding:28px 24px 20px;width:calc(100% - 28px)}
+  .account-modal>h2{font-size:25px;margin-top:21px}
+  .account-modal #account-intro{font-size:11px;margin-bottom:22px}
+  .account-modal .account-input-row input{font-size:16px}
+  .account-modal .account-input-row input::placeholder{font-size:12px}
+}
+@media(max-width:560px) and (orientation:portrait){
+  #game-wrap:has(#start-screen:not([hidden])) canvas{position:absolute;top:0;left:0;width:100%;height:72vh;height:72dvh;object-fit:cover;object-position:78% 45%}
+  #start-screen{padding:105px 8vw max(30px,env(safe-area-inset-bottom));background:linear-gradient(180deg,#0b161c60 0,#10201b30 24%,#10201b66 39%,#0e1b18e8 59%,#0d1918 78%);align-items:flex-end}
+  .home-topbar{top:max(16px,env(safe-area-inset-top));left:6vw;right:6vw;justify-content:flex-end}
+  .home-wordmark{display:none}
+  .home-account{max-width:245px}
+  .home-account-copy strong,.home-account-copy>span{max-width:151px}
+  .title-menu{width:100%;margin-top:auto;max-width:360px;align-self:flex-end;padding:0}
+  .game-title{font-size:43px;line-height:1.17}
+  .title-kicker{font-size:9px;margin-bottom:13px}
+  .game-title small{font-size:9px;margin-top:11px}
+  .title-description{margin:18px 0 23px;font-size:11px}
+  .title-actions{width:100%;max-width:330px}
+  .title-camp-status{margin-top:18px}
+  .menu-view:not(.title-menu){align-self:center;padding:0}
+  .account-modal .cloud-save-status{padding:15px 77px 15px 13px}
+  .account-modal .cloud-sync-action{right:6px;max-width:68px}
+  .account-modal .account-profile-avatar{width:55px;height:55px;font-size:33px}
+  .account-modal #account-display-name{font-size:21px}
+  .account-modal .account-identity{gap:13px}
+}
+@media(max-height:700px) and (orientation:portrait){
+  .title-kicker{display:none}
+  .game-title{font-size:36px}
+  .game-title small{margin-top:9px}
+  .title-description{margin:15px 0 20px}
+  .title-primary.menu-action{min-height:49px}
+  .title-camp-status{margin-top:14px}
+}
+@media(max-height:560px) and (orientation:landscape){
+  #start-screen{padding:83px 7vw 25px}
+  .home-topbar{top:12px;left:6vw;right:6vw}
+  .home-account{min-height:46px;padding:5px 10px 5px 6px}
+  .home-account .identity-avatar{width:32px;height:32px;font-size:21px}
+  .home-account-copy{gap:2px}
+  .home-settings{width:44px;height:44px;padding:10px}
+  .title-menu{width:300px;padding:0}
+  .title-kicker{display:none}
+  .game-title{font-size:36px;margin:0}
+  .game-title small{font-size:8px;margin-top:9px}
+  .title-description{margin:15px 0 19px;font-size:10px}
+  .title-actions{gap:8px;width:270px}
+  .title-primary.menu-action{min-height:46px;font-size:15px}
+  .title-secondary .menu-action{min-height:44px;font-size:11px}
+  .title-camp-status{margin-top:13px;font-size:9px}
+  .menu-view:not(.title-menu){margin-top:10px}
+  .account-modal{max-height:calc(100dvh - 20px)}
+}
+@media(max-width:340px){
+  .home-topbar{left:16px;right:16px}
+  .home-account-copy strong,.home-account-copy>span{max-width:133px}
+  .home-account{gap:8px;padding-right:8px}
+  .home-tools{gap:7px}
+  .home-settings{width:44px;height:44px;padding:10px}
+  .home-account-arrow{display:none}
+  .account-modal{padding-inline:20px}
+  .account-modal .auth-tab{font-size:11px}
+  .avatar-options{gap:9px}
+}
+@media(prefers-reduced-motion:reduce){.home-account,.home-settings,.avatar-option,.account-section>summary>span,.account-modal .account-input-row input{transition:none}}
 .companion-toggle>input{width:17px;height:17px;accent-color:#a0baad;flex-shrink:0}
 .companion-toggle:has(input:disabled){opacity:.45;cursor:default}
 @media(max-width:380px){.companion-card{padding:13px}.companion-name-row{gap:6px}.companion-name-row>.button{padding-inline:9px}}

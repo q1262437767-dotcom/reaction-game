@@ -2163,7 +2163,11 @@
     c.save(); c.imageSmoothingEnabled = false;
     if (!floorCache.has('camp-preview')) floorCache.set('camp-preview', makeFloor('camp-preview', 'camp'));
     c.drawImage(floorCache.get('camp-preview'), 0, 0);
+    // The camp is a title backdrop: soften the tile pattern so the fire,
+    // adventurers and account entrance each keep a clear visual place.
+    rect(c, 0, 0, W, H, '#10202791');
     // A camp tucked into the open courtyard, visible to the right of the title.
+    c.save(); c.globalAlpha *= .62;
     wall(c, { x: 0, y: 0, w: 960, h: 32 }); wall(c, { x: 0, y: 0, w: 31, h: 600 }); wall(c, { x: 929, y: 0, w: 31, h: 600 }); wall(c, { x: 0, y: 568, w: 960, h: 32 });
     wall(c, { x: 652, y: 47, w: 237, h: 34 });
     wall(c, { x: 653, y: 48, w: 34, h: 145 }); wall(c, { x: 855, y: 48, w: 34, h: 145 });
@@ -2176,13 +2180,17 @@
     rect(c, 729, 170, 83, 10, '#2a4438'); rect(c, 718, 181, 106, 9, '#5b7052'); rect(c, 708, 191, 126, 9, '#465d45');
     for (let i = 0; i < 4; i++) { grass(c, 652 + i * 10, 89 + (i % 2) * 4, '#8fa15f'); grass(c, 864 + i * 6, 98 + (i % 2) * 5, '#708c52'); }
     lantern(c, 682, 116, time, 1.1); lantern(c, 860, 116, time, 1.1);
+    c.restore();
     // Faded path from the campfire to the old gate.
     for (let i = 0; i < 6; i++) { const x = 736 + Math.sin(i * .8) * 14, y = 225 + i * 42; rect(c, x, y, 35, 23, '#50614444'); rect(c, x + 2, y + 2, 30, 1, '#75825a33'); }
-    // Bedroll, supplies, and a cartographer's folded map.
+    // A bedroll and one supply crate frame the quiet camp rather than a row
+    // of interactive-looking objects competing with the menu.
+    c.save(); c.globalAlpha *= .62;
     shadow(c, 854, 331, 31); rect(c, 831, 307, 42, 38, '#1a302c'); rect(c, 834, 309, 36, 33, '#697858'); rect(c, 835, 311, 34, 7, '#a5aa79'); rect(c, 836, 320, 4, 20, '#859165'); rect(c, 867, 320, 3, 20, '#425e47'); rect(c, 843, 312, 16, 4, '#bec096');
-    prop(c, { kind:'crate', x: 870, y: 404 }, time); prop(c, { kind:'water', x: 890, y: 375 }, time); prop(c, { kind:'crate', x: 900, y: 439 }, time);
-    rect(c, 828, 453, 40, 10, '#1b302c'); rect(c, 831, 438, 34, 19, '#7c6744'); rect(c, 835, 434, 28, 16, '#c1b784'); rect(c, 842, 438, 13, 2, '#7b8860'); rect(c, 848, 440, 2, 7, '#7b8860'); rect(c, 832, 457, 5, 9, '#5d533a'); rect(c, 860, 457, 5, 9, '#5d533a');
+    prop(c, { kind:'crate', x: 870, y: 404 }, time);
+    c.restore();
     // Deliberately roomy camp: the title and scene can breathe together.
+    glow(c, 703, 376, 145, '#d69e5121');
     fire(c, { x: 703, y: 376, r: 24, active:true }, time);
     for (const [x,y] of [[676,376],[684,391],[705,396],[727,385],[729,369],[712,357],[689,357]]) { ellipse(c,x,y,7,4,'#182e2b'); rect(c,x-5,y-4,10,6,'#788369'); rect(c,x-4,y-4,8,2,'#9a9e7b'); }
     player(c, { id:'p1',x:647,y:375,r:14,hp:100,maxHp:100,weapon:'pistol',facing:.2 }, time, '', { players:[],props:[] });
@@ -2192,8 +2200,10 @@
       foxBody(c,{id:'camp-fox',kind:'fox',ownerId:'p1',name:profile.companion.name,facing:-.4,mode:'idle',assistTime:0},time,!!profile.reducedMotion);c.restore();
     }
     // Broken column in the foreground, with a scattering of young plants.
+    c.save(); c.globalAlpha *= .48;
     wall(c, { x: 551, y: 481, w: 53, h: 40 }); rect(c, 546, 477, 63, 9, '#78906b'); rect(c, 552, 474, 48, 4, '#9caa7b'); grass(c, 558, 476, '#a1af74');
-    for (const [x,y,s] of [[629,491,1.4],[907,510,1.3],[892,241,1],[587,154,1],[803,527,1]]) grass(c,x,y,'#6f8c50',s);
+    for (const [x,y,s] of [[629,491,1.4],[907,510,1.3],[803,527,1]]) grass(c,x,y,'#6f8c50',s);
+    c.restore();
     // These three repaired lamps are the expedition campaign's visible goal.
     const lit = Math.max(profile.chapter1 ? 1 : 0, Math.max(0, Math.min(3, Math.floor(num(profile.lit)))));
     for (let i = 0; i < 3; i++) {
@@ -2201,9 +2211,9 @@
       shadow(c,x,y,19,.25);rect(c,x-16,y-4,32,11,'#334f42');rect(c,x-18,y-8,36,6,'#6c8160');rect(c,x-13,y-11,26,4,'#92a078');rect(c,x-2,y-21,4,12,'#6d7d55');
       if (i < lit) lantern(c,x,y-33,time,.9);
       else { rect(c,x-7,y-44,14,18,'#263d34');rect(c,x-5,y-42,10,13,'#405846');rect(c,x-3,y-40,6,10,'#2a4136');rect(c,x-8,y-45,16,3,'#7b8b65');rect(c,x-8,y-28,16,3,'#6a7d59');rect(c,x-2,y-48,4,3,'#70845d'); }
-      label(c,['炉心','物资','守夜'][i],x,y+15,i<lit?'#d8c58b':'#809676',8);
+      alpha(c,.45,()=>label(c,['炉心','物资','守夜'][i],x,y+15,i<lit?'#d8c58b':'#809676',8));
     }
-    label(c,`归途灯 · ${lit} / 3`,739,553,'#bdc499',9);
+    alpha(c,.45,()=>label(c,`归途灯 · ${lit} / 3`,739,553,'#bdc499',9));
     if (profile.chapter1) {
       // Returning collectors and their recovered cart stay in the camp after
       // chapter completion, giving the restored lamp a visible consequence.
@@ -2216,7 +2226,7 @@
       }
       rect(c, 861, 313, 47, 6, '#88754c'); rect(c, 866, 293, 37, 23, '#5e6648'); rect(c, 869, 294, 31, 5, '#adb183');
       for (const x of [870, 899]) { ellipse(c, x, 322, 6, 6, '#22372b'); ellipse(c, x, 322, 3, 3, '#a78b57'); }
-      label(c, '采集队已归营', 868, 228, '#d7c48f', 9);
+      alpha(c,.5,()=>label(c, '采集队已归营', 868, 228, '#d7c48f', 9));
     }
     lantern(c, 904, 529, time, .85);
     previewAtmosphere(c, time); c.restore();

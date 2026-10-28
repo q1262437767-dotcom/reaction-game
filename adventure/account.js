@@ -1,9 +1,25 @@
 (function (root, factory) {
   'use strict';
+
   if (typeof module === 'object' && module.exports) module.exports = factory(root);
   else root.AdventureAccount = factory(root);
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
+
+  var avatarIds = ['ember', 'leaf', 'moon', 'star'];
+  var avatarSymbols = { ember: '◆', leaf: '❧', moon: '☾', star: '✦' };
+  function cleanNickname(value) {
+    if (typeof value !== 'string') return '';
+    var clean = value.trim();
+    return clean.length >= 1 && clean.length <= 16 && /^[\u3400-\u9fffA-Za-z0-9 ·_-]+$/.test(clean) ? clean : '';
+  }
+  function identityUser(value) {
+    if (!value || typeof value.id !== 'string') return null;
+    var next = { id: value.id, email: String(value.email || '') }, name = cleanNickname(value.nickname);
+    if (name) next.nickname = name;
+    if (avatarIds.indexOf(value.avatar) >= 0) next.avatar = value.avatar;
+    return next;
+  }
 
   function create(options) {
     var C = options.campaign, cloud = options.cloud, doc = options.document || root.document;
@@ -18,9 +34,10 @@
     var user = null, profile = C.normalize(options.initialProfile), revision = 0, dirty = false;
     var loaded = false, busy = false, sending = false, verifying = false, signingOut = false;
     var epoch = 0, mutation = 0, upload = null, choice = null, timer = null, resendAt = 0, resendTimer = null;
-    var lastStatus = '游客模式 · 进度保存在本机', disposed = false, deferredUser;
+    var lastStatus = '游客模式 · 进度保存在本机', lastStatusKind = 'normal', disposed = false, deferredUser;
     var authMode = 'password', codePurpose = 'login', codeEmail = null;
     var lastPreparationLock = null;
+    var identityBusy = false, identityOwner = null, identityDirty = false, selectedAvatar = 'ember';
 
     function copy(value) { return C.normalize(value); }
     function cacheKey(id) { return 'ruins-squad-cloud-v1:' + namespace + ':' + id; }
@@ -85,7 +102,7 @@
       ['login-password', 'register-password', 'register-password-confirm', 'new-password', 'new-password-confirm'].forEach(function (id) { $(id).value = ''; });
     }
     function gameBusy() { return !!(options.isBusy && options.isBusy()); }
-    function authLocked() { return disposed || !cloud.available || busy || sending || verifying || signingOut || gameBusy(); }
+    function authLocked() { return disposed || !cloud.available || busy || sending || verifying || signingOut || identityBusy || gameBusy(); }
     function authAllowed() {
       if (gameBusy()) { clearPasswords(); message('请先返回营地并结束联机，再操作账号。', true); render(); return false; }
       if (authLocked()) { clearPasswords(); return false; }
@@ -109,15 +126,54 @@
     }
     function noteRateLimit(error) { if (error && error.code === 'rate_limit') startCooldown(); }
     function status(text, kind) {
-      lastStatus = text;
+      lastStatus = text; lastStatusKind = kind || 'normal';
       $('account-status').textContent = text;
       $('account-status').setAttribute('data-state', kind || 'normal');
       $('cloud-status').textContent = text;
       if (options.onStatus) options.onStatus(text);
       render();
     }
+    function displayName() { return user ? cleanNickname(user.nickname) || '旅人·' + user.id.slice(-4) : '登录 / 注册'; }
+    function avatar() { return user && avatarIds.indexOf(user.avatar) >= 0 ? user.avatar : 'ember'; }
+    function summary() {
+      if (!user) return { state: busy || verifying ? 'checking' : 'guest', text: busy || verifying ? '正在确认登录状态' : '游客试玩 · 本机保存' };
+      if (choice) return { state: 'choice', text: '请选择存档' };
+      if (busy || upload) return { state: 'syncing', text: '正在同步' };
+      if (dirty) return { state: 'local', text: '等待云同步' };
+      if (!loaded || lastStatusKind === 'offline') return { state: 'local', text: '已保存到本机' };
+      return { state: 'synced', text: '云存档已同步' };
+    }
+    function identityMessage(text, error) {
+      var element = $('identity-message');
+      if (element) { element.textContent = text || ''; element.setAttribute('data-state', error ? 'error' : 'normal'); }
+    }
+    function renderIdentity(locked) {
+      var homeState = summary(), name = displayName(), savedAvatar = avatar(), owner = user && user.id;
+      var nameInput = $('account-nickname'), homeButton = $('home-account');
+      if (identityOwner !== owner) {
+        identityOwner = owner; identityDirty = false; selectedAvatar = savedAvatar; identityMessage('');
+      }
+      if (!identityDirty && nameInput) { nameInput.value = user ? name : ''; selectedAvatar = savedAvatar; }
+      [['home-account-name', name], ['account-display-name', user ? name : '游客旅人'], ['home-account-status', homeState.text]].forEach(function (item) { var node = $(item[0]); if (node) node.textContent = item[1]; });
+      ['home-account-avatar', 'account-profile-avatar'].forEach(function (id) {
+        var node = $(id); if (!node) return;
+        node.textContent = user ? avatarSymbols[savedAvatar] : '◌'; node.setAttribute('data-avatar', user ? savedAvatar : 'guest');
+      });
+      if (homeButton) {
+        homeButton.disabled = false;
+        homeButton.setAttribute('data-state', homeState.state);
+        homeButton.setAttribute('aria-label', user ? name + '，' + homeState.text + '，打开账号中心' : '登录或注册，当前游客进度保存在本机');
+      }
+      var unavailable = locked || !user || !!choice || !!upload || typeof cloud.setIdentity !== 'function';
+      if (nameInput) nameInput.disabled = unavailable;
+      avatarIds.forEach(function (id) { var button = $('avatar-' + id); if (button) { button.disabled = unavailable; button.setAttribute('aria-pressed', selectedAvatar === id ? 'true' : 'false'); } });
+      var save = $('save-identity'); if (save) { save.disabled = unavailable; save.textContent = identityBusy ? '正在保存…' : '保存昵称与头像'; }
+    }
     function render() {
       var locked = authLocked(), cooling = Date.now() < resendAt;
+      renderIdentity(locked);
+      $('account-title').textContent = user ? '账号中心' : authMode === 'register' ? '创建冒险者账号' : authMode === 'code' ? codePurpose === 'recovery' ? '找回密码' : codePurpose === 'register' ? '确认注册邮箱' : '验证码登录' : '登录遗迹小队';
+      $('account-intro').textContent = user ? '管理你的冒险者资料与营地存档。' : authMode === 'register' ? '验证邮箱并设置密码，保留属于你的营地。' : codePurpose === 'recovery' ? '验证已有账号的邮箱，再设置新的登录密码。' : '保留你的营地，在不同设备继续探险。';
       $('account-login-panel').hidden = !!user;
       $('account-user-panel').hidden = !user;
       $('account-email-display').textContent = user ? user.email : '';
@@ -148,7 +204,7 @@
       $('use-local-save').disabled = busy;
       // Status text can be published while a request is still busy. Notify
       // the camp again when its actual lock changes, including in finally.
-      var preparationLocked = busy || sending || verifying || signingOut || !!choice;
+      var preparationLocked = busy || sending || verifying || signingOut || identityBusy || !!choice;
       if (lastPreparationLock !== preparationLocked) {
         lastPreparationLock = preparationLocked;
         if (options.onLockChange) options.onLockChange(preparationLocked);
@@ -209,12 +265,12 @@
     async function handleAuth(next) {
       if (disposed) return;
       if (verifying) { deferredUser = next; return; }
-      if ((next && next.id) === (user && user.id)) { if (next) user = next; render(); return; }
+      if ((next && next.id) === (user && user.id)) { if (next) user = identityUser(next); render(); return; }
       clearPasswords(); resetCode(); authMode = 'password';
       if (user && dirty) persist();
-      cancelTimer(); choice = null; epoch++; mutation++; upload = null;
+      cancelTimer(); choice = null; epoch++; mutation++; upload = null; identityBusy = false;
       if (options.onIdentityChange) options.onIdentityChange();
-      user = next && typeof next.id === 'string' ? { id: next.id, email: String(next.email || '') } : null;
+      user = identityUser(next);
       revision = 0; dirty = false; loaded = false;
       if (!user) { busy = false; applyProfile(guest()); status('游客模式 · 进度保存在本机'); return; }
       var cached = safeEnvelope(read(draftKey(user.id))) || safeEnvelope(read(cacheKey(user.id)));
@@ -348,10 +404,49 @@
       if (value !== $(second).value) { clearPasswords(); message('两次输入的密码不一致，请重新输入。', true); return false; }
       return true;
     }
+    function resetIdentityDraft() {
+      identityDirty = false; identityMessage(''); render();
+    }
+    var nicknameInput = $('account-nickname');
+    if (nicknameInput) nicknameInput.addEventListener('input', function () {
+      identityDirty = true; nicknameInput.setAttribute('aria-invalid', 'false'); identityMessage('');
+    });
+    avatarIds.forEach(function (id) {
+      var button = $('avatar-' + id);
+      if (button) button.onclick = function () {
+        if (!user || authLocked() || choice || upload) return;
+        identityDirty = true; selectedAvatar = id; identityMessage(''); render();
+      };
+    });
+    var saveIdentity = $('save-identity');
+    if (saveIdentity) saveIdentity.onclick = async function () {
+      if (!authAllowed() || !user || choice || upload || typeof cloud.setIdentity !== 'function') return;
+      var nickname = cleanNickname(nicknameInput && nicknameInput.value);
+      if (!nickname) {
+        if (nicknameInput) { nicknameInput.setAttribute('aria-invalid', 'true'); if (typeof nicknameInput.focus === 'function') nicknameInput.focus(); }
+        identityMessage('昵称请使用 1–16 个汉字、字母、数字、空格或 · _ -。', true); return;
+      }
+      var ticket = epoch, owner = user.id, selected = selectedAvatar;
+      clearPasswords();
+      identityBusy = true; identityMessage('正在保存昵称与头像…'); render();
+      try {
+        var next = await cloud.setIdentity(nickname, selected);
+        if (!same(ticket, owner)) return;
+        var safe = identityUser(next);
+        if (!safe || safe.id !== owner || safe.nickname !== nickname || safe.avatar !== selected) throw new Error('identity_mismatch');
+        // A cosmetic update must not invoke profile adoption or clear a draft.
+        user = safe; identityDirty = false;
+        identityMessage('昵称与头像已保存。');
+      } catch (_) {
+        if (same(ticket, owner)) identityMessage('昵称与头像暂未保存，请稍后重试。', true);
+      } finally {
+        if (same(ticket, owner)) { identityBusy = false; render(); }
+      }
+    };
     $('open-account').onclick = function () { clearPasswords(); options.openDialog(); render(); };
     $('close-account').onclick = function () { clearPasswords(); $('account-dialog').close(); };
-    $('account-dialog').addEventListener('close', clearPasswords);
-    $('account-dialog').addEventListener('cancel', clearPasswords);
+    $('account-dialog').addEventListener('close', function () { clearPasswords(); resetIdentityDraft(); });
+    $('account-dialog').addEventListener('cancel', function () { clearPasswords(); resetIdentityDraft(); });
     ['password', 'register', 'code'].forEach(function (mode) {
       $('auth-tab-' + mode).onclick = function () { if (!authAllowed()) return; setMode(mode); };
     });
@@ -413,6 +508,7 @@
       var email = codeEmail, purpose = codePurpose; message('正在验证邮箱…');
       return runAuth(function () { return cloud.verifyCode(email, $('account-code').value); }, async function (next) {
         $('account-code').value = ''; await handleAuth(next);
+        if (purpose === 'recovery') $('set-password-panel').open = true;
         message(purpose === 'recovery' ? '邮箱验证成功。请在下方输入并保存新密码；账号和营地进度会保留。' : purpose === 'register' ? '邮箱确认成功，注册已完成。' : '邮箱验证成功。');
       });
     };
@@ -458,8 +554,10 @@
     if (root.addEventListener) { root.addEventListener('online', online); root.addEventListener('storage', storageChanged); }
     render();
     return Object.freeze({ init: init, handleAuth: handleAuth, readLocal: readLocal, writeLocal: writeLocal, sync: sync,
-      importSave: importSave, exportSave: exportSave, get user() { return user; }, get busy() { return busy || sending || verifying || signingOut; },
+      importSave: importSave, exportSave: exportSave, get user() { return user; }, get busy() { return busy || sending || verifying || signingOut || identityBusy; },
       get status() { return lastStatus; }, get needsChoice() { return !!choice; },
+      get displayName() { return displayName(); }, get avatar() { return avatar(); },
+      get summaryState() { return summary().state; }, get summaryText() { return summary().text; }, get savingIdentity() { return identityBusy; },
       dispose: function () { disposed = true; cancelTimer(); if (resendTimer) root.clearTimeout(resendTimer); clearPasswords(); if (user && dirty) persist(); if (root.removeEventListener) { root.removeEventListener('online', online); root.removeEventListener('storage', storageChanged); } }
     });
   }

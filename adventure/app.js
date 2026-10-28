@@ -30,6 +30,7 @@
   let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   let menuScreen = 'title';
+  let homeAccountReturn = false;
   const dialogIds = ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog', 'settings-dialog'];
   const blank = () => C.normalize(null);
   function readCamp() {
@@ -111,7 +112,10 @@
   }
   function updateLobbyMenu() {
     const connected = !!(net && net.connected), guest = connected && net.role === 'guest';
-    $('solo-start').textContent = guest ? '等待队长出发' : connected ? '一起出发' : net ? '等待伙伴' : '出发';
+    const accountLocked = !!(account && (account.busy || account.needsChoice));
+    const accountWait = account && account.needsChoice ? '请先选择存档' : '正在同步账号…';
+    $('solo-start').textContent = accountLocked ? accountWait : guest ? '等待队长出发' : connected ? '一起出发' : net ? '等待伙伴' : '出发';
+    $('solo-start').setAttribute('aria-busy', String(accountLocked && !account.needsChoice));
     $('loadout-coop').textContent = net ? '返回联机房间' : '邀请朋友';
     $('loadout-coop').hidden = !net; $('open-coop').hidden = !!net;
     $('menu-room-status').hidden = !net;
@@ -119,9 +123,13 @@
     $('mission-select').disabled = guest;
     $('difficulty-select').disabled = guest || ['chapter', 'relay', 'hunt'].includes(selectedGameMode());
     $('menu-room-status').textContent = connected ? guest ? '队长选择玩法，你可以更换自己的近战与远程武器。' : remoteCampReady ? '搭档已就位，本次将一起出发。' : '正在接收搭档的出发整备。' : net ? '房间已保留，可以返回联机面板等待伙伴。' : '';
-    $('solo-start').disabled = !!net && (!connected || guest || !remoteCampReady) || !canStart(selectedGameMode(), selectedMission(), selectedDifficulty());
-    $('start-room').disabled = !connected || guest || !remoteCampReady;
-    if (connected && !guest) $('start-room').textContent = remoteCampReady ? '一起出发 →' : '等待搭档整备';
+    $('solo-start').disabled = accountLocked || !!net && (!connected || guest || !remoteCampReady) || !canStart(selectedGameMode(), selectedMission(), selectedDifficulty());
+    $('start-room').disabled = accountLocked || !connected || guest || !remoteCampReady;
+    $('mode-training').disabled = accountLocked;
+    if (accountLocked) {
+      $('mission-lock').textContent = account && account.needsChoice ? '请先在账号中心选择要继续使用的存档。' : '正在确认账号进度，完成后即可出发。';
+      $('start-room').textContent = accountWait;
+    } else $('start-room').textContent = guest ? '等待队长出发' : connected ? remoteCampReady ? '一起出发 →' : '等待搭档整备' : '等待伙伴加入';
   }
   function stopSounds() {
     for (const oscillator of soundNodes) { try { oscillator.stop(); } catch (_) { /* Already ended. */ } }
@@ -1059,6 +1067,15 @@
   };
   $('settings-help').onclick = () => openDialog('help-dialog');
   $('settings-account').onclick = () => $('open-account').click();
+  $('home-account').onclick = () => {
+    homeAccountReturn = true;
+    $('open-account').click();
+  };
+  $('account-dialog').addEventListener('close', () => {
+    const returnToHome = homeAccountReturn;
+    homeAccountReturn = false;
+    if (returnToHome && !state && !$('start-screen').hidden && !hasDialog()) $('home-account').focus();
+  });
   $('resume-game').onclick = () => pause(false);
   $('restart-game').onclick = $('end-restart').onclick = () => { if (mode !== 'guest') { if (state && state.practice) beginPractice(); else begin(mode === 'host'); } };
   $('back-camp').onclick = $('end-camp').onclick = home;
@@ -1079,7 +1096,7 @@
     challenges: ['mode-hunt', 'mode-relay', 'mode-legacy', 'menu-challenges-back'],
     loadout: ['solo-start', 'loadout-coop', 'open-coop', 'menu-loadout-back']
   };
-  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'resume-game', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-help', 'settings-account', 'close-settings'])];
+  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'home-account', 'resume-game', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-help', 'settings-account', 'close-settings'])];
   feedbackButtons.forEach(id => {
     $(id).addEventListener('click', () => menuSound('select'));
     $(id).addEventListener('pointerenter', () => menuSound('hover'));

@@ -22,6 +22,7 @@
     weak_password: '新密码需为8至128个字符，并符合云服务的密码要求。',
     same_password: '新密码不能与当前密码相同。',
     invalid_profile: '存档数据格式不正确，请保留本地存档并联系游戏维护者。',
+    invalid_identity: '昵称请使用 1–16 个汉字、字母、数字或空格，头像请选择预设款式。',
     unknown: '云服务暂时无法完成操作，请稍后重试。'
   });
 
@@ -58,7 +59,21 @@
 
   function safeUser(user) {
     if (!user || typeof user.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) || typeof user.email !== 'string' || user.email.length > 254) return null;
-    return Object.freeze({ id: user.id, email: user.email });
+    var clean = { id: user.id, email: user.email }, metadata = user.user_metadata;
+    // These two fields are cosmetic only. Account ownership always uses id.
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      var nickname = Object.prototype.hasOwnProperty.call(metadata, 'ruins_nickname') ? cleanNickname(metadata.ruins_nickname) : '';
+      if (nickname) clean.nickname = nickname;
+      if (Object.prototype.hasOwnProperty.call(metadata, 'ruins_avatar') && avatarIds.indexOf(metadata.ruins_avatar) >= 0) clean.avatar = metadata.ruins_avatar;
+    }
+    return Object.freeze(clean);
+  }
+
+  var avatarIds = ['ember', 'leaf', 'moon', 'star'];
+  function cleanNickname(value) {
+    if (typeof value !== 'string') return '';
+    var clean = value.trim();
+    return clean.length >= 1 && clean.length <= 16 && /^[\u3400-\u9fffA-Za-z0-9 ·_-]+$/.test(clean) ? clean : '';
   }
 
   function validateConfig(config) {
@@ -316,6 +331,36 @@
       } catch (error) { throw translate(error, 'setPassword'); }
     }
 
+    async function setIdentity(nickname, avatar) {
+      ready();
+      var clean = cleanNickname(nickname);
+      if (!clean || avatarIds.indexOf(avatar) < 0) throw failure('invalid_identity');
+      if (!user) throw failure('auth');
+      var request = { id: user.id, generation: generation };
+      try {
+        request = await signedIn(request);
+        sameAccount(request);
+        if (!requestFetch) throw failure('network');
+        // PUT /user is updateUser's official Auth endpoint. Pin the JWT as in
+        // setPassword so an SDK auth-lock wait cannot write a later account.
+        var response = await requestFetch(checked.url + '/auth/v1/user', {
+          method: 'PUT',
+          headers: { apikey: checked.key, Authorization: 'Bearer ' + request.token,
+            'Content-Type': 'application/json', 'X-Client-Info': 'ruins-squad-cloud/1' },
+          body: JSON.stringify({ data: { ruins_nickname: clean, ruins_avatar: avatar } })
+        });
+        var body = null;
+        try { body = await response.json(); } catch (_) { /* Translated below. */ }
+        if (!response.ok) throw { code: body && (body.code || body.error_code), message: body && (body.message || body.msg), status: response.status };
+        sameAccount(request);
+        var updated = safeUser(body);
+        if (!updated || updated.id !== request.id) throw failure('auth');
+        if (updated.nickname !== clean || updated.avatar !== avatar) throw failure('invalid_identity');
+        user = updated;
+        return user;
+      } catch (error) { throw translate(error, 'setIdentity'); }
+    }
+
     async function load() {
       var request = await signedIn();
       try {
@@ -352,7 +397,7 @@
 
     return Object.freeze({ available: !disabled, reason: disabled ? messages[disabled] : '',
       init: init, requestCode: requestCode, resendSignup: resendSignup, verifyCode: verifyCode, signUp: signUp, signInWithPassword: signInWithPassword,
-      setPassword: setPassword, signOut: signOut, load: load, save: save, dispose: dispose });
+      setPassword: setPassword, setIdentity: setIdentity, signOut: signOut, load: load, save: save, dispose: dispose });
   }
 
   return Object.freeze({ create: create });

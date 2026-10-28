@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#0b1413">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=29">
-  <script defer src="engine.js?v=29"></script>
-  <script defer src="renderer.js?v=29"></script>
-  <script defer src="vendor/peerjs.min.js?v=29"></script>
-  <script defer src="net.js?v=29"></script>
-  <script defer src="campaign.js?v=29"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=29"></script>
-  <script defer src="cloud-config.js?v=29"></script>
-  <script defer src="cloud.js?v=29"></script>
-  <script defer src="account.js?v=29"></script>
-  <script defer src="app.js?v=29"></script>
+  <link rel="stylesheet" href="style.css?v=30">
+  <script defer src="engine.js?v=30"></script>
+  <script defer src="renderer.js?v=30"></script>
+  <script defer src="vendor/peerjs.min.js?v=30"></script>
+  <script defer src="net.js?v=30"></script>
+  <script defer src="campaign.js?v=30"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=30"></script>
+  <script defer src="cloud-config.js?v=30"></script>
+  <script defer src="cloud.js?v=30"></script>
+  <script defer src="account.js?v=30"></script>
+  <script defer src="app.js?v=30"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -36,13 +36,27 @@
         </div>
 
         <div id="start-screen" class="screen start-screen">
+          <header class="home-topbar" aria-label="营地与账号">
+            <span class="home-wordmark"><i aria-hidden="true"></i>苔火营地</span>
+            <div class="home-tools">
+              <button id="home-account" class="home-account" type="button" aria-haspopup="dialog" aria-controls="account-dialog" aria-label="登录或注册账号">
+                <span id="home-account-avatar" class="identity-avatar" data-avatar="ember" aria-hidden="true">◆</span>
+                <span class="home-account-copy"><strong id="home-account-name">登录 / 注册</strong><span id="home-account-status">游客进度保存在本机</span></span>
+                <span class="home-account-arrow" aria-hidden="true">›</span>
+              </button>
+              <button id="menu-settings" class="home-settings" type="button" aria-label="设置" title="设置" aria-haspopup="dialog" aria-controls="settings-dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 3-.6 2.1-2 .9-2-.6L3.5 8l1.4 1.7-.2 2.2L3 13.2l1.3 3 2.2-.1 1.7 1.4.3 2.2 3.2.5 1-2 2.1-.7 2 .9 2.3-2.3-.9-2 .7-2.1 2-1-.5-3.2-2.2-.3-1.4-1.7.1-2.2-3-1.3-1.3 1.7-2.2.2L11.3 3Z"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+            </div>
+          </header>
           <section id="title-menu" class="menu-view title-menu" aria-label="主菜单">
+            <p class="title-kicker">篝火未熄，旅途仍在继续</p>
             <h1 class="game-title">遗迹小队<small>RUIN RUNNERS</small></h1>
+            <p class="title-description">整备行囊，与同伴一起走进迷雾。</p>
             <nav class="title-actions" aria-label="主菜单选项">
-              <button id="menu-play" class="menu-action" type="button">开始游戏<span aria-hidden="true">→</span></button>
-              <button id="menu-coop" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="coop-dialog">联机<span aria-hidden="true">→</span></button>
-              <button id="menu-camp" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="camp-dialog">营地<span aria-hidden="true">→</span></button>
-              <button id="menu-settings" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="settings-dialog">设置<span aria-hidden="true">→</span></button>
+              <button id="menu-play" class="menu-action title-primary" type="button">开始游戏<span aria-hidden="true">→</span></button>
+              <div class="title-secondary">
+                <button id="menu-coop" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="coop-dialog">联机探险<span aria-hidden="true">↗</span></button>
+                <button id="menu-camp" class="menu-action" type="button" aria-haspopup="dialog" aria-controls="camp-dialog">我的营地<span aria-hidden="true">→</span></button>
+              </div>
             </nav>
             <p id="title-camp-status" class="title-camp-status" data-complete="false">归途灯尚未点亮</p>
           </section>
@@ -151,30 +165,29 @@
     <details class="camp-records"><summary>探险记录 · 营灯、徽章与遗物图鉴</summary><section class="chapter-camp-card"><strong id="chapter-camp-status" data-complete="false">第一章 · 第一节 · 借火归营 · 归途灯尚未点亮</strong><p id="chapter-camp-copy">进入苔火工坊借回火种，回营点亮归途灯。</p></section><div id="camp-objectives" class="camp-objectives" aria-live="polite"><div class="camp-lamp" data-mission="ember"><i aria-hidden="true"></i><strong>炉心之火</strong><span>完成熄灭炉心</span></div><div class="camp-lamp" data-mission="salvage"><i aria-hidden="true"></i><strong>归营之粮</strong><span>完成物资回收</span></div><div class="camp-lamp" data-mission="holdout"><i aria-hidden="true"></i><strong>夜航之光</strong><span>完成信标守夜</span></div></div><div class="journal-heading"><span class="eyebrow">探险徽章</span><span>额外的挑战，留给更熟练的你</span></div><div id="journal-list" class="journal-list"></div><div class="journal-heading"><span class="eyebrow">遗物图鉴</span><span>发现六种不同的战斗方式</span></div><div id="relic-journal" class="journal-list"></div></details><p class="quiet-note">星屑与整备保存在营地；登录后随账号同步。整备在下次出发生效，训练不启用。</p></dialog>
 
   <dialog id="account-dialog" class="modal account-modal" aria-labelledby="account-title" aria-describedby="account-intro">
-    <div class="dialog-heading"><span class="dialog-kicker">YOUR CAMP, ANYWHERE</span><button id="close-account" class="icon-button close-dialog" type="button" aria-label="关闭账号与云存档">×</button></div>
-    <span class="account-emblem" aria-hidden="true">◈</span>
-    <h2 id="account-title">带着营地，继续出发</h2>
-    <div id="account-intro" class="dialog-intro">登录后，将星屑、装备和任务进度存进账号。换一台设备，也能从营地继续冒险。</div>
+    <div class="dialog-heading"><span class="dialog-kicker">RUIN RUNNERS · ACCOUNT</span><button id="close-account" class="icon-button close-dialog" type="button" aria-label="关闭账号中心">×</button></div>
+    <h2 id="account-title">登录遗迹小队</h2>
+    <div id="account-intro" class="dialog-intro">保留你的营地，在不同设备继续探险。</div>
 
     <div id="account-setup-note" class="account-notice" role="status" hidden></div>
     <div id="account-message" class="account-message" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <div id="account-login-panel" class="account-login-panel">
       <div class="auth-tabs" role="tablist" aria-label="登录方式">
-        <button id="auth-tab-password" class="auth-tab" type="button" role="tab" aria-selected="true" aria-controls="auth-password-panel">密码登录</button>
-        <button id="auth-tab-register" class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="auth-register-panel">邮箱注册</button>
-        <button id="auth-tab-code" class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="auth-code-panel">验证码登录</button>
+        <button id="auth-tab-password" class="auth-tab" type="button" role="tab" aria-selected="true" aria-controls="auth-password-panel">登录</button>
+        <button id="auth-tab-register" class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="auth-register-panel">注册账号</button>
+        <button id="auth-tab-code" class="auth-tab" type="button" role="tab" aria-selected="false" aria-controls="auth-code-panel">邮箱验证码</button>
       </div>
       <div class="account-field"><label for="account-email">你的邮箱</label><div class="account-input-row"><input id="account-email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" placeholder="name@example.com" maxlength="254" required></div></div>
 
       <div id="auth-password-panel" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-password">
         <div class="account-field"><label for="login-password">密码</label><div class="account-input-row"><input id="login-password" type="password" autocomplete="current-password" maxlength="128" placeholder="输入密码"></div></div>
-        <button id="password-login" class="button button-primary auth-submit" type="button">登录，继续探险 <span aria-hidden="true">↗</span></button>
+        <button id="password-login" class="button button-primary auth-submit" type="button">登录 <span aria-hidden="true">→</span></button>
         <button id="forgot-password" class="text-button auth-forgot" type="button">忘记密码？</button>
       </div>
 
       <div id="auth-register-panel" class="auth-panel" role="tabpanel" aria-labelledby="auth-tab-register" hidden>
-        <p class="auth-method-note">注册：验证邮箱并设置密码；下次邮箱+密码登录。</p>
+        <p class="auth-method-note">创建账号后验证邮箱。之后可直接使用邮箱和密码登录。</p>
         <div class="account-field"><label for="register-password">设置密码</label><div class="account-input-row"><input id="register-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="8–128 个字符" aria-describedby="register-password-note"></div><p id="register-password-note" class="account-field-note">至少 8 个字符，请使用不易猜到的密码。</p></div>
         <div class="account-field"><label for="register-password-confirm">确认密码</label><div class="account-input-row"><input id="register-password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="再次输入密码"></div></div>
         <button id="register-account" class="button button-primary auth-submit" type="button">注册并验证邮箱 <span aria-hidden="true">→</span></button>
@@ -187,16 +200,32 @@
     </div>
 
     <div id="account-user-panel" class="account-user-panel" hidden>
-      <div class="account-identity"><span class="account-identity-mark" aria-hidden="true">◈</span><div><span class="eyebrow">当前账号</span><strong id="account-email-display"></strong></div></div>
-      <div class="cloud-save-status"><span class="eyebrow">营地存档</span><p id="cloud-status" role="status" aria-live="polite">正在检查云端进度…</p></div>
-      <div class="account-user-actions"><button id="sync-cloud" class="button button-primary" type="button">同步存档 <span aria-hidden="true">↗</span></button><button id="logout-account" class="text-button" type="button">退出账号</button></div>
-      <section id="set-password-panel" class="set-password-panel" aria-labelledby="set-password-title">
-        <h3 id="set-password-title">设置或修改密码</h3>
+      <div class="account-identity"><span id="account-profile-avatar" class="identity-avatar account-profile-avatar" data-avatar="ember" aria-hidden="true">◆</span><div><span class="eyebrow">我的冒险者</span><strong id="account-display-name">旅人</strong><p id="account-email-display" class="account-private-email"></p></div></div>
+      <div class="cloud-save-status"><span class="eyebrow">营地存档</span><p id="cloud-status" role="status" aria-live="polite">正在检查云端进度…</p><button id="sync-cloud" class="text-button cloud-sync-action" type="button">重新同步 <span aria-hidden="true">↻</span></button></div>
+      <details id="identity-settings" class="account-section identity-settings">
+        <summary>昵称与头像<span aria-hidden="true">⌄</span></summary>
+        <div class="account-section-body">
+          <div class="account-field"><label for="account-nickname">冒险者昵称</label><div class="account-input-row"><input id="account-nickname" type="text" autocomplete="nickname" maxlength="16" placeholder="给自己取个名字" aria-describedby="nickname-note"></div><p id="nickname-note" class="account-field-note">昵称与头像随账号保留，不会改变你的探险进度。</p></div>
+          <fieldset class="avatar-picker"><legend>选择头像</legend><div class="avatar-options">
+            <button id="avatar-ember" class="avatar-option identity-avatar" type="button" data-avatar="ember" aria-label="余烬头像" aria-pressed="true">◆</button>
+            <button id="avatar-leaf" class="avatar-option identity-avatar" type="button" data-avatar="leaf" aria-label="苔叶头像" aria-pressed="false">❧</button>
+            <button id="avatar-moon" class="avatar-option identity-avatar" type="button" data-avatar="moon" aria-label="月影头像" aria-pressed="false">☾</button>
+            <button id="avatar-star" class="avatar-option identity-avatar" type="button" data-avatar="star" aria-label="星光头像" aria-pressed="false">✦</button>
+          </div></fieldset>
+          <button id="save-identity" class="button button-secondary auth-submit" type="button">保存个人资料</button>
+          <p id="identity-message" class="identity-message" role="status" aria-live="polite"></p>
+        </div>
+      </details>
+      <details id="set-password-panel" class="account-section set-password-panel" aria-labelledby="set-password-title">
+        <summary id="set-password-title">设置或修改密码<span aria-hidden="true">⌄</span></summary>
+        <div class="account-section-body">
         <p class="auth-method-note">原验证码账号可在这里设置密码，以后直接登录。</p>
         <div class="account-field"><label for="new-password">新密码</label><div class="account-input-row"><input id="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="8–128 个字符"></div></div>
         <div class="account-field"><label for="new-password-confirm">确认新密码</label><div class="account-input-row"><input id="new-password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="再次输入新密码"></div></div>
         <button id="save-password" class="button button-secondary auth-submit" type="button">保存密码</button>
-      </section>
+        </div>
+      </details>
+      <div class="account-user-actions"><button id="logout-account" class="text-button" type="button">退出当前账号</button></div>
     </div>
 
     <div id="cloud-choice-panel" class="cloud-choice-panel" aria-labelledby="choice-title" hidden>
@@ -204,8 +233,8 @@
       <div class="cloud-choice-actions"><button id="use-cloud-save" class="button button-primary" type="button">使用云端存档</button><button id="use-local-save" class="button button-secondary" type="button">使用本地存档</button><button id="cancel-cloud-choice" class="text-button" type="button">稍后选择</button></div>
     </div>
 
-    <details class="save-backup"><summary>留一份存档备份</summary><p>将营地进度下载为文件，也可以从以前的备份恢复。</p><div class="backup-actions"><button id="export-save" class="button button-secondary" type="button">下载备份</button><label class="button button-secondary backup-import" for="import-save"><span>导入备份</span><input id="import-save" type="file" accept=".json,application/json" aria-label="选择营地存档备份文件"></label></div><p class="backup-note">导入会先核对存档，再由你确认是否替换当前进度。</p></details>
-    <p class="quiet-note account-footnote">也可以关掉这个窗口，继续以游客身份探险。</p>
+    <details class="save-backup"><summary>存档备份与恢复</summary><p>将营地进度下载为文件，也可以从以前的备份恢复。</p><div class="backup-actions"><button id="export-save" class="button button-secondary" type="button">下载备份</button><label class="button button-secondary backup-import" for="import-save"><span>导入备份</span><input id="import-save" type="file" accept=".json,application/json" aria-label="选择营地存档备份文件"></label></div><p class="backup-note">导入会先核对存档，再由你确认是否替换当前进度。</p></details>
+    <p class="quiet-note account-footnote">关闭后可继续探险，当前进度会保留。</p>
   </dialog>
 </body>
 </html>
