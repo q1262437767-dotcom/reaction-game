@@ -7,6 +7,9 @@
   const styleColors = { echo: '#d5c4ec', pursuit: '#edcf91', phantom: '#b0dfd2' };
   const styleNames = { echo: '回响反击', pursuit: '闪身射击', phantom: '残影牵制' };
   const floorCache = new Map();
+  // Per surface presentation history. It never belongs to the simulation or a
+  // network snapshot, and advancing wall time alone cannot move an enemy.
+  const enemyMotionCache = new WeakMap();
   const font = '"Microsoft YaHei", "Noto Sans SC", sans-serif';
   const num = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
   const values = (v) => Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : [];
@@ -956,12 +959,150 @@
 
   const chapterEnemyNames = { chaser: '巡炉刀兵', shooter: '炉火枪兵', shield: '执盾守卫', charger: '搬运撞兽',
     duelist: '守刃监工', brute: '重装炉卫', pyromancer: '提灯司炉者', boss: '炉心守卫' };
-  function chapterConstruct(c, e, time, step) {
-    const kind = e.kind, attack = e.rhythm || {}, facing = num(attack.angle, num(e.facing));
+  const motionClamp = value => Math.max(0, Math.min(1, value));
+  const motionEase = value => { const p = motionClamp(value); return p * p * (3 - 2 * p); };
+  const ordinaryWindup = { chaser: .36, shooter: .6, ranged: .6, shield: .85, charger: .85 };
+  const ordinaryCooldown = { chaser: .9, shooter: 1.3, ranged: 1.3, shield: 1.65, charger: 1.7 };
+  function enemyPose(e, motion = {}, reduced = false) {
+    const rhythm = e.rhythm, kind = e.kind || e.type, stunned = num(e.stun) > 0 || num(e.stagger) > 0;
+    const locked = rhythm || num(e.windup) > 0 || num(e.chargeTime) > 0 || num(motion.release) > 0;
+    const aim = Math.atan2(num(e.aimY, num(e.y)) - num(e.y), num(e.aimX, num(e.x) + 100) - num(e.x));
+    const attackFacing = rhythm ? num(rhythm.angle, num(e.facing)) : num(e.chargeTime) > 0 ? Math.atan2(num(e.chargeY), num(e.chargeX, 1)) : locked ? num(e.windup) > 0 || num(motion.release) > 0 ? aim : num(e.facing) : num(motion.facing, num(e.facing));
+    // A shield's front is gameplay geometry. Unlike a cosmetic body turn it
+    // must never lead or trail its real defense arc while its gun takes aim.
+    const facing = kind === 'shield' ? num(e.facing) : attackFacing;
+    let phase = 'idle', type = '', progress = 0;
+    if (rhythm) {
+      phase = rhythm.phase; type = rhythm.type;
+      progress = motionClamp(1 - num(rhythm.remaining) / Math.max(.001, num(rhythm.duration, 1)));
+    } else if (num(e.chargeTime) > 0) {
+      phase = 'active'; type = 'rush'; progress = motionClamp(1 - num(e.chargeTime) / .65);
+    } else if (num(e.windup) > 0) {
+      phase = 'windup'; type = kind === 'charger' ? 'rush' : kind === 'chaser' ? 'combo' : 'shot';
+      progress = motionClamp(1 - num(e.windup) / (ordinaryWindup[kind] || .78));
+    } else if (num(motion.release) > 0 && !stunned) {
+      // The first rendered release frame is already the authoritative hit.
+      // Only its follow-through is retained, never a delayed visual windup.
+      type = kind === 'chaser' ? 'combo' : 'shot';
+      const age = .28 - motion.release;
+      phase = age < .075 ? 'active' : 'recover';
+      progress = phase === 'active' ? motionClamp(age / .075) : motionClamp((age - .075) / .205);
+    }
+    if (stunned) { phase = 'stagger'; type = ''; progress = 0; }
+    const winding = phase === 'windup', active = phase === 'active', recovering = phase === 'recover';
+    const p = motionEase(progress), side = rhythm && num(rhythm.beat, 1) % 2 === 0 ? -1 : 1;
+    const attack = winding || active || recovering;
+    const walking = !attack && !stunned && !!motion.moving && !reduced;
+    const step = walking ? Math.sin(num(motion.walk)) * (kind === 'brute' || kind === 'boss' ? 2.8 : 2.3) : 0;
+    const pose = { facing, step, bob: walking ? -Math.abs(Math.sin(num(motion.walk))) * 1.2 : 0,
+      tilt: walking ? Math.sin(num(motion.walk)) * .025 : 0,
+      turn: Math.cos(facing) * .025,
+      phase, type, progress, side, weaponAngle: facing, gunAngle: kind === 'shield' && attack ? aim : facing,
+      reach: 0, lift: 0, recoil: 0, brace: 0 };
+    if (type === 'quake') {
+      // Strike damage resolves on the first active tick, so both fists must
+      // already be down then rather than finishing their fall after the hit.
+      pose.lift = winding ? motionEase(Math.min(1, progress * 1.4)) : recovering ? -(.7 * (1 - p)) : 0;
+      pose.brace = winding ? p * .7 : active ? 1 : recovering ? (1 - p) * .8 : 0;
+      pose.bob += winding ? 1.5 * p : active ? 3 : recovering ? 2 * (1 - p) : 0;
+      const raiseTurn = Math.atan2(Math.sin(-Math.PI / 2 - facing), Math.cos(-Math.PI / 2 - facing));
+      pose.weaponAngle = winding ? facing + raiseTurn * motionEase(Math.min(1, progress * 1.4)) : active ? facing : facing + side * .65 * (1 - p);
+    } else if (type === 'rush') {
+      pose.brace = winding ? p : active ? 1 : recovering ? (1 - p) : 0;
+      pose.bob += pose.brace * 1.5;
+      pose.tilt += Math.cos(facing) * (active ? .035 : -.025 * p);
+      pose.reach = winding ? -4 * p : active ? 5 : 0;
+      // The feet pump only while a charging body actually changes position.
+      if (active && motion.moving && !reduced) pose.step = Math.sin(num(motion.walk) * 1.4) * 3;
+    } else if (type === 'thrust' || type === 'hook') {
+      pose.reach = winding ? -9 * p : active ? 13 : recovering ? 10 * (1 - p) : 0;
+      pose.brace = winding ? p * .8 : active ? 1 : recovering ? .5 * (1 - p) : 0;
+      pose.tilt += Math.cos(facing) * (winding ? -.02 * p : active ? .03 : recovering ? .02 * (1 - p) : 0);
+      pose.lift = type === 'hook' && winding ? .5 * p : 0;
+    } else if (type === 'combo' || type === 'sweep') {
+      const swing = type === 'sweep' ? 1.35 : 1.0;
+      pose.weaponAngle = facing + (winding ? side * (-.2 - swing * p) : active ? side * swing * p : recovering ? side * swing * (1 - p) : 0);
+      pose.reach = winding ? -3 * p : active ? 5 : recovering ? 3 * (1 - p) : 0;
+      pose.tilt += winding ? -side * .025 * p : active ? side * .03 : recovering ? side * .02 * (1 - p) : 0;
+      pose.brace = winding ? p * .5 : active ? .8 : recovering ? .5 * (1 - p) : 0;
+    } else if (type === 'shot' || type === 'fireball') {
+      pose.lift = winding ? p * (type === 'fireball' ? 1 : .25) : recovering ? .2 * (1 - p) : 0;
+      pose.recoil = active ? 5 * (1 - p * .7) : recovering ? 2 * (1 - p) : 0;
+      pose.reach = winding ? 3 * p : -pose.recoil;
+      pose.brace = winding ? p * .4 : active ? .6 : recovering ? .3 * (1 - p) : 0;
+      pose.tilt -= Math.cos(facing) * pose.recoil * .005;
+    }
+    if (stunned) { pose.bob = 2; pose.tilt = -.035; }
+    if (reduced) { pose.step = 0; pose.bob = 0; pose.tilt = 0; pose.turn = 0; }
+    return pose;
+  }
+  function enemyMotionFrame(c, state, options = {}) {
+    const room = state.room || {}, time = num(state.time), paused = !!options.paused;
+    const key = [state.seed, state.mode, !!state.practice, room.id, room.index].join(':');
+    let history = enemyMotionCache.get(c);
+    if (!history || history.key !== key || time < history.time || time === 0 && history.time !== 0) {
+      history = { key, time, enemies: new Map() }; enemyMotionCache.set(c, history);
+    }
+    const dt = Math.max(0, time - history.time), poses = new Map(), live = new Set();
+    for (const e of values(state.enemies)) {
+      if (!e || num(e.hp) <= 0 || e.dead) continue;
+      const id = e.id, x = num(e.x), y = num(e.y); live.add(id);
+      let entry = history.enemies.get(id);
+      if (!entry || entry.kind !== (e.kind || e.type)) {
+        entry = { kind: e.kind || e.type, x, y, facing: num(e.facing), walk: (Math.abs(hash(id)) % 13) * .2,
+          moving: false, windup: num(e.windup), cooldown: num(e.attackCd), firedAt: -100 };
+        history.enemies.set(id, entry);
+      }
+      if (dt > 0) {
+        const distance = Math.hypot(x - entry.x, y - entry.y), stable = distance < 96 && dt <= .6;
+        const movement = !paused && stable && distance > .025 && !num(e.stun) && !num(e.stagger);
+        if (!paused) entry.moving = movement;
+        if (movement) entry.walk += distance / (e.kind === 'boss' || e.kind === 'brute' ? 9 : 6);
+        const releaseAge = num(ordinaryCooldown[e.kind || e.type]) - num(e.attackCd);
+        // A delayed guest snapshot must not make an old shot look newly fired.
+        // The live cooldown places follow-through at its actual release age.
+        if (!paused && stable && entry.windup > 0 && num(e.windup) <= 0 && !e.rhythm && !num(e.stun) && !num(e.stagger) && num(e.attackCd) > entry.cooldown + .1 && releaseAge >= -1e-6 && releaseAge < .28) entry.firedAt = time - Math.max(0, releaseAge);
+        const delta = Math.atan2(Math.sin(num(e.facing) - entry.facing), Math.cos(num(e.facing) - entry.facing));
+        if (!paused) entry.facing += delta * Math.min(1, dt * 13);
+        entry.x = x; entry.y = y; entry.windup = num(e.windup); entry.cooldown = num(e.attackCd);
+      }
+      const age = time - entry.firedAt;
+      poses.set(id, enemyPose(e, { facing: entry.facing, walk: entry.walk, moving: entry.moving,
+        release: age >= 0 && age < .28 ? .28 - age : 0 }, !!options.reducedMotion));
+    }
+    for (const id of history.enemies.keys()) if (!live.has(id)) history.enemies.delete(id);
+    history.time = time;
+    return poses;
+  }
+  function enemyBlade(c, e, pose, large = false) {
+    const active = pose.phase === 'active', winding = pose.phase === 'windup';
+    const reach = pose.reach, facing = pose.facing;
+    const x = Math.cos(facing) * reach, y = -3 + Math.sin(facing) * reach * .65 - Math.max(0, pose.lift) * 22;
+    path(c, [[Math.cos(facing) * 7, -9], [x + Math.cos(pose.weaponAngle) * 6, y + Math.sin(pose.weaponAngle) * 6]], '#8f987b', large ? 7 : 5);
+    blade(c, x, y, pose.weaponAngle, false, active && pose.type !== 'thrust', large);
+    if (winding && pose.type === 'thrust') rect(c, x - 2, y - 3, 5, 6, '#d6bb86');
+  }
+  function enemyGun(c, pose, color = '#c8ae79') {
+    const facing = num(pose.gunAngle, pose.facing);
+    const x = Math.cos(facing) * pose.reach, y = -3 + Math.sin(facing) * pose.reach * .65 - pose.lift * 8;
+    path(c, [[Math.cos(facing) * 5, -10], [x + Math.cos(facing) * 7, y + Math.sin(facing) * 7]], '#99876a', 5);
+    gun(c, x, y, facing, 'pistol', color, true);
+  }
+  function quakeArms(c, pose, chapter = false, boss = false) {
+    const down = pose.phase === 'active' || pose.phase === 'recover', lift = Math.max(0, pose.lift);
+    const top = -21 - lift * 31 + (down ? 11 * (pose.phase === 'recover' ? 1 - motionEase(pose.progress) : 1) : 0);
+    for (const side of [-1, 1]) {
+      const x = side * (boss ? 31 : 28), hand = top + (down ? 16 : 0);
+      path(c, [[side * 20, -19], [x, top + 8], [x + (down ? side * 3 : 0), hand]], chapter ? '#7e6650' : '#66765b', 11);
+      rect(c, x - 8, hand - 5, 17, 13, chapter ? '#a2744d' : '#b1aa7b');
+      rect(c, x - 7, hand - 5, 15, 3, chapter ? '#d09c60' : '#d2c694');
+    }
+  }
+  function chapterConstruct(c, e, time, step, pose) {
+    const kind = e.kind, attack = e.rhythm || {}, facing = pose.facing;
     const large = kind === 'brute', low = kind === 'charger', width = large ? 44 : low ? 38 : kind === 'shield' ? 28 : 24;
     const top = large ? -26 : low ? -13 : -17, height = large ? 36 : low ? 25 : 26;
     const stone = '#67716b', lightStone = '#98a08c', darkStone = '#3e5048', copper = '#9e6947', brightCopper = '#cb965e', amber = '#f4be6b';
-    if (e.stagger > 0 || e.stun > 0) c.rotate(-.1);
     if (low) {
       // A squat load carrier with four piston legs and forked copper tusks.
       for (const side of [-1, 1]) for (const end of [-1, 1]) {
@@ -1002,13 +1143,14 @@
         rect(c, -16, -22, 32, 6, copper); rect(c, -18, -25, 12, 6, brightCopper); rect(c, 7, -25, 12, 6, brightCopper);
         rect(c, -3, -48, 6, 14, copper); rect(c, -2, -50, 4, 8, '#e6bd76');
       }
-      blade(c, 0, -3, facing + (attack.phase === 'windup' && attack.type === 'sweep' ? .8 : 0), attack.phase === 'windup', attack.phase === 'active', true);
+      enemyBlade(c, e, pose, kind === 'duelist');
     } else if (kind === 'shooter') {
       rect(c, -19, -25, 8, 19, '#34473b'); rect(c, -18, -27, 6, 4, copper);
       for (let y = -22; y < -9; y += 4) rect(c, -18, y, 6, 2, brightCopper);
-      gun(c, 0, -3, facing, 'pistol', brightCopper, true);
+      enemyGun(c, pose, brightCopper);
     } else if (kind === 'shield') {
-      c.save(); c.translate(Math.cos(facing) * 17, -3 + Math.sin(facing) * 12); c.rotate(facing);
+      enemyGun(c, { ...pose, reach: pose.reach + 7 }, brightCopper);
+      c.save(); c.translate(Math.cos(facing) * (17 + pose.reach * .35), -3 + Math.sin(facing) * 12 - pose.lift * 6); c.rotate(facing);
       rect(c, -5, -20, 11, 40, '#22382f'); rect(c, -3, -19, 9, 38, copper); rect(c, -2, -18, 3, 36, brightCopper);
       for (const y of [-13, 0, 13]) { rect(c, -3, y - 2, 9, 4, '#d7b37b'); }
       rect(c, 1, -6, 4, 12, '#5f5f4b'); c.restore();
@@ -1021,29 +1163,36 @@
       }
       rect(c, -10, -26, 20, 6, darkStone); for (let x = -7; x <= 7; x += 7) rect(c, x, -28, 3, 6, copper);
     } else if (large) {
-      const raised = attack.phase === 'windup' && attack.type === 'quake';
       for (const side of [-1, 1]) {
-        const y = raised ? -45 : -17 + step * side;
-        rect(c, side * 27 - 7, y, 14, 26, darkStone); rect(c, side * 27 - 9, y - 4, 18, 14, stone);
-        rect(c, side * 27 - 9, y - 4, 18, 4, brightCopper); rect(c, side * 27 - 6, y + 6, 12, 7, copper);
+        if (pose.type === 'quake') {
+          rect(c, side * 22 - 6, -24, 12, 4, brightCopper);
+        } else {
+          const y = -17 + step * side;
+          rect(c, side * 27 - 7, y, 14, 26, darkStone); rect(c, side * 27 - 9, y - 4, 18, 14, stone);
+          rect(c, side * 27 - 9, y - 4, 18, 4, brightCopper); rect(c, side * 27 - 6, y + 6, 12, 7, copper);
+        }
       }
+      if (pose.type === 'quake') quakeArms(c, pose, true);
       rect(c, -18, -29, 36, 6, copper); rect(c, -15, -29, 30, 2, brightCopper);
       for (const side of [-1, 1]) { rect(c, side * 12 - 3, -53, 6, 12, '#3e5048'); rect(c, side * 12 - 2, -53, 4, 3, copper); }
     } else if (kind === 'pyromancer') {
       rect(c, -15, 5, 30, 8, '#46574b'); rect(c, -12, 8, 24, 5, copper);
       rect(c, -16, -42, 32, 5, copper); rect(c, -19, -38, 38, 4, brightCopper);
-      const handX = Math.cos(facing) * 22, handY = -4 + Math.sin(facing) * 13;
+      const handX = Math.cos(facing) * (22 + pose.reach), handY = -4 + Math.sin(facing) * 13 - pose.lift * 24;
       path(c, [[Math.cos(facing) * 9, -8], [handX, handY]], copper, 6);
       rect(c, handX - 2, handY - 43, 4, 57, '#594c35'); rect(c, handX - 1, handY - 43, 2, 53, '#bd945c');
       rect(c, handX - 14, handY - 45, 28, 4, brightCopper); lantern(c, handX, handY - 26, time, .8);
     }
   }
-  function enemy(c, e, time, events = [], still = false, chapter = false, random = false) {
+  function enemy(c, e, time, events = [], still = false, chapter = false, random = false, pose = null) {
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15);
     const recovering = boss && e.rhythm && e.rhythm.phase === 'recover' && num(e.stagger) <= 0;
     const overload = random && recovering && e.stage >= 2 && e.rhythm.type === 'quake' && num(e.rhythm.beats) === 2 && num(e.rhythm.beat) === 2 && num(e.weakTime) > 0;
-    const step = recovering || still ? 0 : Math.sin(time * .012 + x) * 1.5;
+    pose = pose || enemyPose(e);
+    const step = pose.step, facing = pose.facing;
+    // Furnace flicker and hanging equipment share the simulation clock passed
+    // by draw; pausing or repeating a guest snapshot preserves their position.
     shadow(c, x, y, r, .43);
     if (recovering) {
       // This small mint opening belongs to the body, not an attack footprint.
@@ -1072,19 +1221,23 @@
     if ((kind === 'charger' || kind==='brute') && (e.chargeTime > 0 || e.rhythm && e.rhythm.type==='rush' && e.rhythm.phase==='active')) { const a = e.rhythm ? num(e.rhythm.angle) : Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', kind==='brute'?28:18); }
     const impact = events.find(({ event, age }) => event.enemyId === e.id && age <= .13 && ['enemy-hit','weakpoint-hit','environment-hit'].includes(event.type));
     c.save(); c.translate(Math.round(x), Math.round(y));
+    c.translate(0, pose.bob); c.rotate(pose.tilt); c.transform(1, 0, pose.turn, 1, 0, 0);
     if (impact && !still) {
       const recoil = (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
       c.translate(Math.cos(num(e.facing)) * -recoil, Math.sin(num(e.facing)) * -recoil);
     }
     if (chapter && !boss) {
-      chapterConstruct(c, e, time, step);
+      chapterConstruct(c, e, time, step, pose);
     } else if (boss) {
       const awakened = e.stage >= 2;
-      if (recovering) { c.translate(0, 4); c.rotate(.045); }
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
       rect(c, -21, 5 + step, 15, 16, '#192c2b'); rect(c, 8, 5 - step, 15, 16, '#192c2b'); rect(c, -20, 6 + step, 13, 12, '#62725c'); rect(c, 9, 6 - step, 13, 12, '#62725c');
       rect(c, -25, -24, 50, 34, '#142b29'); rect(c, -21, -23, 43, 31, '#71836a'); rect(c, -20, -21, 10, 28, '#8c9b7b'); rect(c, 10, -21, 11, 28, '#526a56'); rect(c, -16, -12, 33, 17, '#4e6552');
-      rect(c, -31, -26 + step, 14, 27, '#7e8b6a'); rect(c, -34, -22 + step, 5, 21, '#475f4b'); rect(c, 19, -26 - step, 14, 27, '#718363'); rect(c, 30, -22 - step, 5, 21, '#405947');
+      if (pose.type === 'quake') {
+        rect(c, -31, -26, 14, 7, '#7e8b6a'); rect(c, 19, -26, 14, 7, '#718363');
+      } else {
+        rect(c, -31, -26 + step, 14, 27, '#7e8b6a'); rect(c, -34, -22 + step, 5, 21, '#475f4b'); rect(c, 19, -26 - step, 14, 27, '#718363'); rect(c, 30, -22 - step, 5, 21, '#405947');
+      }
       rect(c, -17, -47, 34, 25, '#162d2b'); rect(c, -15, -45, 30, 23, '#7f8f70'); rect(c, -13, -45, 8, 20, '#a1ad84'); rect(c, 7, -45, 8, 20, '#5a7257'); rect(c, -20, -45, 40, 7, '#596f52'); rect(c, -12, -49, 24, 5, '#a1ad78');
       rect(c, -10, -35, 7, 4, '#e7b96d'); rect(c, 4, -35, 7, 4, '#e7b96d'); rect(c, -8, -26, 16, 3, '#334b3e');
       c.save(); c.rotate(Math.PI / 4); rect(c, -6, -7, 12, 12, '#c8ab63'); rect(c, -3, -4, 6, 6, '#eee0a0'); c.restore();
@@ -1102,13 +1255,9 @@
         for (const side of [-1, 1]) path(c, [[side * 12, -19], [side * 18, -14], [side * 18, 3], [side * 12, 8]], '#b4e3c7', 2);
       }
       if (recovering) { glow(c, 0, -9, 33, '#b4e5c527'); rect(c, -5, -13, 10, 14, '#b9dcb4'); rect(c, -2, -11, 4, 10, '#f0f3cf'); }
-      if (e.rhythm && e.rhythm.type === 'quake' && e.rhythm.phase === 'windup') {
-        // Raised fists and vertical steel distinguish the room-wide slam from
-        // the horizontal thrust before either floor pattern is fully charged.
-        for (const side of [-1, 1]) { rect(c, side * 30 - 7, -49, 14, 29, '#6f8062'); rect(c, side * 30 - 9, -53, 18, 10, '#b1aa7b'); }
-      }
+      if (pose.type === 'quake') quakeArms(c, pose, false, true);
     } else if (kind === 'lamplighter') {
-      const active = lanternActive(e), side = Math.cos(num(e.facing)) < 0 ? -1 : 1;
+      const active = lanternActive(e), side = Math.cos(facing) < 0 ? -1 : 1;
       if (!active) c.rotate(-.13);
       // A low cloth hood, copper shoulder and one hanging square lantern make
       // this small supporter distinct from the tall, pointed fireball caster.
@@ -1120,14 +1269,13 @@
       rect(c, -10, -30, 20, 18, '#263b2f'); rect(c, -8, -29, 16, 16, '#928063'); rect(c, -7, -28, 5, 13, '#b9a07a');
       rect(c, -9, -24, 18, 11, '#2a3b30'); rect(c, -5, -22, 3, 2, '#dbbd7c'); rect(c, 3, -22, 3, 2, '#dbbd7c');
       rect(c, -12, -30, 24, 5, '#b38f60'); rect(c, -10, -33, 20, 4, '#89734f'); rect(c, -5, -34, 10, 3, '#c3a571');
-      const handX = side * 19, handY = active ? -7 : 0;
+      const handX = side * 19 + step * .45, handY = (active ? -7 : 0) + Math.abs(step) * .5;
       path(c, [[side * 8, -13], [handX, handY]], '#ae8a60', 5); rect(c, handX - 3, handY - 3, 6, 6, '#ddba83');
       path(c, [[handX, handY], [handX, handY + 7]], '#c9ad71', 2);
       if (active) lantern(c, handX, handY + 14, still ? 0 : time, .62);
       else { rect(c, handX - 5, handY + 7, 10, 13, '#5d5c43'); rect(c, handX - 3, handY + 9, 6, 8, '#847756'); rect(c, handX - 6, handY + 6, 12, 2, '#b7a472'); }
     } else if (kind === 'hookwarden') {
-      const attack=e.rhythm||{},casting=attack.type==='hook'&&attack.phase==='windup',side=Math.cos(num(attack.angle,num(e.facing)))<0?-1:1;
-      if (e.stagger>0 || e.stun>0) c.rotate(-.14);
+      const attack=e.rhythm||{},casting=attack.type==='hook'&&attack.phase==='windup',side=Math.cos(facing)<0?-1:1;
       rect(c,-12,4+step,8,13,'#1b302b');rect(c,5,4-step,8,13,'#1b302b');rect(c,-11,5+step,7,8,'#a08659');rect(c,5,5-step,7,8,'#84764f');
       rect(c,-17,-18,34,28,'#1c352e');rect(c,-14,-17,28,25,'#6a7767');rect(c,-13,-16,8,22,'#a3a786');rect(c,6,-15,8,22,'#435f52');
       rect(c,-18,-18,10,12,'#9c6d46');rect(c,8,-18,10,12,'#9c6d46');rect(c,-17,-18,8,3,'#d0a569');rect(c,9,-18,8,3,'#c39259');
@@ -1136,35 +1284,35 @@
       // from the swordsman's tall crest and the lantern caster's pointed hat.
       rect(c,-13,-31,26,18,'#283e32');rect(c,-11,-31,22,17,'#896c49');rect(c,-10,-30,7,15,'#be955f');rect(c,5,-28,6,13,'#65583f');
       rect(c,-18,-31,36,6,'#a87848');rect(c,-15,-34,30,4,'#ce9a5b');rect(c,-10,-24,21,5,'#243b32');rect(c,-6,-23,4,2,'#f1c579');rect(c,3,-23,4,2,'#f1c579');
-      const handX=side*(casting?28:23),handY=casting?-20:-3;
+      const handX=Math.cos(pose.weaponAngle)*(23+pose.reach),handY=-3-pose.lift*26+Math.sin(pose.weaponAngle)*(13+pose.reach*.6);
       path(c,[[side*9,-12],[handX,handY]],'#9e8056',6);rect(c,handX-4,handY-4,8,8,'#d0ac77');
-      const hx=handX+side*13,hy=handY+(casting?-9:4);
+      const hx=handX+side*13,hy=handY+(casting?-9*motionEase(pose.progress):4);
       for(let i=0;i<3;i++){c.strokeStyle=i%2?'#788a79':'#c2b383';c.lineWidth=2;c.beginPath();c.ellipse(side*(5+i*8),-5+i*3,5,3,i%2?.6:-.4,0,Math.PI*2);c.stroke();}
       path(c,[[handX,handY],[hx,hy]],'#b6b486',3);
       c.save();c.translate(hx,hy);c.scale(side,1);path(c,[[0,-10],[9,-11],[15,-4],[14,7],[7,13],[0,9],[5,3]],'#344d41',7);path(c,[[0,-10],[9,-11],[15,-4],[14,7],[7,13],[0,9],[5,3]],'#d8c797',3);c.restore();
       if(casting)path(c,[[hx-5,hy-16],[hx+7,hy-19],[hx+16,hy-12]],'#edce8f',2);
     } else if (kind === 'duelist') {
-      const staggered = e.stagger > 0, attack = e.rhythm || {}, raised = attack.phase === 'windup';
-      if (staggered) c.rotate(-.13);
       rect(c,-10,4+step,7,12,'#172b29');rect(c,4,4-step,7,12,'#172b29');rect(c,-9,5+step,6,8,'#8b8570');rect(c,4,5-step,6,8,'#8b8570');
       rect(c,-15,-17,30,25,'#142c2a');rect(c,-12,-16,24,22,'#787f72');rect(c,-11,-16,7,20,'#a8ac8a');rect(c,5,-15,7,20,'#4e655c');
       rect(c,-14,2,29,5,'#b7a273');rect(c,-3,-16,6,20,'#a66453');rect(c,-8,7,7,10,'#675a4c');rect(c,2,7,7,10,'#675a4c');
       rect(c,-12,-35,24,22,'#203733');rect(c,-10,-34,20,19,'#9b9f86');rect(c,-9,-33,6,16,'#c5c6a4');rect(c,5,-31,5,15,'#647d6c');
       rect(c,-10,-26,20,6,'#243d36');rect(c,-6,-25,4,2,'#efc997');rect(c,3,-25,4,2,'#efc997');
       rect(c,-14,-36,28,5,'#70826b');rect(c,-4,-42,8,7,'#b89d68');rect(c,-2,-46,4,5,'#e0bd79');
-      const facing = num(attack.angle, num(e.facing));
-      blade(c, 0, -3, facing + (raised && attack.type === 'quake' ? -1.15 : raised && attack.type === 'sweep' ? .8 : 0), raised, attack.phase === 'active', true);
+      enemyBlade(c, e, pose, true);
     } else if (kind === 'brute') {
       const attack=e.rhythm||{},charging=attack.type==='rush'&&attack.phase==='active',staggered=e.stagger>0||e.stun>0;
-      if(charging)c.rotate(Math.cos(num(attack.angle))*.14);else if(staggered)c.rotate(-.17);
       rect(c,-19,4+step,13,16,'#1b302b');rect(c,7,4-step,13,16,'#1b302b');rect(c,-18,5+step,11,11,'#a1875c');rect(c,8,5-step,11,11,'#90794f');
       rect(c,-26,-27,52,37,'#1c342c');rect(c,-22,-25,44,34,'#8c7957');rect(c,-21,-24,12,30,'#b19c6b');rect(c,10,-23,12,30,'#635e47');
-      rect(c,-29,-23,13,29,'#65755a');rect(c,17,-23,13,29,'#596e52');rect(c,-32,-24,18,7,'#b5ad7c');rect(c,15,-24,18,7,'#b5ad7c');
+      if(pose.type==='quake'){
+        rect(c,-26,-25,11,5,'#b5ad7c');rect(c,15,-25,11,5,'#b5ad7c');
+      }else{
+        rect(c,-29,-23,13,29,'#65755a');rect(c,17,-23,13,29,'#596e52');rect(c,-32,-24,18,7,'#b5ad7c');rect(c,15,-24,18,7,'#b5ad7c');
+      }
       rect(c,-15,-43,30,22,'#293b2e');rect(c,-12,-42,24,20,'#ac9f72');rect(c,-11,-41,7,17,'#d0bf8a');rect(c,5,-40,7,17,'#7f825f');
       rect(c,-18,-39,8,6,'#b5a77c');rect(c,-22,-45,6,11,'#dfc99a');rect(c,10,-39,8,6,'#a79870');rect(c,16,-45,6,11,'#d5c08c');
       rect(c,-8,-34,5,3,charging?'#ffe2a0':'#5a4838');rect(c,4,-34,5,3,charging?'#ffe2a0':'#5a4838');rect(c,-7,-25,14,4,'#4f4f37');
       rect(c,-20,2,40,6,'#626f50');rect(c,-4,1,8,9,'#d0b573');
-      if(attack.type==='quake'&&attack.phase==='windup'){rect(c,-28,-42,8,23,'#7f8864');rect(c,20,-42,8,23,'#7f8864');rect(c,-33,-51,18,12,'#c4b17e');rect(c,15,-51,18,12,'#c4b17e');}
+      if(pose.type==='quake')quakeArms(c,pose);
       if(staggered){path(c,[[-24,-51],[-30,-58]],'#edcf8d',2);path(c,[[22,-53],[29,-58]],'#edcf8d',2);}
       if(e.huntTarget){
         // A broken red crest marks the quarry without changing its collision body.
@@ -1178,7 +1326,7 @@
       rect(c,-11,-18,22,30,'#715f55');rect(c,-9,-17,7,28,'#9d7c5b');rect(c,5,-17,7,28,'#4e5147');rect(c,-2,-15,4,28,'#c6a05e');
       rect(c,-10,-35,20,21,'#20352f');rect(c,-8,-33,16,17,'#837a5d');rect(c,-6,-28,12,10,'#223831');rect(c,-4,-26,3,3,'#efbf75');rect(c,3,-26,3,3,'#efbf75');
       c.fillStyle='#927c57';c.beginPath();c.moveTo(-14,-31);c.lineTo(0,-50);c.lineTo(14,-31);c.closePath();c.fill();rect(c,-15,-33,30,4,'#c5a66c');
-      const side=Math.cos(num(attack.angle,num(e.facing)))<0?-1:1,handX=side*23,handY=casting?-29:-6;
+      const side=Math.cos(facing)<0?-1:1,handX=side*23+Math.cos(facing)*pose.reach,handY=-6-pose.lift*23+Math.sin(facing)*pose.reach*.6;
       path(c,[[side*8,-14],[handX,handY-5]],'#a78b66',5);path(c,[[handX,handY-9],[handX,handY+9]],'#c4aa71',2);
       lantern(c,handX,handY+12,time,casting?.88:.68);
       if(casting){glow(c,handX,handY+10,44,'#eaa35435');path(c,[[handX-12,handY+13],[handX,handY+20],[handX+12,handY+13]],'#f0d195',2);}
@@ -1186,7 +1334,8 @@
       rect(c,-10,3+step,7,12,'#172b29');rect(c,4,3-step,7,12,'#172b29');rect(c,-10,4+step,7,7,'#827f68');rect(c,4,4-step,7,7,'#827f68');
       rect(c,-14,-16,28,24,'#172c2b');rect(c,-12,-15,24,21,'#65796c');rect(c,-11,-14,7,19,'#a0a68a');rect(c,5,-13,7,18,'#405d54');rect(c,-13,3,27,5,'#b49b66');
       rect(c,-11,-33,22,21,'#1c3330');rect(c,-10,-32,20,18,'#a4aa8b');rect(c,-9,-31,5,16,'#bec29a');rect(c,4,-30,5,16,'#6e8770');rect(c,-9,-24,18,5,'#293f37');rect(c,-6,-23,4,2,'#e7c584');rect(c,3,-23,4,2,'#e7c584');rect(c,-13,-33,26,5,'#687f62');rect(c,-3,-37,6,5,'#c5b078');
-      c.save();c.rotate(num(e.facing)+(e.shieldOpen>0||e.stun>0?-.5:0));rect(c,14,-18,9,36,'#142e2a');rect(c,15,-17,8,34,e.shieldOpen>0||e.stun>0?'#748975':'#b3a56c');rect(c,14,-13,8,26,'#6e8163');rect(c,20,-11,4,22,e.shieldOpen>0||e.stun>0?'#91a080':'#d4c18a');rect(c,17,-5,8,10,'#b8aa75');rect(c,18,-2,6,4,'#e1ce97');c.restore();
+      enemyGun(c, { ...pose, reach: pose.reach + 7 });
+      c.save();c.translate(Math.cos(facing)*pose.reach*.45,Math.sin(facing)*pose.reach*.3-pose.lift*8);c.rotate(facing+(e.shieldOpen>0||e.stun>0?-.5:0));rect(c,14,-18,9,36,'#142e2a');rect(c,15,-17,8,34,e.shieldOpen>0||e.stun>0?'#748975':'#b3a56c');rect(c,14,-13,8,26,'#6e8163');rect(c,20,-11,4,22,e.shieldOpen>0||e.stun>0?'#91a080':'#d4c18a');rect(c,17,-5,8,10,'#b8aa75');rect(c,18,-2,6,4,'#e1ce97');c.restore();
     } else if (kind === 'charger') {
       rect(c,-12,2+step,8,12,'#263b31');rect(c,5,2-step,8,12,'#263b31');rect(c,-11,4+step,7,7,'#9d7d5e');rect(c,5,4-step,7,7,'#9d7d5e');
       rect(c,-15,-14,30,23,'#20382d');rect(c,-13,-13,26,20,'#a87e58');rect(c,-12,-12,7,18,'#d1a06d');rect(c,6,-11,7,17,'#785c47');rect(c,-14,3,29,5,'#6d6549');
@@ -1197,20 +1346,17 @@
       rect(c, -8, 4 + step, 6, 10, '#172b29'); rect(c, 3, 4 - step, 6, 10, '#172b29'); rect(c, -8, 5 + step, 5, 6, '#6f6456'); rect(c, 3, 5 - step, 5, 6, '#6f6456');
       rect(c, -12, -13, 24, 21, '#142a2a'); rect(c, -10, -12, 20, 18, '#746a65'); rect(c, -9, -12, 5, 16, '#968979'); rect(c, 4, -9, 6, 15, '#514f50'); rect(c, -10, 4, 21, 4, '#a7895b');
       rect(c, -12, -27, 24, 19, '#26383a'); rect(c, -9, -28, 18, 19, '#8c8170'); rect(c, -6, -23, 12, 12, '#273d38'); rect(c, -4, -20, 3, 3, '#e1a979'); rect(c, 3, -20, 3, 3, '#e1a979'); rect(c, -11, -28, 22, 5, '#a38f6e');
-      gun(c, 0, -3, num(e.facing), 'pistol', '#c8ae79', true);
+      enemyGun(c, pose);
     } else {
       rect(c, -9, 4 + step, 6, 9, '#1a302b'); rect(c, 4, 4 - step, 6, 9, '#1a302b'); rect(c, -9, 5 + step, 5, 5, '#675d45'); rect(c, 4, 5 - step, 5, 5, '#675d45');
       rect(c, -11, -10, 22, 17, '#193029'); rect(c, -9, -10, 18, 16, '#60724d'); rect(c, -8, -10, 5, 14, '#83915e'); rect(c, -10, 2, 21, 5, '#5b5c3f');
       rect(c, -15, -22, 30, 6, '#213b2c'); rect(c, -13, -21, 26, 4, '#81925c'); rect(c, -10, -26, 20, 17, '#20392d'); rect(c, -8, -25, 16, 15, '#9ca773'); rect(c, -8, -24, 5, 13, '#b6ba84'); rect(c, -5, -19, 3, 3, '#422f2a'); rect(c, 4, -19, 3, 3, '#422f2a'); rect(c, -2, -12, 8, 3, '#586a44');
       rect(c, -5, -29, 10, 5, '#5d774d'); rect(c, 0, -30, 6, 3, '#8ca165');
-      c.save(); c.translate(13, -1 + step); c.rotate(.35); rect(c, -2, -12, 4, 20, '#2a3c2c'); rect(c, -1, -18, 3, 14, '#b7ba8a'); rect(c, -4, -5, 9, 3, '#8b7b4d'); c.restore();
+      enemyBlade(c, e, pose);
     }
-    if (boss && e.rhythm) {
-      const attack = e.rhythm, angle = num(attack.angle, num(e.facing)), winding = attack.phase === 'windup';
-      if (recovering) blade(c, 1, 8, Math.cos(angle) < 0 ? Math.PI * .75 : Math.PI * .25, false, false, true);
-      else if (winding && attack.type === 'quake') blade(c, -3, -35, -Math.PI / 2, false, false, true);
-      else if (winding && attack.type === 'thrust') blade(c, 12, -9, angle, false, false, true);
-      else blade(c, 0, -5, angle + (winding && attack.type === 'combo' ? -.5 : winding && attack.type === 'sweep' ? .65 : 0), winding, attack.phase === 'active', true);
+    if (boss && e.rhythm && pose.type !== 'quake') {
+      if (recovering && pose.type !== 'thrust') blade(c, 1, 8, Math.cos(facing) < 0 ? Math.PI * .75 : Math.PI * .25, false, false, true);
+      else enemyBlade(c, e, pose, true);
     }
     if (e.hitFlash > 0 || e.flash > 0) { c.globalCompositeOperation = 'screen'; rect(c, boss ? -21 : -10, boss ? -43 : -24, boss ? 42 : 20, boss ? 55 : 31, '#d9d69c60'); }
     c.restore();
@@ -1933,6 +2079,7 @@
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = combatMotion(events, still);
+    const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
@@ -1961,7 +2108,7 @@
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
-      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, time, events, still, state.mode === 'chapter', state.mode === 'random') })),
+      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id)) })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
@@ -2008,6 +2155,7 @@
   }
 
   function preview(c, profile = {}) {
+    enemyMotionCache.delete(c);
     if (!c) return;
     // Callers explicitly supply animation time. Older calls are deterministic,
     // while reduced motion keeps the complete lit scene without moving specks.
