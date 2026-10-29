@@ -1786,7 +1786,8 @@
       }
       const amount=num(e.amount??e.damage);
       if(amount>0){
-        const prefix=weak?'弱点 ':environment&&e.source==='rush'?'撞击 ':'';
+        const misfire=environment&&e.target==='enemy'&&e.playerId==null&&['rush','fireball','quake'].includes(e.source);
+        const prefix=weak?'弱点 ':misfire?'误伤 ':environment&&e.source==='rush'?'撞击 ':'';
         impactLabel(c,prefix+damageText(amount),x+(hurt?20:weak?0:environment?-18:weakAlongside?25:15),y+(hurt?25:environment?-13:weakAlongside?18:-25)-motion*(weak?20:13),color,weak?15:hurt?11:12);
       }
     });

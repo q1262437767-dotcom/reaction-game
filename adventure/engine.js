@@ -2035,6 +2035,16 @@
       (r.arc >= TAU - 0.01 || Math.abs(angleDelta(Math.atan2(point.y - e.y, point.x - e.x), r.angle)) <= r.arc / 2 + 0.08) &&
       lineClear(s, e, point, 3);
   }
+  function friendlyWaveClear(s, a, b) {
+    // Ground shocks share the existing warning footprint. Fine wall/door
+    // sampling prevents a thin divider from leaking damage to another guard;
+    // portable props behave as they do for the same shock against players.
+    var count = Math.max(1, Math.ceil(dist(a, b) / 4));
+    for (var i = 1; i <= count; i += 1) {
+      if (collides(s, a.x + (b.x - a.x) * i / count, a.y + (b.y - a.y) * i / count, 3, a.id, true)) return false;
+    }
+    return true;
+  }
   function faceGuardThreat(s, p) {
     // The cue identifies the attack to answer. Mouse position should not silently
     // turn a correctly timed guard away from that close, unobstructed strike.
@@ -2161,6 +2171,19 @@
       }
       damagePlayer(s, p, !s.practice && r.type === 'quake' ? 2 : 1, r.type);
     });
+    if (!s.practice && s.status === 'playing' && r.type === 'quake') {
+      // Resolve every exposure against one pre-impact view of the cover. An
+      // earlier victim can trigger a Boss phase change that removes pillars.
+      var friendlyVictims = s.enemies.filter(function (other) {
+        return other !== e && other.hp > 0 && strikeContains(s, e, r, other) && friendlyWaveClear(s, e, other);
+      });
+      friendlyVictims.forEach(function (other) {
+        if (other.hp <= 0) return;
+        var actual = damageEnemy(s, other, 4, null, null);
+        event(s, 'environment-hit', { enemyId: other.id, playerId: null, weapon: null, source: 'quake',
+          target: 'enemy', amount: actual, x: other.x, y: other.y });
+      });
+    }
     // Resolve the actual blow against the original cover first. Someone behind
     // the wall cannot be hurt by the same quake that reveals the new opening.
     if (r.type === 'quake') breachFromQuake(s, e);
@@ -2196,13 +2219,14 @@
       }
       var beforeX = e.x, beforeY = e.y;
       move(s, e, dx, dy, false);
-      if (!ordinary) s.enemies.forEach(function (other) {
+      if (!s.practice && s.status === 'playing') s.enemies.forEach(function (other) {
         if (other === e || other.hp <= 0 || e.rushHitIds.indexOf(other.id) >= 0 ||
-            dist(e, other) >= e.r + other.r + 3 || !lineClear(s, e, other, 3)) return;
+            dist(e, other) >= e.r + other.r + 3 || !foxSight(s, e, other, 3)) return;
         e.rushHitIds.push(other.id);
-        var actual = damageEnemy(s, other, 3, null, null);
-        move(s, other, e.chargeX * 70, e.chargeY * 70, false);
-        other.stun = Math.max(other.stun, 0.6);
+        var actual = damageEnemy(s, other, ordinary ? 2 : 3, null, null);
+        var push = ordinary ? 30 : 70;
+        move(s, other, e.chargeX * push, e.chargeY * push, false);
+        other.stun = Math.max(other.stun, ordinary ? 0.25 : 0.6);
         event(s, 'environment-hit', { enemyId: other.id, playerId: null, weapon: null, source: 'rush',
           target: 'enemy', amount: actual, x: other.x, y: other.y });
       });
@@ -2637,6 +2661,7 @@
             if (e.kind === 'shield') e.shieldOpen = 0.6;
           } else if (e.kind === 'charger') {
             e.chargeX = Math.cos(angle); e.chargeY = Math.sin(angle); e.chargeTime = 0.65;
+            if (!s.practice) e.rushHitIds = [];
             e.facing = angle; e.attackCd = 1.7;
             event(s, 'charger-charge', { enemyId: e.id });
           } else {
@@ -2705,6 +2730,24 @@
     if (target === 'prop') cue.propId = entity.id;
     event(s, 'hook-pull', cue);
   }
+  function fireballAlly(s, b, fromX, fromY) {
+    var dx = b.x - fromX, dy = b.y - fromY, lengthSquared = dx * dx + dy * dy, first = null, firstTime = Infinity;
+    s.enemies.forEach(function (other) {
+      if (other.hp <= 0 || other.id === b.owner) return;
+      var ox = fromX - other.x, oy = fromY - other.y, radius = b.r + other.r;
+      var c = ox * ox + oy * oy - radius * radius, time = 0;
+      if (c > 0) {
+        if (lengthSquared <= 0) return;
+        var projection = ox * dx + oy * dy, discriminant = projection * projection - lengthSquared * c;
+        if (discriminant < 0) return;
+        time = (-projection - Math.sqrt(discriminant)) / lengthSquared;
+        if (time < 0 || time > 1) return;
+      }
+      if (!foxSight(s, { x: fromX + dx * time, y: fromY + dy * time, id: b.id }, other, 3)) return;
+      if (time < firstTime || time === firstTime && (!first || other.id < first.id)) { first = other; firstTime = time; }
+    });
+    return first;
+  }
   function updateBullets(s, dt) {
     var pushes = [];
     s.bullets.forEach(function (b) {
@@ -2714,6 +2757,7 @@
       if (b.hook && (b.ttl <= 0 || !hookCaster)) { b.dead = true; return; }
       var n = Math.max(1, Math.ceil(len(b.vx, b.vy) * dt / 10));
       for (var stepIndex = 0; stepIndex < n && !b.dead; stepIndex += 1) {
+        var fromX = b.x, fromY = b.y;
         b.x += b.vx * dt / n; b.y += b.vy * dt / n;
         if (b.hook && !lineClear(s, hookCaster, b, 3)) { b.dead = true; break; }
         if (b.x < 25 || b.x > W - 25 || b.y < 25 || b.y > H - 25 ||
@@ -2804,6 +2848,18 @@
             if (dist(target, b) < target.r + b.r) {
               if (b.fireball || !guardBlock(s, target, b, b.damage, 'bullet', false)) damagePlayer(s, target, b.damage, 'bullet');
               b.dead = true;
+            }
+          }
+          // Player reflection and decoy interception retain their existing
+          // priority. Only an unreflected fireball can strike its own side;
+          // a single swept first contact consumes it, rather than an area blast.
+          if (!s.practice && s.status === 'playing' && b.fireball && !b.dead && !b.friendly) {
+            var ally = fireballAlly(s, b, fromX, fromY);
+            if (ally) {
+              var friendlyDamage = damageEnemy(s, ally, 4, null, null);
+              event(s, 'environment-hit', { enemyId: ally.id, playerId: null, weapon: null, source: 'fireball',
+                target: 'enemy', amount: friendlyDamage, x: ally.x, y: ally.y });
+              burst(s, 'spark', b.x, b.y, '#f1b07b', 5); b.dead = true;
             }
           }
         }

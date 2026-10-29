@@ -781,8 +781,9 @@
       if (event.type === 'player-hit' && (!['p1', 'p2'].includes(event.playerId) || !bounded(event.damage, 100) || !bounded(event.hp, 100) || !['combo', 'thrust', 'sweep', 'quake', 'rush', 'charge', 'melee', 'bullet', 'fire', 'fireball', 'hook'].includes(event.source))) return false;
       if (['enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit'].includes(event.type)) {
         if (event.enemyId !== null && !shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, 'blade', 'spear', 'pistol', 'scatter'].includes(event.weapon)) return false;
-        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'explosion', 'blade', 'spear', 'pistol', 'scatter'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
-        if (event.type === 'environment-hit' && (!['rush', 'fireball', 'explosion'].includes(event.source) || !['prop', 'enemy'].includes(event.target))) return false;
+        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', 'blade', 'spear', 'pistol', 'scatter'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
+        if (event.type === 'environment-hit' && (!['rush', 'fireball', 'quake', 'explosion'].includes(event.source) || !['prop', 'enemy'].includes(event.target))) return false;
+        if (event.source === 'quake' && (event.type !== 'environment-hit' || event.target !== 'enemy' || !shortId(event.enemyId) || event.playerId !== null || event.weapon !== null || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount <= 0 || event.propId !== undefined)) return false;
       }
     }
     if (s.roomEvent != null) {
