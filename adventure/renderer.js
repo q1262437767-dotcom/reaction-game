@@ -27,46 +27,48 @@
   function makeFloor(key, kind) {
     const surface = document.createElement('canvas'); surface.width = W; surface.height = H;
     const c = surface.getContext('2d'); const rand = seedRandom(hash(key));
-    rect(c, 0, 0, W, H, '#182c2b');
-    for (let y = 0; y < H; y += TILE) {
-      for (let x = 0; x < W; x += TILE) {
-        const variant = rand();
-        const color = variant < .18 ? '#2a4036' : variant < .50 ? '#293e35' : variant < .80 ? '#2c4238' : '#2b4136';
-        rect(c, x + 1, y + 1, TILE - 2, TILE - 2, color);
-        rect(c, x + 2, y + 2, TILE - 4, 1, '#354a3b');
-        rect(c, x + 2, y + 3, 1, TILE - 5, '#304739');
-        rect(c, x + 2, y + TILE - 3, TILE - 4, 1, '#20362f');
-        if (rand() < .17) {
-          const px = x + 6 + Math.floor(rand() * 17), py = y + 7 + Math.floor(rand() * 15);
-          path(c, [[px, py], [px + 4, py + 2], [px + 3, py + 7]], '#1c342e');
-          rect(c, px + 4, py + 2, 3, 1, '#3e503b');
+    rect(c, 0, 0, W, H, '#25383e');
+    // Broad staggered flagstones read as masonry instead of a bright square
+    // grid. All grain is painted once into this room's seeded floor cache.
+    const stones = ['#34474b', '#36494c', '#35484b', '#384b4d', '#33464b', '#37494b'];
+    for (let y = 0, row = 0; y < H; y += TILE, row++) {
+      for (let x = row % 2 ? -TILE : 0; x < W; x += TILE * 2) {
+        const width = TILE * 2, shade = stones[Math.floor(rand() * stones.length)];
+        rect(c, x + 1, y + 1, width - 2, TILE - 2, shade);
+        rect(c, x + 2, y + 2, width - 5, 1, '#4a5b5c');
+        rect(c, x + 2, y + 3, 1, TILE - 6, '#405357');
+        rect(c, x + 2, y + TILE - 3, width - 4, 1, '#2c3e44');
+        rect(c, x + width - 3, y + 4, 1, TILE - 7, '#2b3d42');
+        const px = x + 9 + Math.floor(rand() * 38), py = y + 8 + Math.floor(rand() * 14);
+        if (rand() < .35) {
+          rect(c, px, py, 7 + Math.floor(rand() * 7), 1, '#405257');
+          rect(c, px + 3, py + 2, 4, 1, '#2e4147');
         }
-        if (rand() < .32) {
-          const px = x + 4 + Math.floor(rand() * 22), py = y + 5 + Math.floor(rand() * 21);
-          rect(c, px, py, 3, 1, '#3e513d');
-          if (rand() < .45) rect(c, px - 2, py + 3, 2, 1, '#3a4c37');
+        if (rand() < .1) {
+          path(c, [[px, y + 2], [px - 2, y + 7], [px + 2, y + 11]], '#263c43');
+          rect(c, px + 1, y + 6, 2, 1, '#4d5b5a');
         }
       }
     }
     // Inlaid stone medallion: subtle enough to keep projectiles legible.
     c.save(); c.translate(W / 2, H / 2);
-    c.strokeStyle = '#4e644944'; c.lineWidth = 2;
+    c.strokeStyle = '#748b7a24'; c.lineWidth = 2;
     c.beginPath(); c.arc(0, 0, 114, 0, Math.PI * 2); c.stroke();
     c.beginPath(); c.arc(0, 0, 102, 0, Math.PI * 2); c.stroke();
-    for (let i = 0; i < 8; i++) { c.save(); c.rotate(i * Math.PI / 4); rect(c, -3, -112, 6, 8, '#63744944'); c.restore(); }
-    path(c, [[0, -66], [48, 0], [0, 66], [-48, 0], [0, -66]], '#556b4b30', 2);
-    path(c, [[0, -37], [25, 0], [0, 37], [-25, 0], [0, -37]], '#556b4b30', 2);
+    for (let i = 0; i < 8; i++) { c.save(); c.rotate(i * Math.PI / 4); rect(c, -3, -112, 6, 8, '#9b977332'); rect(c, -2, -112, 4, 1, '#b6a67c20'); c.restore(); }
+    path(c, [[0, -66], [48, 0], [0, 66], [-48, 0], [0, -66]], '#81908020', 2);
+    path(c, [[0, -37], [25, 0], [0, 37], [-25, 0], [0, -37]], '#81908020', 2);
     c.restore();
     // Windblown grit and moss gather along the outer edges.
     for (let i = 0; i < 150; i++) {
       const edge = Math.floor(rand() * 4); let x = rand() * W, y = rand() * H;
       if (edge === 0) y = 15 + rand() * 45; if (edge === 1) y = H - 15 - rand() * 40;
       if (edge === 2) x = 15 + rand() * 45; if (edge === 3) x = W - 15 - rand() * 45;
-      rect(c, x, y, 3 + rand() * 7, 2 + rand() * 3, rand() < .6 ? '#516b425c' : '#122c2855');
-      if (rand() < .1) grass(c, x, y, '#597544');
+      rect(c, x, y, 3 + rand() * 7, 2 + rand() * 3, rand() < .6 ? '#5c71504a' : '#18303855');
+      if (rand() < .1) { grass(c, x, y, '#687b53'); rect(c, x - 2, y - 1, 5, 1, '#84906360'); }
     }
     if (kind === 'boss') { for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; crystal(c, 480 + Math.cos(a) * 180, 300 + Math.sin(a) * 150, .5, '#727e63'); } }
-    const edgeShade = c.createRadialGradient(480, 300, 170, 480, 300, 570); edgeShade.addColorStop(0, 'rgba(7,24,28,0)'); edgeShade.addColorStop(1, 'rgba(6,21,27,.46)'); c.fillStyle = edgeShade; c.fillRect(0, 0, W, H);
+    const edgeShade = c.createRadialGradient(480, 300, 170, 480, 300, 570); edgeShade.addColorStop(0, 'rgba(7,24,28,0)'); edgeShade.addColorStop(1, 'rgba(8,23,31,.32)'); c.fillStyle = edgeShade; c.fillRect(0, 0, W, H);
     return surface;
   }
 
@@ -140,25 +142,35 @@
   }
   function wall(c, w) {
     const x = num(w.x), y = num(w.y), width = num(w.w ?? w.width, 32), height = num(w.h ?? w.height, 32);
-    // The lower facade adds height without shifting the collision silhouette.
-    rect(c, x + 4, y + 7, width, height, '#0c2426a6');
-    rect(c, x, y, width, height, '#344e44');
-    rect(c, x, y, width, Math.min(height, 6), '#66816a');
-    rect(c, x, y + 6, width, 2, '#8ba27933');
-    rect(c, x, y + height - Math.min(8, height / 2), width, Math.min(8, height / 2), '#253f39');
-    rect(c, x, y, 3, height, '#536f5b'); rect(c, x + width - 3, y, 3, height, '#263f39');
+    // Beveled cap, recessed masonry and contact shade share the exact existing
+    // ground footprint. Surface wear never invents a new piece of cover.
+    rect(c, x + 4, y + 7, width, height, '#0d2029a0');
+    rect(c, x, y, width, height, '#485c60');
+    rect(c, x, y, width, Math.min(height, 6), '#73817c');
+    rect(c, x + 1, y + 1, Math.max(1, width - 2), Math.min(2, height), '#94a093');
+    rect(c, x, y + Math.min(6, height - 1), width, Math.min(2, height), '#35494d');
+    rect(c, x, y + height - Math.min(8, height / 2), width, Math.min(8, height / 2), '#293f47');
+    rect(c, x, y, Math.min(3, width), height, '#637871'); rect(c, x + width - Math.min(3, width), y, Math.min(3, width), height, '#293e46');
     for (let ty = y + 9; ty < y + height - 2; ty += 23) {
       const row = Math.floor((ty - y) / 23);
-      rect(c, x + 3, ty, width - 6, 2, '#273e37');
-      for (let tx = x + 18 + (row % 2) * 17; tx < x + width - 3; tx += 36) rect(c, tx, ty - 18, 2, Math.min(20, ty - y), '#29453b');
+      rect(c, x + 3, ty, Math.max(1, width - 6), 2, '#2e424a');
+      rect(c, x + 4, ty + 2, Math.max(1, width - 8), 1, '#56696a');
+      for (let tx = x + 18 + (row % 2) * 17; tx < x + width - 3; tx += 36) {
+        rect(c, tx, Math.max(y + 8, ty - 18), 2, Math.min(18, ty - y - 7), '#30464d');
+        rect(c, tx + 2, Math.max(y + 8, ty - 16), 1, Math.min(15, ty - y - 7), '#5b6d6b');
+      }
     }
     if (width > 35 && height > 12) {
       const rand = seedRandom(hash(`${x},${y}`));
       for (let i = 0; i < Math.ceil(width / 46); i++) {
         const px = x + 7 + rand() * (width - 16), py = y + rand() * Math.min(11, height);
-        rect(c, px, py, 8, 3, '#77905a'); rect(c, px + 5, py + 3, 6, 3, '#5e7b4b');
-        if (rand() > .6) rect(c, px + 7, py + 6, 3, 7, '#4f7246');
+        rect(c, px, py, 8, 2, '#7b885e'); rect(c, px + 5, py + 2, 6, 3, '#5e7755');
+        if (rand() > .6) rect(c, px + 7, py + 5, 3, 7, '#49674d');
       }
+    }
+    if (width > 96 && height > 18) for (let bx = x + 22; bx < x + width - 14; bx += 128) {
+      rect(c, bx, y + 1, 8, Math.min(17, height - 2), '#3c4d4d'); rect(c, bx + 1, y + 1, 6, 3, '#a18b61');
+      rect(c, bx + 2, y + 7, 2, 2, '#c1ac7a'); rect(c, bx + 2, y + 13, 2, 2, '#78817a');
     }
   }
 
@@ -167,27 +179,30 @@
     glow(c, x, y, 78 * scale * flicker, '#e6a14c25');
     glow(c, x, y - 2, 24 * scale, '#f0ba5b2b');
     c.save(); c.translate(Math.round(x), Math.round(y)); c.scale(scale, scale);
-    rect(c, -7, -11, 14, 20, '#142a28'); rect(c, -6, -10, 12, 18, '#614d31');
-    rect(c, -4, -8, 8, 13, '#ba8145'); rect(c, -3, -7, 6, 10, '#f3bd6b');
-    rect(c, -1, -6 + Math.round(Math.sin(time * .008 + x)), 3, 7, '#ffdf95');
-    rect(c, -8, -12, 16, 3, '#83906a'); rect(c, -8, 7, 16, 3, '#7a7854');
-    rect(c, -2, -16, 4, 4, '#6f7a59'); rect(c, -6, -10, 2, 18, '#7e7b54'); rect(c, 4, -10, 2, 18, '#635d40');
+    rect(c, -7, -11, 14, 20, '#14252c'); rect(c, -6, -10, 12, 18, '#654a32');
+    rect(c, -4, -8, 8, 13, '#b4783d'); rect(c, -3, -7, 6, 10, '#e7b968');
+    rect(c, -1, -6 + Math.round(Math.sin(time * .008 + x)), 3, 7, '#fff0bb');
+    rect(c, -8, -12, 16, 3, '#8b805e'); rect(c, -6, -14, 12, 2, '#b8a575'); rect(c, -4, -14, 5, 1, '#e0c68e');
+    rect(c, -8, 7, 16, 3, '#6b6652'); rect(c, -7, 7, 12, 1, '#b69c68'); rect(c, -4, 10, 8, 2, '#324449');
+    rect(c, -2, -18, 4, 4, '#7e8068'); rect(c, -1, -18, 1, 3, '#c6b37e');
+    rect(c, -6, -10, 2, 18, '#b39b69'); rect(c, 4, -10, 2, 18, '#675f48');
+    rect(c, -3, -8, 1, 11, '#ffe5a580'); rect(c, -5, -9, 10, 1, '#e8c886');
     c.restore();
     if (Math.sin(time * .0015 + x) > .1) { const rise = (time * .018 + x * 3) % 23; alpha(c, 1 - rise / 23, () => rect(c, x + Math.sin(rise) * 5, y - 14 - rise, 2, 2, '#e6ba6d')); }
   }
   function door(c, d, time) {
     const x = num(d.x), y = num(d.y), w = num(d.w, 48), h = num(d.h, 28), vertical = h > w;
     const isLocked = !!d.locked, color = isLocked ? '#b79c64' : '#a4c29a';
-    rect(c, x - 3, y - 3, w + 6, h + 6, '#102829'); rect(c, x, y, w, h, '#1c3331');
+    rect(c, x - 3, y - 3, w + 6, h + 6, '#10232b'); rect(c, x, y, w, h, '#253a41');
     if (vertical) {
-      rect(c, x, y, 6, h, '#5a6e56'); rect(c, x + w - 6, y, 6, h, '#405d4c');
-      for (let gy = y + 8; gy < y + h - 5; gy += 12) rect(c, x + 7, gy, w - 14, 3, isLocked ? '#7f7851' : '#365744');
+      rect(c, x, y, 6, h, '#72817b'); rect(c, x + 1, y + 1, 2, h - 2, '#a5ac94'); rect(c, x + w - 6, y, 6, h, '#425b60');
+      for (let gy = y + 8; gy < y + h - 5; gy += 12) { rect(c, x + 7, gy, w - 14, 3, isLocked ? '#94805a' : '#3c5658'); rect(c, x + 7, gy, w - 14, 1, isLocked ? '#c0a06c' : '#648077'); }
     } else {
-      rect(c, x, y, w, 6, '#5e745b'); rect(c, x, y + h - 5, w, 5, '#365445');
-      for (let gx = x + 8; gx < x + w - 5; gx += 12) rect(c, gx, y + 5, 3, h - 10, isLocked ? '#7f7851' : '#365744');
+      rect(c, x, y, w, 6, '#72817b'); rect(c, x + 1, y + 1, w - 2, 2, '#a5ac94'); rect(c, x, y + h - 5, w, 5, '#425b60');
+      for (let gx = x + 8; gx < x + w - 5; gx += 12) { rect(c, gx, y + 5, 3, h - 10, isLocked ? '#94805a' : '#3c5658'); rect(c, gx, y + 5, 1, h - 10, isLocked ? '#c0a06c' : '#648077'); }
     }
     const cx = x + w / 2, cy = y + h / 2;
-    if (isLocked) { rect(c, cx - 6, cy - 6, 12, 13, '#2b3b31'); rect(c, cx - 4, cy - 4, 8, 8, '#ae9260'); rect(c, cx - 1, cy - 2, 2, 5, '#4e543b'); }
+    if (isLocked) { rect(c, cx - 6, cy - 6, 12, 13, '#23383c'); rect(c, cx - 4, cy - 4, 8, 8, '#ae9260'); rect(c, cx - 4, cy - 4, 7, 1, '#e2c586'); rect(c, cx - 1, cy - 2, 2, 5, '#4e543b'); }
     else { glow(c, cx, cy, 44, '#b9d38b22'); crystal(c, cx, cy, .6, '#c2d6a3'); }
     if (d.label) label(c, d.label, cx, y + h + 12, color, 9);
   }
@@ -649,10 +664,11 @@
   function fire(c, f, time) {
     const x = num(f.x), y = num(f.y), r = num(f.r, 20);
     ellipse(c, x, y + 4, r, r * .5, '#1b2925');
-    rect(c, x - r * .7, y, r * 1.3, 4, '#474439'); rect(c, x - r * .45, y - 3, r * .9, 3, '#5b4c38');
+    rect(c, x - r * .7, y, r * 1.3, 4, '#454747'); rect(c, x - r * .45, y - 3, r * .9, 3, '#6c5941');
+    rect(c, x - r * .6, y, r * .4, 1, '#a48655'); rect(c, x + r * .2, y + 2, r * .35, 1, '#192b31');
     if (f.active === false) { alpha(c, .3, () => ellipse(c, x + Math.sin(time * .001) * 5, y - 11, 6, 5, '#8fa293')); return; }
     glow(c, x, y - 8, r * 3.5, '#ed993c35');
-    for (let i = 0; i < 5; i++) { const dx = (i - 2) * r * .25, flame = Math.sin(time * .012 + i * 3) * 4; rect(c, x + dx - 4, y - 8 - Math.abs(dx) * .2 + flame, 8, 11, '#b86739'); rect(c, x + dx - 3, y - 12 - Math.abs(dx) * .1 + flame, 6, 12, '#e49e47'); rect(c, x + dx - 1, y - 7 + flame, 3, 7, '#ffe4a0'); }
+    for (let i = 0; i < 5; i++) { const dx = (i - 2) * r * .25, flame = Math.round(Math.sin(time * .012 + i * 3) * 3); rect(c, x + dx - 5, y - 7 - Math.abs(dx) * .2 + flame, 9, 10, '#a95433'); rect(c, x + dx - 3, y - 12 - Math.abs(dx) * .1 + flame, 6, 12, '#e6a254'); rect(c, x + dx - 1, y - 15 + flame, 3, 12, '#f6c977'); rect(c, x + dx - 1, y - 7 + flame, 3, 7, '#fff0b5'); }
     for (let i = 0; i < 3; i++) { const rise = (time * .04 + i * 17) % 44; alpha(c, 1 - rise / 44, () => rect(c, x + Math.sin(rise + i) * 8, y - rise - 8, 2, 2, '#f2c16b')); }
   }
 
@@ -675,6 +691,8 @@
       path(c, [[-10,-12],[-17,-7],[-14,8],[-7,12]], '#dca65f', 3);
       path(c, [[10,-12],[17,-7],[14,8],[7,12]], '#dca65f', 3);
       rect(c,-2,-12,4,19,'#fff0ba'); rect(c,-6,-4,12,3,'#ffe0a0');
+      rect(c,-16,-8,3,3,'#f2d198');rect(c,12,6,3,3,'#7b6147');
+      path(c,[[-7,10],[0,14],[7,10]],'#725d42',2);
       c.restore();
       if (!held && !p.thrown) label(c, '炉芯', x, y + 26, '#f0d299', 10);
       return;
@@ -683,20 +701,30 @@
     if (!held) shadow(c, x, y, num(p.r, 15), p.thrown ? .2 : .36);
     c.save(); c.translate(Math.round(x), Math.round(y - bob)); if (p.thrown) c.rotate(time * .009);
     if (kind === 'barrel' || kind === 'explosive') {
-      rect(c, -12, -17, 24, 30, '#172724'); rect(c, -10, -17, 20, 28, '#955c40'); rect(c, -8, -15, 6, 24, '#ae744b'); rect(c, 5, -15, 4, 24, '#714b38');
-      rect(c, -11, -13, 22, 4, '#656c50'); rect(c, -11, 3, 22, 4, '#5b654c'); rect(c, -8, -19, 16, 4, '#b58c54'); rect(c, 2, -21, 4, 3, '#d0af6d');
+      rect(c, -10, -19, 20, 33, '#17272c');rect(c,-12,-15,24,26,'#17272c');
+      rect(c, -10, -16, 20, 27, '#986045');rect(c,-8,-16,5,27,'#b78255');rect(c,-3,-16,5,27,'#a06d4b');rect(c,2,-16,5,27,'#82543e');rect(c,7,-14,3,23,'#633f33');
+      rect(c,-7,-12,1,10,'#d09c65');rect(c,-2,-7,1,12,'#704c38');rect(c,5,-9,1,8,'#5a4033');
+      rect(c, -11, -13, 22, 4, '#526168');rect(c,-10,-13,17,1,'#93a095');rect(c,-10,-10,20,1,'#2a3e46');
+      rect(c, -11, 3, 22, 4, '#46585e');rect(c,-10,3,17,1,'#849187');rect(c, -8, -19, 16, 4, '#bb945f');rect(c,-7,-19,13,1,'#e1bd7e');rect(c,-5,-17,9,1,'#75583c');
+      for(const py of[-12,4]){rect(c,-8,py,2,2,'#d1c8a0');rect(c,7,py,2,2,'#31464b');}
+      rect(c, 2, -21, 4, 3, '#bca16f');
       rect(c, -4, -7, 8, 8, '#382e28'); rect(c, -1, -8, 3, 6, '#e0b76b'); rect(c, -4, -2, 9, 2, '#e0b76b');
       if (p.lit || p.fuse > 0) { glow(c, 3, -22, 35, '#ffb65c55'); rect(c, 1, -25 + Math.sin(time * .02) * 2, 4, 5, '#ffe3a1'); }
     } else if (kind === 'water' || kind === 'waterjar') {
-      rect(c, -9, -10, 18, 21, '#183c42'); rect(c, -12, -6, 24, 13, '#355c61'); rect(c, -8, -13, 16, 25, p.charges === 0 ? '#50665e' : '#427a7c'); rect(c, -8, -12, 6, 22, p.charges === 0 ? '#7c8973' : '#6ca3a0'); rect(c, 5, -7, 5, 15, '#2e6268');
-      rect(c, -6, -17, 12, 5, '#92ada2'); rect(c, -4, -18, 8, 3, '#264e53'); rect(c, -10, 8, 20, 3, '#284c50'); rect(c, -2, -5, 4, 7, '#b2d1b9'); rect(c, -4, -1, 8, 4, '#b2d1b9');
+      const dry=p.charges===0;
+      rect(c, -9, -10, 18, 21, '#172e39');rect(c,-12,-6,24,13,'#284653');rect(c,-8,-13,16,25,dry?'#617071':'#3b7482');
+      rect(c,-10,-5,3,10,dry?'#77837d':'#5c9b9f');rect(c,-7,-12,5,21,dry?'#929e8f':'#7fb6b4');rect(c,-6,-10,2,7,dry?'#b3bca6':'#bbd4c2');
+      rect(c, 5, -7, 5, 15, dry?'#485c61':'#2b596b');rect(c,7,-4,2,11,'#203f4e');
+      rect(c,-6,-17,12,5,'#a4b7aa');rect(c,-5,-17,9,1,'#d6d9bb');rect(c,-4,-18,8,3,'#294a55');rect(c,-3,-18,5,1,'#91aea8');
+      rect(c,-9,8,18,3,'#304f59');rect(c,-6,11,12,1,'#233b46');rect(c,-2,-5,4,7,'#b9d0bd');rect(c,-4,-1,8,4,'#b9d0bd');rect(c,-2,-5,1,4,'#e0e1bd');
     } else if (kind === 'relic' || kind === 'loot' || kind === 'gem') {
       glow(c, 0, 0, 30, '#d5c27e22'); crystal(c, 0, Math.sin(time * .003 + x) * 2, 1, '#dfc780');
     } else {
-      rect(c, -15, -14, 30, 28, '#192b25'); rect(c, -13, -15, 26, 25, '#97784d'); rect(c, -11, -12, 22, 23, '#806443'); rect(c, -10, -11, 20, 19, '#69563a');
-      rect(c, -1, -10, 2, 19, '#453f2e'); rect(c, -10, -2, 20, 2, '#453f2e');
-      rect(c, -13, -14, 26, 4, '#b19561'); rect(c, -13, 7, 26, 4, '#98794d'); rect(c, -13, -11, 4, 20, '#a88a56'); rect(c, 9, -11, 4, 20, '#876b47');
-      for (const [px, py] of [[-11,-12],[10,-12],[-11,8],[10,8]]) rect(c, px, py, 2, 2, '#d0b779');
+      rect(c,-15,-14,30,28,'#172b31');rect(c,-13,-15,26,28,'#745a3f');rect(c,-11,-11,22,20,'#6f553e');
+      for(let i=0;i<3;i++){const px=-10+i*7;rect(c,px,-10,6,18,i===0?'#9d7952':i===1?'#8c6948':'#77583f');rect(c,px,-10,5,1,'#b49363');rect(c,px+1,-5+i*3,3,1,'#674c37');rect(c,px+3,-7+i*2,1,5,'#b18a58');}
+      rect(c,-13,-14,26,4,'#c0a16c');rect(c,-12,-14,22,1,'#e4c58b');rect(c,-13,8,26,4,'#9b774f');rect(c,-12,8,22,1,'#b99660');
+      rect(c,-13,-10,3,18,'#b69260');rect(c,10,-10,3,18,'#70543c');rect(c,13,-10,1,21,'#3b4038');
+      for(const[px,py]of[[-13,-13],[8,-13],[-13,7],[8,7]]){rect(c,px,py,5,5,'#455a5f');rect(c,px,py,4,1,'#8c9a8e');rect(c,px+1,py+1,2,2,'#c5c4a1');}
       if (p.eventSeal) {
         // Broad crossed planks read as a breakable warehouse closure, with
         // exactly the same ground footprint as the engine's larger crate.
@@ -714,6 +742,12 @@
     c.save(); c.translate(Math.round(x), Math.round(y)); c.rotate(angle || 0); const length = kind === 'scatter' ? 23 : enemy ? 14 : 17;
     rect(c, 4, -4, length, 8, '#152928'); rect(c, 6, -3, length - 2, 5, enemy ? '#aa9970' : color); rect(c, 7, -3, length - 3, 2, '#d0d5b2'); rect(c, 6, 2, 5, 5, '#735945'); rect(c, 4, -2, 4, 5, '#d6b38a');
     if (kind === 'scatter') { rect(c, length + 1, -5, 4, 9, '#52675b'); rect(c, 12, 2, 7, 3, '#8f7050'); }
+    // Steel edge, recessed chamber and bound grip read as different materials.
+    rect(c, 8, -3, length - 6, 1, '#edf0d8'); rect(c, length + 1, -2, 2, 4, '#26363b');
+    rect(c, 9, -1, 5, 3, '#4d5b5a'); rect(c, 10, -1, 3, 1, '#9ba79c');
+    rect(c, 7, 3, 4, 1, '#b99a6b'); rect(c, 7, 5, 4, 1, '#493b34');
+    rect(c, 5, -5, 3, 2, '#d2b777');
+    if (kind === 'scatter') { rect(c, 15, 3, 2, 2, '#d0aa75'); rect(c, length + 2, -4, 2, 2, '#aebdb2'); }
     c.restore();
   }
   function blade(c, x, y, angle, guarding, striking, large = false) {
@@ -728,6 +762,9 @@
     rect(c, 8, -3, length, 6, '#172b2b'); rect(c, 12, -2, length - 3, 4, '#b7c9bd');
     rect(c, 14, -2, length - 6, 1, '#f2eed0'); rect(c, length + 9, -1, 5, 2, '#f8eed1');
     rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
+    rect(c, 14, 1, length - 8, 1, '#748e91'); rect(c, length + 5, -2, 4, 1, '#f8f5db');
+    rect(c, 9, -7, 3, 2, '#f0d39b'); rect(c, 10, 5, 2, 2, '#795b3d');
+    rect(c, 2, -2, 2, 4, '#3b3534'); rect(c, 5, -2, 1, 4, '#9e794e');
     c.restore();
   }
   function spear(c, x, y, angle, guarding, striking) {
@@ -744,6 +781,9 @@
     c.lineTo(66 + extension, 0); c.lineTo(43 + extension, 5); c.closePath(); c.fill();
     path(c, [[45 + extension, -3], [61 + extension, 0]], '#f4efcc', 1.5);
     rect(c, 36 + extension, 2, 3, 9, '#a9764e'); rect(c, 38 + extension, 4, 3, 7, '#cda46c');
+    for (const sx of [0, 5, 24, 29]) rect(c, sx + extension, -2, 2, 4, '#65503e');
+    path(c, [[46 + extension, 2], [60 + extension, 0]], '#6b8587', 1);
+    rect(c, 37 + extension, -4, 2, 2, '#edd19c');
     c.restore();
   }
   function decoy(c, d, time) {
@@ -774,6 +814,11 @@
       rect(c,-10,-10,22,14,'#344a42');rect(c,-9,-10,20,11,'#a7b4a8');rect(c,-8,-10,17,4,'#cbd2c4');rect(c,-6,-1,17,4,'#e0e3d2');
       for(const [x,phase] of [[-7,1],[6,-1]]){rect(c,x,1+stride*phase,4,pouncing?3:7,'#8c9c8d');rect(c,x,6+stride*phase,6,2,'#cbd4c4');}
     }
+    // Broad silver fur clusters follow the shoulder and haunch instead of a
+    // speckled texture; the underside stays darker than the face and tail tip.
+    rect(c,sitting?-6:-8,sitting?-12:-9,5,2,'#eff0de');
+    rect(c,sitting?-5:-7,sitting?-10:-7,3,2,'#d6ddcf');
+    rect(c,sitting?5:7,sitting?-5:-3,3,3,'#7f9190');
     const hx=sitting?5:sniffing?11:9,hy=sitting?-16:sniffing?-7:-13;
     c.save(); c.translate(hx,hy); if(sniffing)c.rotate(Math.sin(num(fox.facing))*side*.45);
     c.fillStyle='#354c42';c.beginPath();c.moveTo(-8,-2);c.lineTo(-8,-12);c.lineTo(-1,-6);c.lineTo(5,-12);c.lineTo(9,-2);c.lineTo(7,8);c.lineTo(-4,9);c.closePath();c.fill();
@@ -781,6 +826,7 @@
     rect(c,-5,-6,2,4,'#9a8e80');rect(c,3,-6,2,4,'#9a8e80');
     c.fillStyle='#edf0dd';c.beginPath();c.moveTo(-4,2);c.lineTo(5,1);c.lineTo(13,5);c.lineTo(7,9);c.lineTo(0,7);c.closePath();c.fill();
     rect(c,11,4,3,3,'#30473d');rect(c,4,-1,2,3,'#334638');rect(c,5,-1,1,1,'#eee3b9');
+    rect(c,-4,-3,3,2,'#e7ecdc');rect(c,4,-4,2,2,'#e7ecdc');rect(c,8,7,3,1,'#a7b6ac');
     // The owner's small cloth tie identifies two foxes without another HUD.
     rect(c,-5,7,10,3,fox.ownerId==='p2'?'#bd8b75':'#88b39d');
     c.restore();
@@ -825,7 +871,7 @@
   function player(c, p, time, localId, state) {
     if (!p || p.dead) return;
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
-    const second = p.id === 'p2' || p.color === '#f08c69', main = second ? '#bb7867' : '#8fae7d', light = second ? '#e1a179' : '#c1d09c', dark = second ? '#805e58' : '#536f56';
+    const second = p.id === 'p2' || p.color === '#f08c69', main = second ? '#ad695b' : '#538d87', light = second ? '#e3ad83' : '#acd0b4', dark = second ? '#654854' : '#2d5359';
     const movement = Math.hypot(num(p.vx), num(p.vy)) > 3 || p.moving;
     const step = movement ? Math.sin(time * (p.sneaking ? .012 : .02)) * (p.sneaking ? .85 : 2) : Math.sin(time * .0025 + x) * .5;
     const isDash = p.dashing || p.dashTime > 0 || p.dashTimer > 0;
@@ -845,18 +891,36 @@
     }
     const blink = p.invuln > 0 && Math.floor(time / 80) % 2 === 0;
     c.save(); if (blink) c.globalAlpha = .48; c.translate(Math.round(x), Math.round(y));
-    // Boots and the little traveling coat.
-    rect(c, -8, 4 + step, 6, 9, '#172b29'); rect(c, 3, 4 - step, 6, 9, '#172b29');
-    rect(c, -7, 4 + step, 5, 6, '#655e46'); rect(c, 3, 4 - step, 5, 6, '#655e46');
-    rect(c, -11, -12, 22, 18, '#122b29'); rect(c, -9, -12, 18, 17, dark); rect(c, -8, -11, 15, 14, main); rect(c, -8, -10, 4, 13, light); rect(c, -8, 3, 16, 3, '#5e5940');
-    rect(c, -12, -8 + step, 4, 11, dark); rect(c, -12, -1 + step, 4, 5, '#cfa57e');
-    // Backpack, scarf and a readable silhouette at the small game scale.
-    rect(c, -13, -12, 7, 12, '#344f45'); rect(c, -12, -11, 5, 4, '#9f9163');
-    rect(c, -5, -15, 12, 6, '#e0b35f'); rect(c, -8, -12, 8, 3, '#c3914d'); rect(c, -7, -9, 4, 8, '#c3914d');
-    rect(c, -9, -27, 19, 16, '#122a27'); rect(c, -7, -24, 15, 13, '#ddb48b'); rect(c, -7, -24, 4, 10, '#bd9470'); rect(c, -3, -15, 9, 3, '#c1956e');
+    // Cut coat tails, layered boots and a leather harness keep the traveler
+    // readable in a single small silhouette; highlights are clustered, not noise.
+    for (const [bx, phase] of [[-8, 1], [3, -1]]) {
+      const by = 4 + step * phase;
+      rect(c, bx, by, 6, 9, '#15272e'); rect(c, bx + 1, by, 4, 6, '#695546');
+      rect(c, bx + 1, by + 1, 2, 3, '#a08b6a'); rect(c, bx, by + 7, 7, 2, '#29363a');
+      rect(c, bx + 1, by + 6, 4, 1, '#b1a184');
+    }
+    rect(c, -11, -12, 22, 18, '#14272e'); rect(c, -9, -12, 18, 17, dark);
+    rect(c, -8, -11, 15, 13, main); rect(c, -8, -10, 3, 10, light);
+    rect(c, 5, -9, 3, 12, dark); rect(c, -8, 1, 6, 6, main); rect(c, 2, 1, 6, 6, dark);
+    rect(c, -7, 5, 4, 1, '#adcbb0'); rect(c, 2, 5, 5, 1, '#76a69a');
+    rect(c, -1, -7, 2, 10, '#233e46'); rect(c, 1, -7, 1, 8, '#bbd1af');
+    rect(c, -9, 0, 18, 3, '#654e3c'); rect(c, -2, 0, 5, 4, '#d4b576'); rect(c, -1, 1, 3, 2, '#4c5144');
+    rect(c, -12, -8 + step, 4, 11, dark); rect(c, -12, -7 + step, 3, 2, main);
+    rect(c, -12, -1 + step, 4, 5, '#b69273'); rect(c, -11, -1 + step, 2, 2, '#e3c095');
+    rect(c, -13, -12, 7, 12, '#283c40'); rect(c, -12, -11, 5, 4, '#a68b60');
+    rect(c, -12, -7, 4, 5, '#6b5a43'); rect(c, -12, -6, 4, 1, '#c6a976'); rect(c, -10, -5, 1, 3, '#d3c090');
+    rect(c, -8, -12, 3, 12, '#866a46'); rect(c, -7, -11, 1, 9, '#d4b783');
+    // Ivory collar and ochre scarf separate face from the cooler coat.
+    rect(c, -5, -15, 12, 6, '#e3ba70'); rect(c, -4, -15, 10, 2, '#f5d79b');
+    rect(c, -8, -12, 8, 3, '#b07b49'); rect(c, -7, -9, 4, 8, '#c59352'); rect(c, -6, -8, 1, 6, '#edc77e');
+    rect(c, -9, -27, 19, 16, '#172b30'); rect(c, -7, -24, 15, 13, '#d8b38e');
+    rect(c, -7, -24, 3, 10, '#b58c71'); rect(c, -4, -23, 9, 8, '#eed0a3'); rect(c, -3, -15, 9, 3, '#ae806a');
     const facing = num(p.facing);
-    if (Math.sin(facing) > -.6) { const look = Math.cos(facing) >= 0 ? 2 : -3; rect(c, look, -20, 2, 3, '#263b32'); rect(c, look + 5, -20, 2, 3, '#263b32'); }
-    rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main); rect(c, -7, -31, 12, 2, light); rect(c, -12, -23, 25, 4, light); rect(c, -11, -21, 23, 2, dark); rect(c, 4, -30, 3, 6, '#dac783');
+    if (Math.sin(facing) > -.6) { const look = Math.cos(facing) >= 0 ? 2 : -3; rect(c, look, -20, 2, 3, '#26373b'); rect(c, look + 5, -20, 2, 3, '#26373b'); rect(c, look, -20, 1, 1, '#faf0cf'); }
+    rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main);
+    rect(c, -7, -31, 11, 2, light); rect(c, -6, -29, 3, 4, '#75ac9d'); rect(c, 5, -29, 3, 5, dark);
+    rect(c, -12, -23, 25, 4, '#83b2a0'); rect(c, -11, -23, 20, 1, '#d9dfb9'); rect(c, -11, -21, 23, 2, dark);
+    rect(c, -8, -25, 17, 2, '#51483c'); rect(c, 4, -30, 3, 6, '#dec68a'); rect(c, 5, -30, 1, 3, '#fff0c4');
     const melee = p.weapon === 'blade' || p.weapon === 'spear';
     if (p.weapon === 'spear') spear(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
@@ -1074,11 +1138,21 @@
     history.time = time;
     return poses;
   }
+  function rivetPlate(c, x, y, w, h, copper = '#98654d', rim = '#d1a06b') {
+    // A stepped plate has a bright upper lip and a recessed lower seam. Keep
+    // its broad color blocks intact at 1x instead of covering it with grain.
+    rect(c, x + 1, y, w - 2, h, '#233238'); rect(c, x, y + 2, w, h - 4, '#233238');
+    rect(c, x + 2, y + 1, w - 4, h - 3, copper); rect(c, x + 2, y + 1, w - 4, 2, rim);
+    rect(c, x + 2, y + 3, 2, h - 6, '#b28d68'); rect(c, x + w - 5, y + 3, 3, h - 5, '#5b4940');
+    rect(c, x + 3, y + h - 3, w - 6, 1, '#171f27');
+    for (const px of [x + 3, x + w - 5]) { rect(c, px, y + 4, 2, 2, '#e4c18c'); rect(c, px + 1, y + 5, 1, 1, '#605345'); }
+  }
   function enemyBlade(c, e, pose, large = false) {
     const active = pose.phase === 'active', winding = pose.phase === 'windup';
     const reach = pose.reach, facing = pose.facing;
     const x = Math.cos(facing) * reach, y = -3 + Math.sin(facing) * reach * .65 - Math.max(0, pose.lift) * 22;
     path(c, [[Math.cos(facing) * 7, -9], [x + Math.cos(pose.weaponAngle) * 6, y + Math.sin(pose.weaponAngle) * 6]], '#8f987b', large ? 7 : 5);
+    rect(c, x - (large ? 4 : 3), y - 3, large ? 8 : 6, 6, '#805d49'); rect(c, x - 2, y - 3, 3, 2, '#d0a471');
     blade(c, x, y, pose.weaponAngle, false, active && pose.type !== 'thrust', large);
     if (winding && pose.type === 'thrust') rect(c, x - 2, y - 3, 5, 6, '#d6bb86');
   }
@@ -1096,13 +1170,15 @@
       path(c, [[side * 20, -19], [x, top + 8], [x + (down ? side * 3 : 0), hand]], chapter ? '#7e6650' : '#66765b', 11);
       rect(c, x - 8, hand - 5, 17, 13, chapter ? '#a2744d' : '#b1aa7b');
       rect(c, x - 7, hand - 5, 15, 3, chapter ? '#d09c60' : '#d2c694');
+      rect(c, x - 6, hand - 4, 3, 10, '#e4c58c'); rect(c, x + 4, hand - 1, 3, 8, '#655044');
+      rect(c, x - 5, hand + 3, 10, 2, '#524c42'); rect(c, x - 4, hand + 3, 2, 1, '#b2a47c');
     }
   }
   function chapterConstruct(c, e, time, step, pose) {
     const kind = e.kind, attack = e.rhythm || {}, facing = pose.facing;
     const large = kind === 'brute', low = kind === 'charger', width = large ? 44 : low ? 38 : kind === 'shield' ? 28 : 24;
     const top = large ? -26 : low ? -13 : -17, height = large ? 36 : low ? 25 : 26;
-    const stone = '#67716b', lightStone = '#98a08c', darkStone = '#3e5048', copper = '#9e6947', brightCopper = '#cb965e', amber = '#f4be6b';
+    const stone = '#64757b', lightStone = '#a3b0ac', darkStone = '#35464e', copper = '#9e6947', brightCopper = '#cb965e', amber = '#f4be6b';
     if (low) {
       // A squat load carrier with four piston legs and forked copper tusks.
       for (const side of [-1, 1]) for (const end of [-1, 1]) {
@@ -1122,6 +1198,13 @@
     rect(c, width / 2 - 7, top + 2, 7, height - 3, darkStone);
     rect(c, -width / 2, top + height - 8, width, 5, copper); rect(c, -width / 2, top + height - 8, width, 2, brightCopper);
     for (const side of [-1, 1]) { rect(c, side * (width / 2 - 5) - 1, top + 3, 3, 3, brightCopper); rect(c, side * (width / 2 - 5) - 1, top + height - 6, 2, 2, '#e1bc80'); }
+    rect(c, -width / 2 + 7, top + 2, width - 14, 2, '#bcc1ae');
+    rect(c, -width / 2 + 7, top + 5, width - 14, 1, '#34424a');
+    for (const side of [-1, 1]) {
+      const sx = side * (width / 2 - 5);
+      rect(c, sx - 1, top + 9, 3, 5, '#313e44'); rect(c, sx, top + 9, 1, 3, '#cead77');
+      rect(c, sx - 2, top + height - 11, 4, 1, '#25333b');
+    }
     // Every construct shares an inset amber furnace, never an exposed face.
     const coreY = low ? -3 : -7, coreW = large ? 18 : 11;
     rect(c, -coreW / 2 - 3, coreY - 6, coreW + 6, 16, '#29352d'); rect(c, -coreW / 2 - 1, coreY - 5, coreW + 2, 13, copper);
@@ -1135,6 +1218,9 @@
       rect(c, -headW / 2 - 3, headY, headW + 6, 5, copper); rect(c, -headW / 2 - 2, headY, headW + 4, 2, brightCopper);
       rect(c, -headW / 2 + 2, headY + 9, headW - 4, 5, '#24372f'); rect(c, -headW / 2 + 4, headY + 10, headW - 8, 2, amber);
       rect(c, -headW / 2 + 4, headY + 18, headW - 8, 2, copper);
+      rect(c, -headW / 2 + 2, headY + 5, headW - 4, 1, '#ccd0b6');
+      rect(c, -3, headY + 5, 6, 3, copper); rect(c, -2, headY + 5, 3, 1, '#ecc990');
+      rect(c, -4, headY + 15, 2, 3, '#2c3941'); rect(c, 2, headY + 15, 2, 3, '#2c3941');
     } else {
       rect(c, -17, -20, 34, 10, copper); rect(c, -15, -19, 30, 3, brightCopper); rect(c, -10, -16, 20, 3, '#f4be6b');
     }
@@ -1231,14 +1317,31 @@
     } else if (boss) {
       const awakened = e.stage >= 2;
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
-      rect(c, -21, 5 + step, 15, 16, '#192c2b'); rect(c, 8, 5 - step, 15, 16, '#192c2b'); rect(c, -20, 6 + step, 13, 12, '#62725c'); rect(c, 9, 6 - step, 13, 12, '#62725c');
-      rect(c, -25, -24, 50, 34, '#142b29'); rect(c, -21, -23, 43, 31, '#71836a'); rect(c, -20, -21, 10, 28, '#8c9b7b'); rect(c, 10, -21, 11, 28, '#526a56'); rect(c, -16, -12, 33, 17, '#4e6552');
-      if (pose.type === 'quake') {
-        rect(c, -31, -26, 14, 7, '#7e8b6a'); rect(c, 19, -26, 14, 7, '#718363');
-      } else {
-        rect(c, -31, -26 + step, 14, 27, '#7e8b6a'); rect(c, -34, -22 + step, 5, 21, '#475f4b'); rect(c, 19, -26 - step, 14, 27, '#718363'); rect(c, 30, -22 - step, 5, 21, '#405947');
+      rect(c, -21, 5 + step, 15, 16, '#182a32'); rect(c, 8, 5 - step, 15, 16, '#182a32');
+      rivetPlate(c,-21,5+step,15,13,'#7f7970','#bec2ac');rivetPlate(c,8,5-step,15,13,'#626b6b','#a2a995');
+      rect(c,-22,18+step,17,3,'#3e4549');rect(c,7,18-step,17,3,'#303d45');
+      rect(c, -25, -24, 50, 34, '#182a32'); rect(c,-22,-23,44,30,'#465b64');
+      // Separate sloped chest, rib plates and bronze hip segments, with a
+      // charcoal gap around the furnace; this is no longer one green slab.
+      rect(c,-19,-24,38,4,'#b8bba2');rect(c,-22,-20,44,5,'#85948e');
+      rect(c,-21,-15,13,20,'#62787e');rect(c,9,-15,12,20,'#354c58');
+      for(const side of[-1,1]){
+        const px=side<0?-20:10;
+        for(const py of[-12,-6,0]){rect(c,px,py,10,4,side<0?'#a48c68':'#79664f');rect(c,px,py,9,1,side<0?'#d7bd8c':'#ae926a');}
+        rect(c,side*22-2,-16,4,4,'#ddbd7d');
       }
-      rect(c, -17, -47, 34, 25, '#162d2b'); rect(c, -15, -45, 30, 23, '#7f8f70'); rect(c, -13, -45, 8, 20, '#a1ad84'); rect(c, 7, -45, 8, 20, '#5a7257'); rect(c, -20, -45, 40, 7, '#596f52'); rect(c, -12, -49, 24, 5, '#a1ad78');
+      rect(c,-9,-16,18,21,'#273841');rect(c,-8,-15,16,2,'#9d7b54');
+      rect(c,-21,5,16,5,'#a17d55');rect(c,6,5,16,5,'#816446');rect(c,-18,5,10,1,'#e4c68f');rect(c,8,5,10,1,'#c4a573');
+      if (pose.type === 'quake') {
+        rect(c, -31, -26, 14, 7, '#9f8965'); rect(c, 19, -26, 14, 7, '#8d795d');
+      } else {
+        rect(c,-31,-23+step,14,25,'#6e7c7e');rect(c,-34,-18+step,5,18,'#344851');rect(c,19,-23-step,14,25,'#536974');rect(c,30,-18-step,5,18,'#293f4a');
+        rivetPlate(c,-32,-26+step,16,12,'#a1815c','#dec18a');rivetPlate(c,18,-26-step,16,12,'#896d50','#c4aa7c');
+        rect(c,-31,-9+step,13,4,'#bfac83');rect(c,20,-9-step,13,4,'#9e8b68');rect(c,-30,-3+step,11,5,'#394b53');rect(c,21,-3-step,11,5,'#2b424e');
+      }
+      rect(c, -17, -47, 34, 25, '#192c34'); rect(c, -15, -45, 30, 23, '#778a8d'); rect(c, -13, -45, 8, 20, '#b0b9a7'); rect(c, 7, -45, 8, 20, '#405c68');
+      rect(c,-20,-43,40,5,'#876b50');rect(c,-17,-45,34,4,'#aa8a5d');rect(c,-12,-49,24,5,'#d3b985');rect(c,-10,-49,17,1,'#f4dfb0');
+      rect(c,-12,-39,24,1,'#d1b783');rect(c,-12,-36,24,7,'#243840');rect(c,-4,-29,8,6,'#738783');rect(c,-3,-29,2,4,'#d8c197');
       rect(c, -10, -35, 7, 4, '#e7b96d'); rect(c, 4, -35, 7, 4, '#e7b96d'); rect(c, -8, -26, 16, 3, '#334b3e');
       c.save(); c.rotate(Math.PI / 4); rect(c, -6, -7, 12, 12, '#c8ab63'); rect(c, -3, -4, 6, 6, '#eee0a0'); c.restore();
       grass(c, -12, -48, '#9cab6b'); grass(c, 12, -42, '#879f63');
@@ -1269,6 +1372,9 @@
       rect(c, -10, -30, 20, 18, '#263b2f'); rect(c, -8, -29, 16, 16, '#928063'); rect(c, -7, -28, 5, 13, '#b9a07a');
       rect(c, -9, -24, 18, 11, '#2a3b30'); rect(c, -5, -22, 3, 2, '#dbbd7c'); rect(c, 3, -22, 3, 2, '#dbbd7c');
       rect(c, -12, -30, 24, 5, '#b38f60'); rect(c, -10, -33, 20, 4, '#89734f'); rect(c, -5, -34, 10, 3, '#c3a571');
+      rect(c,-8,-14,4,2,'#e0c08a');rect(c,6,-13,3,2,'#c3a06b');
+      rect(c,-6,-3,3,8,'#c1ad7d');rect(c,-4,6,7,2,'#4d4642');rect(c,-3,7,5,1,'#d3b77e');
+      rect(c,-7,-31,10,1,'#e3c694');rect(c,-6,-19,12,3,'#34414a');
       const handX = side * 19 + step * .45, handY = (active ? -7 : 0) + Math.abs(step) * .5;
       path(c, [[side * 8, -13], [handX, handY]], '#ae8a60', 5); rect(c, handX - 3, handY - 3, 6, 6, '#ddba83');
       path(c, [[handX, handY], [handX, handY + 7]], '#c9ad71', 2);
@@ -1284,6 +1390,8 @@
       // from the swordsman's tall crest and the lantern caster's pointed hat.
       rect(c,-13,-31,26,18,'#283e32');rect(c,-11,-31,22,17,'#896c49');rect(c,-10,-30,7,15,'#be955f');rect(c,5,-28,6,13,'#65583f');
       rect(c,-18,-31,36,6,'#a87848');rect(c,-15,-34,30,4,'#ce9a5b');rect(c,-10,-24,21,5,'#243b32');rect(c,-6,-23,4,2,'#f1c579');rect(c,3,-23,4,2,'#f1c579');
+      rivetPlate(c,-13,-14,26,13,'#7b715e','#bbab7b');rect(c,-3,-10,6,4,'#33454b');rect(c,-1,-9,2,2,'#d0ac72');
+      for(const sx of[-15,9]){rect(c,sx,-17,6,1,'#ecc992');rect(c,sx+1,-12,2,2,'#d2b381');}
       const handX=Math.cos(pose.weaponAngle)*(23+pose.reach),handY=-3-pose.lift*26+Math.sin(pose.weaponAngle)*(13+pose.reach*.6);
       path(c,[[side*9,-12],[handX,handY]],'#9e8056',6);rect(c,handX-4,handY-4,8,8,'#d0ac77');
       const hx=handX+side*13,hy=handY+(casting?-9*motionEase(pose.progress):4);
@@ -1298,6 +1406,11 @@
       rect(c,-12,-35,24,22,'#203733');rect(c,-10,-34,20,19,'#9b9f86');rect(c,-9,-33,6,16,'#c5c6a4');rect(c,5,-31,5,15,'#647d6c');
       rect(c,-10,-26,20,6,'#243d36');rect(c,-6,-25,4,2,'#efc997');rect(c,3,-25,4,2,'#efc997');
       rect(c,-14,-36,28,5,'#70826b');rect(c,-4,-42,8,7,'#b89d68');rect(c,-2,-46,4,5,'#e0bd79');
+      // A narrow red tabard divides the knight's steel breast and hip lames.
+      rect(c,-14,-16,8,5,'#d0c4a2');rect(c,7,-15,8,5,'#a19d87');
+      rect(c,-10,-10,6,9,'#596b74');rect(c,-9,-10,4,1,'#c9d0ba');rect(c,5,-9,5,9,'#354b59');
+      rect(c,-2,-14,4,23,'#8e4e45');rect(c,-1,-13,1,21,'#d7976d');
+      rect(c,-9,6,7,2,'#ab9975');rect(c,3,6,7,2,'#8a7e66');
       enemyBlade(c, e, pose, true);
     } else if (kind === 'brute') {
       const attack=e.rhythm||{},charging=attack.type==='rush'&&attack.phase==='active',staggered=e.stagger>0||e.stun>0;
@@ -1312,6 +1425,9 @@
       rect(c,-18,-39,8,6,'#b5a77c');rect(c,-22,-45,6,11,'#dfc99a');rect(c,10,-39,8,6,'#a79870');rect(c,16,-45,6,11,'#d5c08c');
       rect(c,-8,-34,5,3,charging?'#ffe2a0':'#5a4838');rect(c,4,-34,5,3,charging?'#ffe2a0':'#5a4838');rect(c,-7,-25,14,4,'#4f4f37');
       rect(c,-20,2,40,6,'#626f50');rect(c,-4,1,8,9,'#d0b573');
+      rivetPlate(c,-20,-23,40,23,'#987750','#d6b87d');
+      rect(c,-5,-21,10,21,'#3d4142');for(const py of[-16,-10,-4])rect(c,-2,py,4,2,'#c8a26b');
+      rect(c,-20,3,13,3,'#ab8e60');rect(c,8,3,13,3,'#8b7654');
       if(pose.type==='quake')quakeArms(c,pose);
       if(staggered){path(c,[[-24,-51],[-30,-58]],'#edcf8d',2);path(c,[[22,-53],[29,-58]],'#edcf8d',2);}
       if(e.huntTarget){
@@ -1326,32 +1442,64 @@
       rect(c,-11,-18,22,30,'#715f55');rect(c,-9,-17,7,28,'#9d7c5b');rect(c,5,-17,7,28,'#4e5147');rect(c,-2,-15,4,28,'#c6a05e');
       rect(c,-10,-35,20,21,'#20352f');rect(c,-8,-33,16,17,'#837a5d');rect(c,-6,-28,12,10,'#223831');rect(c,-4,-26,3,3,'#efbf75');rect(c,3,-26,3,3,'#efbf75');
       c.fillStyle='#927c57';c.beginPath();c.moveTo(-14,-31);c.lineTo(0,-50);c.lineTo(14,-31);c.closePath();c.fill();rect(c,-15,-33,30,4,'#c5a66c');
+      rect(c,-8,-18,5,28,'#ac7959');rect(c,-7,-16,2,24,'#d8ac75');rect(c,6,-14,4,25,'#343e49');
+      for(const py of[-10,-2,6]){rect(c,-1,py,3,2,'#ead092');rect(c,-3,py+2,2,2,'#906b4e');}
+      rect(c,-2,-44,3,5,'#dabb82');rect(c,-10,-32,16,1,'#efcf97');
       const side=Math.cos(facing)<0?-1:1,handX=side*23+Math.cos(facing)*pose.reach,handY=-6-pose.lift*23+Math.sin(facing)*pose.reach*.6;
       path(c,[[side*8,-14],[handX,handY-5]],'#a78b66',5);path(c,[[handX,handY-9],[handX,handY+9]],'#c4aa71',2);
       lantern(c,handX,handY+12,time,casting?.88:.68);
       if(casting){glow(c,handX,handY+10,44,'#eaa35435');path(c,[[handX-12,handY+13],[handX,handY+20],[handX+12,handY+13]],'#f0d195',2);}
     } else if (kind === 'shield') {
-      rect(c,-10,3+step,7,12,'#172b29');rect(c,4,3-step,7,12,'#172b29');rect(c,-10,4+step,7,7,'#827f68');rect(c,4,4-step,7,7,'#827f68');
-      rect(c,-14,-16,28,24,'#172c2b');rect(c,-12,-15,24,21,'#65796c');rect(c,-11,-14,7,19,'#a0a68a');rect(c,5,-13,7,18,'#405d54');rect(c,-13,3,27,5,'#b49b66');
-      rect(c,-11,-33,22,21,'#1c3330');rect(c,-10,-32,20,18,'#a4aa8b');rect(c,-9,-31,5,16,'#bec29a');rect(c,4,-30,5,16,'#6e8770');rect(c,-9,-24,18,5,'#293f37');rect(c,-6,-23,4,2,'#e7c584');rect(c,3,-23,4,2,'#e7c584');rect(c,-13,-33,26,5,'#687f62');rect(c,-3,-37,6,5,'#c5b078');
+      rect(c,-10,3+step,7,12,'#182932');rect(c,4,3-step,7,12,'#182932');rect(c,-10,4+step,7,7,'#8b7b62');rect(c,4,4-step,7,7,'#665b50');
+      rect(c,-10,12+step,8,2,'#b5a083');rect(c,4,12-step,8,2,'#8f806b');
+      rect(c,-14,-16,28,24,'#182830');rect(c,-12,-15,24,21,'#465b63');
+      rivetPlate(c,-13,-15,26,19,'#936b50','#d1ad77');
+      rect(c,-3,-12,6,14,'#35434a');rect(c,-2,-10,4,2,'#c9a76a');rect(c,-2,-6,4,2,'#c9a76a');
+      rect(c,-15,-16,8,8,'#d4b17d');rect(c,8,-15,8,8,'#9d7958');rect(c,-13,4,27,4,'#574537');
+      rect(c,-11,-33,22,21,'#172831');rect(c,-10,-32,20,18,'#66767c');rect(c,-9,-31,5,16,'#a8b1a5');rect(c,4,-30,5,16,'#40515a');
+      rect(c,-9,-24,18,5,'#172831');rect(c,-6,-23,4,2,'#f1bd76');rect(c,3,-23,4,2,'#f1bd76');
+      rect(c,-13,-33,26,5,'#a47a53');rect(c,-12,-33,23,2,'#e0bc83');rect(c,-3,-37,6,5,'#b28e60');rect(c,-2,-37,2,3,'#f3d59c');
+      rect(c,-4,-17,2,3,'#25343c');rect(c,2,-17,2,3,'#25343c');
       enemyGun(c, { ...pose, reach: pose.reach + 7 });
-      c.save();c.translate(Math.cos(facing)*pose.reach*.45,Math.sin(facing)*pose.reach*.3-pose.lift*8);c.rotate(facing+(e.shieldOpen>0||e.stun>0?-.5:0));rect(c,14,-18,9,36,'#142e2a');rect(c,15,-17,8,34,e.shieldOpen>0||e.stun>0?'#748975':'#b3a56c');rect(c,14,-13,8,26,'#6e8163');rect(c,20,-11,4,22,e.shieldOpen>0||e.stun>0?'#91a080':'#d4c18a');rect(c,17,-5,8,10,'#b8aa75');rect(c,18,-2,6,4,'#e1ce97');c.restore();
+      c.save();c.translate(Math.cos(facing)*pose.reach*.45,Math.sin(facing)*pose.reach*.3-pose.lift*8);c.rotate(facing+(e.shieldOpen>0||e.stun>0?-.5:0));
+      rect(c,14,-18,9,36,'#172831');rect(c,15,-17,8,34,e.shieldOpen>0||e.stun>0?'#6e8287':'#ac8356');
+      rect(c,14,-13,8,26,'#415961');rect(c,20,-11,4,22,e.shieldOpen>0||e.stun>0?'#a0b5af':'#ddbe84');
+      for(const sy of[-13,10]){rect(c,15,sy,8,3,'#d4b17b');rect(c,16,sy,2,1,'#f1d8a6');}
+      rect(c,17,-5,8,10,'#a98055');rect(c,18,-2,6,4,'#ead19b');rect(c,22,-2,2,3,'#7c5f42');c.restore();
     } else if (kind === 'charger') {
       rect(c,-12,2+step,8,12,'#263b31');rect(c,5,2-step,8,12,'#263b31');rect(c,-11,4+step,7,7,'#9d7d5e');rect(c,5,4-step,7,7,'#9d7d5e');
       rect(c,-15,-14,30,23,'#20382d');rect(c,-13,-13,26,20,'#a87e58');rect(c,-12,-12,7,18,'#d1a06d');rect(c,6,-11,7,17,'#785c47');rect(c,-14,3,29,5,'#6d6549');
       rect(c,-12,-30,24,19,'#263a30');rect(c,-10,-29,20,19,'#b69b70');rect(c,-9,-28,6,16,'#d6bf87');rect(c,-7,-22,4,4,e.windup>0?'#f3b071':'#493c31');rect(c,4,-22,4,4,e.windup>0?'#f3b071':'#493c31');rect(c,-5,-14,10,4,'#69593d');
       rect(c,-17,-28,7,5,'#bbab7f');rect(c,-20,-33,5,9,'#dec996');rect(c,10,-28,7,5,'#aa9b74');rect(c,15,-33,5,9,'#d9c38e');rect(c,-5,-33,10,6,'#8a674a');rect(c,-2,-37,4,7,'#ca8858');
+      rivetPlate(c,-13,-12,26,15,'#976b50','#d6aa73');rect(c,-9,-11,18,2,'#bda17b');
+      rect(c,-7,-17,14,5,'#675248');rect(c,-5,-16,10,2,'#c4a681');rect(c,-4,-15,2,2,'#362f30');rect(c,3,-15,2,2,'#362f30');
       if(e.windup>0){rect(c,-2,-52,5,9,'#efb281');rect(c,-2,-40,5,3,'#efb281');}
     } else if (kind === 'shooter' || kind === 'ranged') {
-      rect(c, -8, 4 + step, 6, 10, '#172b29'); rect(c, 3, 4 - step, 6, 10, '#172b29'); rect(c, -8, 5 + step, 5, 6, '#6f6456'); rect(c, 3, 5 - step, 5, 6, '#6f6456');
-      rect(c, -12, -13, 24, 21, '#142a2a'); rect(c, -10, -12, 20, 18, '#746a65'); rect(c, -9, -12, 5, 16, '#968979'); rect(c, 4, -9, 6, 15, '#514f50'); rect(c, -10, 4, 21, 4, '#a7895b');
-      rect(c, -12, -27, 24, 19, '#26383a'); rect(c, -9, -28, 18, 19, '#8c8170'); rect(c, -6, -23, 12, 12, '#273d38'); rect(c, -4, -20, 3, 3, '#e1a979'); rect(c, 3, -20, 3, 3, '#e1a979'); rect(c, -11, -28, 22, 5, '#a38f6e');
+      rect(c, -8, 4 + step, 6, 10, '#19282f'); rect(c, 3, 4 - step, 6, 10, '#19282f'); rect(c, -8, 5 + step, 5, 6, '#746256'); rect(c, 3, 5 - step, 5, 6, '#746256');
+      rect(c,-8,12+step,7,2,'#ad9475');rect(c,3,12-step,7,2,'#8d7a63');
+      rect(c, -12, -13, 24, 21, '#192a32'); rect(c, -10, -12, 20, 18, '#666472'); rect(c, -9, -12, 5, 16, '#a69b91'); rect(c, 4, -9, 6, 15, '#3c4855');
+      rect(c,-12,-13,6,8,'#a66f50');rect(c,-11,-13,5,2,'#d6aa77');rect(c,7,-12,5,7,'#805e4f');
+      rect(c,-7,-8,3,11,'#655144');rect(c,-6,-8,1,9,'#ceaa76');
+      for(const ax of[-3,1,5]){rect(c,ax,-8,2,5,'#d2a565');rect(c,ax,-8,2,1,'#f1ce8c');}
+      rect(c, -10, 4, 21, 4, '#927348');rect(c,-1,4,4,4,'#d7b679');rect(c,-5,7,4,3,'#45434b');
+      // A low hood and a charcoal respirator replace the shared green helmet.
+      rect(c, -12, -27, 24, 19, '#192832'); rect(c, -9, -28, 18, 19, '#817b82'); rect(c,-8,-27,5,8,'#b2a69c');rect(c,5,-26,4,13,'#4a4d5a');
+      rect(c, -7, -23, 14, 12, '#26343e'); rect(c, -4, -21, 3, 3, '#f1bd88'); rect(c, 3, -21, 3, 3, '#f1bd88');
+      rect(c,-5,-15,10,3,'#53616a');rect(c,-3,-15,1,3,'#b7b5a0');rect(c,1,-15,1,3,'#b7b5a0');
+      rect(c, -11, -28, 22, 4, '#a37d60');rect(c,-9,-28,14,1,'#e0b689');
       enemyGun(c, pose);
     } else {
-      rect(c, -9, 4 + step, 6, 9, '#1a302b'); rect(c, 4, 4 - step, 6, 9, '#1a302b'); rect(c, -9, 5 + step, 5, 5, '#675d45'); rect(c, 4, 5 - step, 5, 5, '#675d45');
-      rect(c, -11, -10, 22, 17, '#193029'); rect(c, -9, -10, 18, 16, '#60724d'); rect(c, -8, -10, 5, 14, '#83915e'); rect(c, -10, 2, 21, 5, '#5b5c3f');
-      rect(c, -15, -22, 30, 6, '#213b2c'); rect(c, -13, -21, 26, 4, '#81925c'); rect(c, -10, -26, 20, 17, '#20392d'); rect(c, -8, -25, 16, 15, '#9ca773'); rect(c, -8, -24, 5, 13, '#b6ba84'); rect(c, -5, -19, 3, 3, '#422f2a'); rect(c, 4, -19, 3, 3, '#422f2a'); rect(c, -2, -12, 8, 3, '#586a44');
-      rect(c, -5, -29, 10, 5, '#5d774d'); rect(c, 0, -30, 6, 3, '#8ca165');
+      rect(c, -9, 4 + step, 6, 9, '#1a2930'); rect(c, 4, 4 - step, 6, 9, '#1a2930'); rect(c, -9, 5 + step, 5, 5, '#7e624d'); rect(c, 4, 5 - step, 5, 5, '#6b5548');
+      rect(c,-9,11+step,6,2,'#b4956e');rect(c,4,11-step,6,2,'#9f805f');
+      rect(c, -11, -10, 22, 17, '#172b32'); rect(c, -9, -10, 18, 16, '#45575e');
+      rivetPlate(c,-9,-10,18,14,'#9b6550','#dbaf7b');rect(c,-3,-6,6,5,'#634c40');rect(c,-1,-5,2,3,'#e7bd7d');
+      rect(c, -10, 2, 21, 5, '#4c413c');rect(c,-2,3,5,3,'#c4a16e');
+      // Stepped copper brow and a dark visor give the blade guard a compact,
+      // angular silhouette distinct from the gunner's low cloth hood.
+      rect(c,-10,-26,20,17,'#1b2c34');rect(c,-8,-25,16,15,'#8d785f');rect(c,-8,-24,4,12,'#c3a17b');rect(c,5,-23,3,12,'#574d49');
+      rect(c,-15,-22,30,5,'#4d5c61');rect(c,-13,-22,25,2,'#bf9464');rect(c,-12,-20,22,1,'#e6c28b');
+      rect(c,-7,-18,15,5,'#202e36');rect(c,-5,-17,3,2,'#efb77e');rect(c,3,-17,3,2,'#efb77e');rect(c,-2,-12,7,2,'#b19169');
+      rect(c,-5,-29,10,5,'#9e6d4d');rect(c,-3,-29,5,2,'#e1ba7e');rect(c,1,-31,4,3,'#6c5550');
       enemyBlade(c, e, pose);
     }
     if (boss && e.rhythm && pose.type !== 'quake') {
@@ -1457,7 +1605,7 @@
       const x = (i * 137.7 + 49 + Math.sin(time * .0002 + i) * 14) % W, y = (i * 83.4 + 50 - time * .003) % H;
       if (y > 0) alpha(c, (.25 + Math.sin(time * .001 + i) * .2), () => rect(c, x, y, 1, 1, '#d8c795'));
     }
-    const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
+    const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#091a2600'); vignette.addColorStop(.75, '#091a2610'); vignette.addColorStop(1, '#091a2666'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
   const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475', hook: '#c9d5a0' };
   function rhythmArea(c, e, state, localId) {
