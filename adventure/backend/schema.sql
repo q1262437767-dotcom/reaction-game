@@ -118,9 +118,9 @@ begin
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   if not ((p_profile->'missions') ?& array['ember','salvage','holdout'])
-      or (select count(*) from jsonb_object_keys(p_profile->'missions')) not in (3, 4)
+      or (select count(*) from jsonb_object_keys(p_profile->'missions')) not in (3, 4, 5)
       or exists (select 1 from jsonb_object_keys(p_profile->'missions') as keys(id)
-                 where id not in ('ember', 'salvage', 'holdout', 'chapter1')) then
+                 where id not in ('ember', 'salvage', 'holdout', 'chapter1', 'chapter1_2')) then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   for v_key in select jsonb_object_keys(p_profile->'missions') loop
@@ -252,9 +252,13 @@ begin
       update public.ruins_saves as saved
       -- Missing fields in older clients must not erase newer same-owner records.
       -- Retain an equipped relic's discovery too, keeping the preserved camp valid.
-      set profile = (case when not ((p_profile->'missions') ? 'chapter1') and ((saved.profile->'missions') ? 'chapter1')
-                          then jsonb_set(p_profile, '{missions,chapter1}', saved.profile#>'{missions,chapter1}')
-                          else p_profile end)
+      set profile = p_profile || jsonb_build_object('missions', (p_profile->'missions')
+                    || (case when not ((p_profile->'missions') ? 'chapter1') and ((saved.profile->'missions') ? 'chapter1')
+                             then jsonb_build_object('chapter1', saved.profile#>'{missions,chapter1}')
+                             else '{}'::jsonb end)
+                    || (case when not ((p_profile->'missions') ? 'chapter1_2') and ((saved.profile->'missions') ? 'chapter1_2')
+                             then jsonb_build_object('chapter1_2', saved.profile#>'{missions,chapter1_2}')
+                             else '{}'::jsonb end))
                     || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
                              then jsonb_build_object('camp', saved.profile->'camp')
                              else '{}'::jsonb end)

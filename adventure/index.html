@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#0b1413">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=35">
-  <script defer src="engine.js?v=35"></script>
-  <script defer src="renderer.js?v=35"></script>
-  <script defer src="vendor/peerjs.min.js?v=35"></script>
-  <script defer src="net.js?v=35"></script>
-  <script defer src="campaign.js?v=35"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=35"></script>
-  <script defer src="cloud-config.js?v=35"></script>
-  <script defer src="cloud.js?v=35"></script>
-  <script defer src="account.js?v=35"></script>
-  <script defer src="app.js?v=35"></script>
+  <link rel="stylesheet" href="style.css?v=36">
+  <script defer src="engine.js?v=36"></script>
+  <script defer src="renderer.js?v=36"></script>
+  <script defer src="vendor/peerjs.min.js?v=36"></script>
+  <script defer src="net.js?v=36"></script>
+  <script defer src="campaign.js?v=36"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=36"></script>
+  <script defer src="cloud-config.js?v=36"></script>
+  <script defer src="cloud.js?v=36"></script>
+  <script defer src="account.js?v=36"></script>
+  <script defer src="app.js?v=36"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -93,6 +93,7 @@
             </div>
             <div class="mission-picker">
               <div class="mode-select-field" hidden><label for="mode-select">探险模式</label><select id="mode-select"><option value="random" selected>随机探索</option><option value="chapter">第一章 · 第一节 · 借火归营</option><option value="relay">接力夺宝</option><option value="hunt">苔火猎场</option><option value="story">旧版任务</option></select></div>
+              <div id="chapter-mission-field" class="mission-select-field" hidden><label for="chapter-select">故事小节</label><select id="chapter-select"><option value="chapter1" selected>第一节 · 借火归营</option><option value="chapter1_2" disabled>第二节 · 木场求援 · 待解锁</option></select></div>
               <div id="story-mission-field" class="mission-select-field" hidden><label for="mission-select">营地委托</label><select id="mission-select"><option value="ember">01 · 熄灭炉心</option><option value="salvage" disabled>02 · 物资回收 · 待解锁</option><option value="holdout" disabled>03 · 信标守夜 · 待解锁</option></select></div>
               <div class="difficulty-select-field"><label for="difficulty-select">难度</label><select id="difficulty-select"><option value="1">普通</option><option value="2" disabled>险境 · 待解锁</option></select></div>
             </div>

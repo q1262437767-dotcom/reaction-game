@@ -2301,7 +2301,256 @@
     alpha(c, .45, () => { rect(c, x - 18, y - 28, 36, 36, '#14282e'); rect(c, x - 15, y - 25, 30, 3, '#526359'); rect(c, x - 14, y - 22, 28, 22, '#172b31'); rect(c, x - 18, y + 1, 36, 5, '#53645b'); });
     alpha(c, .2 + scene.pulse, () => { glow(c, x, y - 12, 41, '#e0b66b35'); rect(c, x - 3, y - 20, 6, 13, '#e1b673'); rect(c, x - 1, y - 18, 2, 9, '#f7d6a2'); });
   }
+  function timberFloor(c, state) {
+    floor(c, state);
+    const index = num(state.room && state.room.index), rand = seedRandom(hash('timber-floor-' + index));
+    rect(c, 28, 28, W - 56, H - 56, '#39443558');
+    // The broad worn decking belongs to the walking surface. Only the actual
+    // simulation walls and the moving cart are painted as standing obstacles.
+    const deck = index === 2 || index === 3 || index === 5;
+    if (deck) {
+      for (let y = 64, row = 0; y < 554; y += 28, row++) {
+        for (let x = row % 2 ? 30 : -64; x < 930; x += 188) {
+          rect(c, Math.max(28, x + 2), y, Math.min(184, 930 - Math.max(28, x + 2)), 25, row % 3 ? '#55533e' : '#5c5842');
+          rect(c, Math.max(28, x + 4), y + 1, Math.min(179, 928 - Math.max(28, x + 4)), 2, '#7a71504d');
+          rect(c, Math.max(28, x + 3), y + 22, Math.min(182, 929 - Math.max(28, x + 3)), 2, '#253b3675');
+          for (const dx of [12, 173]) if (x + dx > 29 && x + dx < 929) rect(c, x + dx, y + 5, 2, 2, '#b1a2777a');
+        }
+      }
+    }
+    for (let i = 0; i < 85; i++) {
+      const x = 48 + rand() * 858, y = 70 + rand() * 474;
+      rect(c, x, y, 2 + rand() * 7, 1, i % 3 ? '#b2a16a24' : '#bca3743b');
+    }
+    for (const y of [90, 504]) {
+      path(c, [[72, y], [886, y]], '#222f2b90', 5);
+      path(c, [[72, y - 2], [886, y - 2]], '#8f87614d', 1);
+      for (let x = 92; x < 878; x += 48) rect(c, x, y - 5, 4, 10, '#6e70539a');
+    }
+    if (index === 1 || index === 4) {
+      for (let x = 138; x < 845; x += 70) {
+        rect(c, x, 318, 37, 4, '#a2875859'); rect(c, x + 4, 324, 24, 2, '#c0aa783d');
+        path(c, [[x + 18, 340], [x + 26, 348], [x + 18, 356]], '#b6a36d43', 2);
+      }
+    }
+    if (index === 5) {
+      for (const x of [453, 507]) {
+        rect(c, x - 4, 272, 8, 225, '#182c2b'); rect(c, x - 3, 272, 6, 225, '#85846c');
+        rect(c, x - 2, 272, 2, 225, '#c7bc8d');
+      }
+      for (let y = 278; y < 493; y += 24) { rect(c, 445, y, 70, 7, '#6c5740'); rect(c, 449, y + 1, 62, 2, '#a18b5c'); }
+      for (const y of [300, 445]) for (const x of [423, 537]) {
+        rect(c, x - 6, y - 12, 12, 24, '#223a32'); rect(c, x - 4, y - 10, 8, 20, '#a49662');
+        rect(c, x - 2, y - 8, 4, 16, '#ded0a0');
+      }
+      path(c, [[480, 490], [480, 540]], '#9a875739', 13);
+      // An overhead gantry spans the upper part of the room. Its support feet
+      // stay against the room edge, so no decorative post invents cover.
+      rect(c, 226, 61, 560, 14, '#152d2d'); rect(c, 229, 61, 554, 5, '#a29568'); rect(c, 232, 66, 548, 7, '#5c6656');
+      for (let x = 242; x < 776; x += 27) { path(c, [[x, 72], [x + 15, 85], [x + 27, 72]], '#384d40', 3); rect(c, x + 11, 65, 3, 3, '#c8b67e'); }
+      path(c, [[250, 83], [762, 83]], '#c2ad72', 2); path(c, [[250, 87], [762, 87]], '#263a32', 3);
+      for (const x of [228, 773]) { rect(c, x - 6, 29, 14, 47, '#3f5142'); rect(c, x - 4, 29, 4, 47, '#b3a16f'); rect(c, x - 9, 30, 21, 6, '#d1bb82'); }
+    }
+    if (index === 0) {
+      path(c, [[95, 304], [384, 304]], '#a29c6b35', 18);
+      for (const x of [158, 236, 348]) { rect(c, x, 323, 24, 5, '#b19c6638'); rect(c, x + 4, 330, 15, 2, '#c9b7792a'); }
+    }
+  }
+  function timberWall(c, w) {
+    const x = num(w.x), y = num(w.y), width = num(w.w, 32), height = num(w.h, 32);
+    if (x <= 28 || y <= 28 || x + width >= W - 28 || y + height >= H - 28) { wall(c, w); return; }
+    rect(c, x + 5, y + 7, width, height, '#142922a0');
+    rect(c, x, y, width, height, '#3c4030');
+    const horizontal = width >= height;
+    for (let offset = 2; offset < (horizontal ? height : width) - 2; offset += 15) {
+      if (horizontal) {
+        rect(c, x + 2, y + offset, width - 4, Math.min(13, height - offset - 2), '#766347');
+        rect(c, x + 3, y + offset, width - 6, 3, '#aa8b58'); rect(c, x + 5, y + offset + 5, width - 10, 1, '#c8a97566');
+        rect(c, x + 8, y + offset + 9, Math.max(2, width - 24), 1, '#4b4c36');
+      } else {
+        rect(c, x + offset, y + 2, Math.min(13, width - offset - 2), height - 4, '#766347');
+        rect(c, x + offset, y + 3, 3, height - 6, '#aa8b58'); rect(c, x + offset + 5, y + 5, 1, height - 10, '#c8a97566');
+      }
+    }
+    for (const at of [.2, .8]) {
+      if (horizontal) { rect(c, x + width * at - 4, y, 8, height, '#465143'); rect(c, x + width * at - 3, y + 1, 6, 3, '#c4b482'); }
+      else { rect(c, x, y + height * at - 4, width, 8, '#465143'); rect(c, x + 1, y + height * at - 3, width - 2, 3, '#c4b482'); }
+    }
+  }
+  function timberCart(c, w, state) {
+    const x = num(w.x) + num(w.w, 84) / 2, y = num(w.y) + num(w.h, 56) / 2;
+    const run = state.chapter, moving = Math.abs(num(run.cart.position) - num(run.cart.target)) > .001;
+    // The log load and undercarriage stay aligned to the authoritative wall.
+    ellipse(c, x + 4, y + 18, 47, 21, '#0e26256b');
+    for (const sx of [-31, 31]) for (const sy of [-18, 18]) {
+      rect(c, x + sx - 5, y + sy - 5, 10, 11, '#192b29'); rect(c, x + sx - 3, y + sy - 5, 6, 11, '#a3966e'); rect(c, x + sx - 1, y + sy - 3, 2, 7, '#d9cb9a');
+    }
+    rect(c, x - 42, y - 25, 84, 49, '#1e342d'); rect(c, x - 39, y - 23, 78, 44, '#64583b');
+    for (let i = 0; i < 4; i++) {
+      const ly = y - 21 + i * 11;
+      rect(c, x - 36, ly, 72, 10, i % 2 ? '#a28350' : '#8a7048'); rect(c, x - 34, ly, 68, 2, '#d0ae70');
+      rect(c, x - 30, ly + 5, 38 + i * 4, 1, '#5f573a'); rect(c, x - 12 + i * 5, ly + 3, 18, 1, '#bd9a5e');
+      ellipse(c, x + 31, ly + 5, 5, 4, '#c9aa70'); ellipse(c, x + 31, ly + 5, 2, 2, '#8b7448');
+    }
+    for (const sx of [-23, 20]) { rect(c, x + sx, y - 25, 5, 50, '#4e6350'); rect(c, x + sx + 1, y - 24, 2, 48, '#b5b18a'); rect(c, x + sx, y + 2, 6, 4, '#e6cb8e'); }
+    rect(c, x - 43, y + 18, 86, 6, '#64765c'); rect(c, x - 42, y + 18, 84, 2, '#b3b58a');
+    path(c, [[x + 42, y], [620, y], [620, 410], [680, 410]], moving ? '#dfc68b' : '#929773', 2);
+    if (moving) for (const sx of [-32, 31]) { rect(c, x + sx, y + 26, 3, 4, '#dec48f72'); rect(c, x + sx + 4, y + 28, 2, 2, '#bda66e66'); }
+  }
+  function timberInteractable(c, item, time, state, localId, still) {
+    if (item.kind === 'chapter-note' || !/^timber-/.test(item.kind || '')) { interactable(c, item, time, state, localId, still); return; }
+    const x = num(item.x), y = num(item.y), run = state.chapter, active = item.active !== false && !item.used;
+    const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 105;
+    if (item.kind === 'timber-supplies') { chapterInteractable(c, { ...item, kind: 'chapter-supplies' }, time, state, localId, still); return; }
+    if (item.kind === 'timber-worker') {
+      if (!run.workerFreed) {
+        rect(c, x - 55, y - 24, 108, 52, '#20352d');
+        for (let i = 0; i < 4; i++) { rect(c, x - 49 + i * 25, y - 18, 23, 40, '#777053'); rect(c, x - 46 + i * 25, y - 17, 3, 37, '#ad9966'); }
+      } else { rect(c, x - 35, y - 15, 74, 43, '#6e75516b'); rect(c, x - 34, y - 14, 72, 3, '#b5b184'); }
+      chapterEndingCivilian(c, x + 2, y + 5, 'injured', 0, false, true);
+      if (!run.workerFreed) {
+        c.save(); c.translate(x, y + 17); c.rotate(-.22); rect(c, -54, -13, 108, 13, '#453f2b'); rect(c, -53, -13, 106, 3, '#b18e58'); rect(c, -52, -8, 102, 2, '#7b6845'); c.restore();
+        path(c, [[x + 29, y - 47], [x + 37, y - 38], [x + 32, y - 27]], '#a68a55', 5);
+      } else { rect(c, x - 32, y + 6, 15, 19, '#60735d'); rect(c, x - 29, y + 7, 9, 3, '#d7d2ab'); rect(c, x - 25, y + 12, 3, 10, '#dcd6ab'); rect(c, x - 28, y + 16, 9, 3, '#dcd6ab'); }
+    } else if (item.kind === 'timber-winch') {
+      shadow(c, x, y, 29, .34); rect(c, x - 29, y + 3, 58, 18, '#344936'); rect(c, x - 26, y + 1, 52, 7, '#9a8c5d');
+      rect(c, x - 9, y - 33, 18, 41, '#51634c'); rect(c, x - 7, y - 33, 4, 37, '#c1ad75');
+      c.save(); c.translate(x, y - 23); c.rotate((num(run.cart.position) - .5) * Math.PI);
+      for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) path(c, [[0, 0], [Math.cos(a) * 20, Math.sin(a) * 20]], '#c0a468', 4);
+      c.strokeStyle = '#c7ad75'; c.lineWidth = 5; c.beginPath(); c.arc(0, 0, 20, 0, Math.PI * 2); c.stroke();
+      c.strokeStyle = '#f1d5a0'; c.lineWidth = 1; c.beginPath(); c.arc(0, 0, 20, Math.PI, Math.PI * 1.7); c.stroke();
+      rect(c, -4, -4, 8, 8, '#f0cf88'); c.restore();
+      rect(c, x + 24, y - 31, 8, 38, '#354b3b'); rect(c, x + 25, y - 30, 6, 34, '#9f9c6d');
+      const targetY = y - 23 + num(run.cart.position) * 18; rect(c, x + 25, targetY, 7, 5, '#ead09a');
+    } else if (item.kind === 'timber-extraction') {
+      const ready = !!(run.workerFreed && run.bossDefeated);
+      shadow(c, x, y, 26, .3); rect(c, x - 23, y + 3, 46, 10, '#566246'); rect(c, x - 26, y - 1, 52, 5, '#b5a16a');
+      rect(c, x - 4, y - 50, 8, 50, '#7c6c46'); rect(c, x - 3, y - 50, 3, 48, '#d5b778');
+      c.fillStyle = ready ? '#c4bf7f' : '#7d8a61'; c.beginPath(); c.moveTo(x + 4, y - 51); c.lineTo(x + 41, y - 40); c.lineTo(x + 4, y - 28); c.closePath(); c.fill();
+      lantern(c, x - 1, y - 20, still ? 0 : time, ready ? .9 : .65);
+      if (state.status === 'won' && run.evacuated) {
+        chapterEndingCivilian(c, x + 62, y + 28, 'injured', 0, false, true);
+        chapterEndingCivilian(c, x + 35, y + 23, 'helper', 0, true);
+      }
+    }
+    if (nearby && active) label(c, 'E · ' + (item.label || '互动'), x, y + (item.kind === 'timber-worker' ? 48 : 52), '#e6d29a', 10);
+  }
+  function timberGuard(c, e, time, pose) {
+    if (!e || e.hp <= 0) return;
+    const x = num(e.x), y = num(e.y), r = num(e.r, 16); pose = pose || enemyPose(e);
+    shadow(c, x, y, r, .4);
+    if (e.elite) { glow(c, x, y - 12, 45, '#d6b2711f'); ellipse(c, x, y + 7, r + 6, (r + 6) * .45, '#d6b27116'); }
+    if (num(e.windup) > 0 && !e.rhythm && e.kind === 'shooter') {
+      const angle = Math.atan2(num(e.aimY, y) - y, num(e.aimX, x + 1) - x);
+      path(c, [[x, y], [x + Math.cos(angle) * 500, y + Math.sin(angle) * 500]], '#d0876a22', 9);
+      c.setLineDash([7, 5]); path(c, [[x, y], [x + Math.cos(angle) * 500, y + Math.sin(angle) * 500]], '#eea17b9c', 2); c.setLineDash([]);
+    }
+    c.save(); c.translate(Math.round(x), Math.round(y)); c.translate(0, pose.bob); c.rotate(pose.tilt); c.transform(1, 0, pose.turn, 1, 0, 0);
+    chapterConstruct(c, e, time, pose.step, pose); c.restore();
+    if (num(e.weakTime) > 0) { glow(c, x, y - 9, 28, '#edc17a28'); path(c, [[x - 13, y - 15], [x - 17, y - 15], [x - 17, y - 4], [x - 13, y - 4]], '#f5d99c', 2); path(c, [[x + 13, y - 15], [x + 17, y - 15], [x + 17, y - 4], [x + 13, y - 4]], '#f5d99c', 2); }
+    if (e.hp < e.maxHp || e.elite) bar(c, x, y - (e.elite ? 51 : 36), e.elite ? 43 : 25, num(e.hp) / Math.max(1, num(e.maxHp, 1)), e.elite ? '#e2bb70' : '#d08d6f', e.elite ? 4 : 3);
+    if (num(e.posture) > 0) bar(c, x, y - (e.elite ? 44 : 30), e.elite ? 43 : 25, num(e.posture) / Math.max(1, num(e.maxPosture, 1)), '#d99c69', 3);
+    if (e.elite) { const cy = y - 64; path(c, [[x - 8, cy - 4], [x - 6, cy + 2], [x + 6, cy + 2], [x + 8, cy - 4], [x + 3, cy - 1], [x, cy - 7], [x - 3, cy - 1], [x - 8, cy - 4]], '#d8ba75', 2); }
+    label(c, e.name || '木场守卫', x, y - (e.elite ? 79 : e.kind === 'charger' ? 40 : 50), '#d6bd86', 8);
+  }
+  function timberBoss(c, e, state, events, still) {
+    if (!e || e.hp <= 0) return;
+    const x = num(e.x), y = num(e.y), rhythm = e.rhythm, jammed = num(e.stagger) > 0;
+    const angle = rhythm ? num(rhythm.angle) : num(e.facing), windup = rhythm && rhythm.phase === 'windup';
+    const progress = windup ? Math.max(0, Math.min(1, 1 - num(rhythm.remaining) / Math.max(.01, num(rhythm.duration, 1)))) : 0;
+    shadow(c, x, y + 3, 43, .38);
+    // Paired bogies grip the overhead rail; the suspended copper motor and
+    // clamp remain centred on the engine's actual circular body footprint.
+    for (const sx of [-25, 25]) { rect(c, x + sx - 9, 73, 18, 19, '#1b302d'); rect(c, x + sx - 7, 74, 14, 7, '#b4aa7b'); rect(c, x + sx - 4, 77, 8, 3, '#ece0aa'); }
+    path(c, [[x - 25, 92], [x - 19, y - 35]], '#8a9272', 5); path(c, [[x + 25, 92], [x + 19, y - 35]], '#8a9272', 5);
+    rect(c, x - 35, y - 43, 70, 48, '#1b302e'); rect(c, x - 32, y - 41, 64, 44, '#726346');
+    rect(c, x - 31, y - 40, 62, 6, '#c2a56b'); rect(c, x - 28, y - 31, 56, 29, '#4b6152');
+    rect(c, x - 25, y - 30, 7, 29, '#94a179'); rect(c, x + 18, y - 30, 7, 29, '#2f4b42');
+    for (const sx of [-27, 25]) for (const sy of [-35, -4]) { rect(c, x + sx, y + sy, 3, 3, '#e1c98d'); }
+    const axle = num(e.weakTime) > 0;
+    ellipse(c, x, y - 17, 16, 16, axle ? '#d8b971' : '#85764d'); ellipse(c, x, y - 17, 12, 12, '#233d34');
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4 + (jammed ? -.12 : still ? 0 : num(state.time) * .8);
+      path(c, [[x + Math.cos(a) * 5, y - 17 + Math.sin(a) * 5], [x + Math.cos(a) * 12, y - 17 + Math.sin(a) * 12]], axle ? '#ffe3a4' : '#b4a479', 3);
+    }
+    rect(c, x - 4, y - 21, 8, 8, axle ? '#fff0b9' : '#d1bb79');
+    rect(c, x - 19, y + 2, 38, 11, '#3c5041'); rect(c, x - 18, y + 2, 36, 3, '#a59968');
+    c.save(); c.translate(x, y + 5); c.rotate(angle);
+    const extension = jammed ? 4 : windup ? 9 + progress * 17 : 17;
+    for (const sy of [-16, 16]) { path(c, [[10, sy], [26 + extension, sy * .7]], '#3a4d3f', 9); path(c, [[11, sy - 2], [26 + extension, sy * .7 - 2]], '#b8a06b', 4); }
+    if (!values(state.bullets).some(b => b.hook && !b.dead && b.owner === e.id)) {
+      path(c, [[26 + extension, -12], [40 + extension, -14], [48 + extension, -3], [44 + extension, 12], [33 + extension, 17], [25 + extension, 10]], '#243d32', 9);
+      path(c, [[26 + extension, -12], [40 + extension, -14], [48 + extension, -3], [44 + extension, 12], [33 + extension, 17], [25 + extension, 10]], '#cfb97d', 5);
+    }
+    c.restore();
+    if (jammed) {
+      path(c, [[x - 25, 91], [x - 31, y - 12], [x - 10, y + 24], [x + 17, y + 27]], '#aaa77c', 3);
+      if (axle) { glow(c, x, y - 17, 53, '#eccc7638'); label(c, '卷扬轴暴露', x, y + 65, '#e4d49e', 9); }
+    }
+    const impact = events.find(({ event, age }) => event.enemyId === e.id && age < .12 && ['enemy-hit', 'weakpoint-hit'].includes(event.type));
+    if (impact) alpha(c, Math.max(0, .18 - impact.age), () => ellipse(c, x, y - 15, 30, 24, '#fff0ba'));
+    bar(c, x, y - 64, 76, num(e.hp) / Math.max(1, num(e.maxHp, 1)), '#d5b570', 5);
+    if (num(e.posture) > 0) bar(c, x, y - 55, 76, num(e.posture) / Math.max(1, num(e.maxPosture, 1)), '#e2a276', 3);
+    label(c, '吊木守卫', x, y - 79, '#e5d29e', 10);
+  }
+  function timberMap(c, state) {
+    const rooms = values(state.rooms), run = state.chapter, current = state.room.index;
+    const left = 776, top = 18, width = 166, height = 140;
+    c.save(); rect(c, left, top, width, height, '#132a24eb'); c.strokeStyle = '#a8986780'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, '第二节 · 木场求援', left + 10, top + 14, '#ddc58e', 9, 'left');
+    const points = new Map(rooms.map(room => [room.index, { x: left + 26 + num(room.gx) * 35, y: top + 57 + num(room.gy) * 32 }]));
+    for (const room of rooms) for (const next of values(room.neighbors)) {
+      if (next <= room.index || !points.has(next)) continue;
+      const a = points.get(room.index), b = points.get(next), shortcut = [room.index, next].includes(2) && [room.index, next].includes(3), blocked = shortcut && !run.shortcutOpen;
+      if (blocked) c.setLineDash([3, 4]); path(c, [[a.x, a.y], [b.x, b.y]], blocked ? '#8a6e4d72' : '#8a9b7988', 2); c.setLineDash([]);
+    }
+    for (const room of rooms) {
+      const point = points.get(room.index), active = current === room.index, size = active ? 12 : 9;
+      rect(c, point.x - size / 2 - 2, point.y - size / 2 - 2, size + 4, size + 4, '#172e25');
+      rect(c, point.x - size / 2, point.y - size / 2, size, size, active ? '#e8d7a0' : room.visited ? '#8c9774' : '#405947');
+      if (room.index === 3) { rect(c, point.x - 1, point.y - 3, 3, 7, run.workerFreed ? '#c9dfa8' : '#caac78'); rect(c, point.x - 3, point.y - 1, 7, 3, run.workerFreed ? '#c9dfa8' : '#caac78'); }
+      if (room.index === 5) path(c, [[point.x - 3, point.y - 3], [point.x + 3, point.y - 3], [point.x + 3, point.y + 2], [point.x, point.y + 4], [point.x - 3, point.y + 2]], run.bossDefeated ? '#c9dfa8' : '#d5b276', 1.5);
+    }
+    const objective = run.evacuated ? '工人已接应' : run.bossDefeated ? '回信号岗接应' : run.workerFreed ? '出库口有吊装守卫' : run.cart.position >= .999 ? '侧门已打开' : '寻找绞盘，移开木车';
+    label(c, objective, left + 10, top + height - 30, '#d2c08e', 8, 'left');
+    label(c, `线索 ${values(run.clues).length} / 2`, left + 10, top + height - 13, '#aab89c', 8, 'left');
+    label(c, `${rooms.filter(r => r.visited).length} / ${rooms.length}`, left + width - 10, top + height - 13, '#9aa98c', 8, 'right'); c.restore();
+  }
+  function timberCampVisitor(c) {
+    chapterEndingCivilian(c, 843, 453, 'helper', 0, true);
+    rect(c, 862, 451, 38, 6, '#ad9660'); rect(c, 865, 457, 5, 18, '#5c5c3e'); rect(c, 892, 457, 5, 18, '#5c5c3e');
+    rect(c, 865, 448, 30, 3, '#e0c082'); path(c, [[871, 442], [884, 448]], '#c2c7a5', 3); rect(c, 868, 440, 6, 4, '#e4d5a4');
+  }
+  function timberDraw(c, state, options = {}) {
+    if (!c) return;
+    const localId = options.localId || 'p1', time = num(state.time) * 1000, still = !!(options.paused || options.reducedMotion);
+    const events = combatEvents(state), motion = state.status === 'playing' ? combatMotion(events, still) : { x: 0, y: 0, flash: 0 };
+    const poses = enemyMotionFrame(c, state, options);
+    c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H); rect(c, 0, 0, W, H, '#23382e'); c.save(); c.translate(motion.x, motion.y);
+    timberFloor(c, state); lanternAuras(c, state);
+    values(state.walls).filter(w => !w.timberCart).forEach(w => timberWall(c, w));
+    values(state.doors).forEach(d => door(c, d, time)); values(state.portals).forEach(p => portal(c, p, time)); values(state.portals).forEach(p => portalDestination(c, p, state, localId));
+    values(state.fountains).forEach(f => fountain(c, f, time)); values(state.fires).forEach(f => fire(c, f, time)); values(state.pickups).forEach(p => pickup(c, p, time));
+    for (const [x, y] of [[77, 53], [883, 53], [77, 553], [883, 553]]) lantern(c, x, y, still ? 0 : time, .85);
+    values(state.companions).forEach(fox => foxCompanion(c, fox, time, state, localId, still));
+    values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
+    const sprites = [
+      ...values(state.decoys).map(d => ({ y: num(d.y), draw: () => decoy(c, d, time) })),
+      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
+      ...values(state.walls).filter(w => w.timberCart).map(w => ({ y: num(w.y) + num(w.h) / 2, draw: () => timberCart(c, w, state) })),
+      ...values(state.interactables).map(item => ({ y: item.y, draw: () => timberInteractable(c, item, time, state, localId, still) })),
+      ...values(state.enemies).map(e => ({ y: e.y, draw: () => e.timber ? timberBoss(c, e, state, events, still) : timberGuard(c, e, time, poses.get(e.id)) })),
+      ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
+    ];
+    sprites.sort((a, b) => num(a.y) - num(b.y)).forEach(s => s.draw());
+    values(state.bullets).forEach(b => bullet(c, b, state));
+    if (state.status === 'playing') { values(state.particles).forEach(p => particle(c, p, time)); combatEffects(c, events, state, still); aimReticle(c, state.players && state.players[localId], time); }
+    ambient(c, state, time); c.restore();
+    if (motion.flash > 0) alpha(c, motion.flash, () => rect(c, 0, 0, W, H, '#fff0c4'));
+    timberMap(c, state); c.restore();
+  }
   function draw(c, state, options = {}) {
+    if (state && state.mode === 'chapter' && state.chapter && state.chapter.id === 'chapter1_2') { timberDraw(c, state, options); return; }
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const ending = chapterEndingScene(state, options);
@@ -2462,6 +2711,7 @@
       for (const x of [870, 899]) { ellipse(c, x, 322, 6, 6, '#22372b'); ellipse(c, x, 322, 3, 3, '#a78b57'); }
       alpha(c,.5,()=>label(c, '采集队已归营', 868, 228, '#d7c48f', 9));
     }
+    if (profile.chapter2) timberCampVisitor(c);
     lantern(c, 904, 529, time, .85);
     previewAtmosphere(c, time); c.restore();
   }

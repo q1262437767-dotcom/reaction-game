@@ -11,12 +11,15 @@
     ember: { id: 'ember', name: '熄灭炉心', goal: '穿过遗迹，击败炉心守卫，带回营地灯芯', total: 1, coins: 40 },
     salvage: { id: 'salvage', name: '物资回收', goal: '搜集 3 箱补给，再到水闸撤离点按 E 撤离', total: 3, coins: 30 },
     holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 },
-    chapter1: { id: 'chapter1', name: '第一章 · 第一节 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 }
+    chapter1: { id: 'chapter1', name: '第一章 · 第一节 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 },
+    chapter1_2: { id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', goal: '移开木车，救出工人，停下吊木守卫后返回信号岗接应', total: 1, coins: 50 }
   };
   var CHAPTER_NOTES = {
     trail: { title: '采集队的刻痕', text: '新刻下的箭头指向工坊。字迹还很清楚：“灯灭了，我们去找备用火。若有人来，请把归途灯点亮。”' },
     cooling: { title: '停炉维修记录', text: '“主炉芯移走后，备用炉心持续过热。先打开南侧冷却水闸，再接近炉心。守卫仍执行旧命令，无法辨认来人。”' },
-    'missing-core': { title: '空置的主炉芯座', text: '主炉芯座只剩被切断的铜扣，地上的搬运轨迹还很新。备用炉心代替它运转，直至过热失控。有人先一步带走了主炉芯。' }
+    'missing-core': { title: '空置的主炉芯座', text: '主炉芯座只剩被切断的铜扣，地上的搬运轨迹还很新。备用炉心代替它运转，直至过热失控。有人先一步带走了主炉芯。' },
+    'timber-tracks': { title: '压深的车辙', text: '运木车的轮槽里留着新鲜铜屑。重物从工坊方向运进来，又转上了西边的旧线。' },
+    'timber-bandage': { title: '带血的绑带', text: '绑带压在旧车板下面，旁边还有半卷干净的纱布。这里没有被抢翻的箱子，倒像是有人匆忙照顾过伤员。' }
   };
   var BUFFS = {
     pierce: { label: '穿透棱镜', description: '子弹穿透 2 个敌人；近战伤害 +1' },
@@ -116,6 +119,7 @@
     });
   }
   function move(s, entity, dx, dy, ignoreProps) {
+    if (entity.timber && isTimber(s)) { dx = clamp(entity.x + dx, 260, 760) - entity.x; dy = 0; }
     // Short substeps prevent fast dashes and thrown objects from passing thin walls.
     var n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 9));
     var moved = false;
@@ -127,6 +131,7 @@
         entity.y += dy / n; moved = true;
       }
     }
+    if (entity.timber && isTimber(s)) { entity.timber.railX = entity.x; entity.y = 150; }
     return moved;
   }
   function player(idValue, index, weapon, rangedWeapon, meleeWeapon) {
@@ -193,7 +198,7 @@
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
     var mode = options.mode === 'chapter' ? 'chapter' : options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
-    var missionId = mode === 'chapter' ? 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
+    var missionId = mode === 'chapter' ? options.mission === 'chapter1_2' ? 'chapter1_2' : 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
     var hostUpgrades = options.practice ? [] : campUpgrades(options.camp);
     var partnerUpgrades = options.practice ? [] : campUpgrades(options.partnerCamp);
@@ -229,7 +234,7 @@
       s.roomData[0] = { walls: [rect(0, 0, W, 28), rect(0, H - 28, W, 28), rect(0, 0, 28, H), rect(W - 28, 0, 28, H)],
         doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
-    } else if (mode === 'chapter') createChapter(s);
+    } else if (mode === 'chapter') { if (missionId === 'chapter1_2') createTimber(s); else createChapter(s); }
     else if (mode === 'hunt') createHunt(s);
     else if (mode === 'relay') createRelay(s);
     else if (mode === 'random') createExploration(s);
@@ -336,6 +341,7 @@
     });
   }
   function syncChapter(s) {
+    if (isTimber(s)) { syncTimber(s); return; }
     var c = s.chapter;
     if (s.status === 'playing') c.phase = c.fireTaken ? 'return' : c.sluiceOpen ? 'core' :
       c.phase !== 'depart' || s.room.index !== 0 ? 'workshop' : 'depart';
@@ -355,6 +361,7 @@
     });
   }
   function interactChapter(s, p, target) {
+    if (isTimber(s)) return interactTimber(s, p, target);
     var c = s.chapter;
     if (!c || target.kind.indexOf('chapter-') !== 0 || target.used || !target.active) return false;
     target.used = true; target.active = false;
@@ -391,6 +398,96 @@
     }
     s.messageTime = target.kind === 'chapter-note' ? 8 : 5;
     syncChapter(s); setHint(s); return true;
+  }
+  function isTimber(s) { return s.mode === 'chapter' && s.chapter && s.chapter.id === 'chapter1_2'; }
+  function timberCartWall(c) { return { id: 'timber-cart', timberCart: true, x: 438, y: 417 - 145 * c.cart.position, w: 84, h: 56 }; }
+  function createTimber(s) {
+    var definitions = [['信号岗','camp',0,0,[1]],['堆木道','battle',1,0,[0,2]],['绞盘棚','puzzle',2,0,[1,3,5]],
+      ['塌棚','rescue',2,1,[2,4]],['装车坪','battle',3,1,[3,5]],['吊装场','boss',3,0,[2,4]]];
+    s.chapter = { id:'chapter1_2', version:1, phase:'arrive', clues:[], cart:{position:0,target:0}, workerFreed:false,
+      bossDefeated:false, evacuated:false, suppliesTaken:false, shortcutOpen:false };
+    s.rooms = definitions.map(function(d,i){return {index:i,id:'chapter1_2-'+i,name:d[0],kind:d[1],gx:d[2],gy:d[3],neighbors:d[4],cleared:!i,visited:false,discovered:true};});
+    function item(data,kind,x,y,label,extra){data.interactables.push(Object.assign({id:'timber-'+kind,kind:'timber-'+kind,x:x,y:y,r:23,label:label,active:true,used:false},extra||{}));}
+    function note(data,key,x,y){var n=CHAPTER_NOTES[key];data.interactables.push({id:'timber-note-'+key,kind:'chapter-note',x:x,y:y,r:23,label:'查看'+n.title,active:true,used:false,clueId:key,title:n.title,text:n.text});}
+    function guard(data,kind,x,y,elite,relic){var e=enemy(s,kind,x,y);e.name={chaser:'巡木刀兵',shooter:'木场枪兵',shield:'夹板守卫',charger:'运木撞兽',duelist:'看料监工'}[kind]||'木场守卫';if(elite){e.elite=true;e.relicBuff=relic;}data.enemies.push(e);}
+    s.rooms.forEach(function(room){
+      var data={walls:[],doors:[],portals:[],props:[],enemies:[],fires:[],switches:[],pickups:[],fountains:[],interactables:[]},exits={};
+      room.neighbors.forEach(function(index){var next=s.rooms[index],dx=next.gx-room.gx,dy=next.gy-room.gy,dir=dx?dx>0?'east':'west':dy>0?'south':'north';exits[dir]=true;
+        data.portals.push({id:'timber-path-'+room.index+'-'+index,x:dx?dx>0?884:76:480,y:dy?dy>0?524:76:300,r:27,target:index,direction:dir,active:true,label:next.name});
+        data.doors.push({id:'door-'+dir,x:dx?dx>0?916:28:436,y:dy?dy>0?556:28:256,w:dx?16:88,h:dy?16:88,locked:false,label:'木场通道'});
+      });
+      ['north','south'].forEach(function(edge){var y=edge==='north'?0:H-28;if(exits[edge])data.walls.push(rect(0,y,424,28),rect(536,y,W-536,28));else data.walls.push(rect(0,y,W,28));});
+      ['west','east'].forEach(function(edge){var x=edge==='west'?0:W-28;if(exits[edge])data.walls.push(rect(x,0,28,244),rect(x,356,28,H-356));else data.walls.push(rect(x,0,28,H));});
+      if(room.index===0){data.walls.push(rect(390,135,125,55));item(data,'extraction',310,300,'接应工人返回营地',{active:false,description:'先救出塌棚工人，再让吊木守卫停下来。'});}
+      if(room.index===1){data.walls.push(rect(360,360,150,45));data.props.push(prop(s,'crate',590,185),prop(s,'barrel',690,390));guard(data,'chaser',415,285);guard(data,'shooter',730,190);note(data,'timber-tracks',440,145);}
+      if(room.index===2){data.walls.push(rect(330,145,90,90));data.props.push(prop(s,'crate',570,410));guard(data,'charger',690,160);guard(data,'duelist',735,430,true,'swift');}
+      if(room.index===3){data.walls.push(rect(440,120,110,55),rect(420,395,155,55));item(data,'worker',650,220,'扶出被困工人',{description:'喂，外面的！走右边的空隙，别碰那根柱子！'});}
+      if(room.index===4){data.walls.push(rect(320,175,70,100));data.props.push(prop(s,'crate',580,410),prop(s,'barrel',720,220));guard(data,'shield',610,280);guard(data,'shooter',750,405);item(data,'supplies',390,400,'取用急救药物');note(data,'timber-bandage',690,170);}
+      if(room.index===5){data.walls.push(timberCartWall(s.chapter));item(data,'winch',690,410,'转动绞盘 · 拉开木车',{description:'拉开木车，南边的料门才能通。'});guard(data,'chaser',690,255);guard(data,'shooter',770,355);}
+      data.enemies.forEach(function(e){placeEnemyInRoom(data,e);});s.roomData[room.index]=data;
+    });
+  }
+  function timberGate(s,from,to) {
+    if ((from===2&&to===3)||(from===3&&to===2)) return s.chapter.shortcutOpen;
+    if ((from===5&&to===4)||(from===4&&to===5)) return s.chapter.cart.position>=.99;
+    return true;
+  }
+  function syncTimber(s) {
+    var c=s.chapter;
+    if(s.status==='playing')c.phase=c.bossDefeated?'return':c.workerFreed?'yard':c.cart.position>=.99?'rescue':s.room.index===0?'arrive':'rescue';
+    s.mission.phase=c.phase;s.mission.progress=c.evacuated?1:0;
+    s.portals.forEach(function(q){q.active=timberGate(s,s.room.index,q.target);});
+    s.doors.forEach(function(d){var gate=s.portals.find(function(q){return q.direction===d.id.slice(5);});d.locked=!!gate&&!gate.active;d.label=d.locked?(s.room.index===2||s.room.index===3?'塌棚内侧才能打开':'木车挡住了料门'):'木场通道';});
+    s.interactables.forEach(function(q){
+      if(q.kind==='chapter-note')q.used=c.clues.indexOf(q.clueId)>=0;
+      if(q.kind==='timber-worker')q.used=c.workerFreed;
+      if(q.kind==='timber-supplies')q.used=c.suppliesTaken;
+      if(q.kind==='timber-extraction'){q.used=c.evacuated;q.active=c.workerFreed&&c.bossDefeated&&!c.evacuated;}
+      if(q.kind==='timber-winch'){q.used=false;q.active=true;q.label=c.cart.target?'转动绞盘 · 放回木车':'转动绞盘 · 拉开木车';}
+      else if(q.used)q.active=false;
+      if(q.kind==='relic'&&s.runBuffs.indexOf(q.buff)>=0){q.used=true;q.active=false;}
+    });
+    if(s.room.index===5){s.walls=s.walls.filter(function(w){return !w.timberCart;});s.walls.push(timberCartWall(c));}
+  }
+  function spawnTimberBoss(s) {
+    if(!isTimber(s)||!s.chapter.workerFreed||s.chapter.bossDefeated)return;
+    var data=s.room.index===5?s:s.roomData[5];if(!data||data.enemies.some(function(e){return !!e.timber;}))return;
+    var boss=enemy(s,'boss',640,150);boss.name='吊木守卫';boss.timber={railX:640,railDir:-1};boss.attackCd=1.3;data.enemies.push(boss);
+  }
+  function updateTimber(s,dt) {
+    if(!isTimber(s)||dt<=0)return;var c=s.chapter,delta=c.cart.target-c.cart.position;
+    if(Math.abs(delta)>.00001){var next=clone(c);next.cart.position=clamp(c.cart.position+Math.sign(delta)*Math.min(Math.abs(delta),dt*.8),0,1);if(Math.abs(next.cart.position-c.cart.target)<.00001)next.cart.position=c.cart.target;var wall=timberCartWall(next);
+      var data=s.room.index===5?s:s.roomData[5],blocked=s.room.index===5&&Object.keys(s.players).some(function(k){return circleRect(s.players[k],wall);});
+      if(!blocked&&data)blocked=data.enemies.some(function(e){return e.hp>0&&!e.timber&&circleRect(e,wall);});
+      if(!blocked){c.cart.position=next.cart.position;if(data){data.walls=data.walls.filter(function(w){return !w.timberCart;});data.walls.push(wall);}}
+    }
+    spawnTimberBoss(s);syncTimber(s);
+  }
+  function interactTimber(s,p,target) {
+    var c=s.chapter;if(!isTimber(s)||target.used||!target.active)return false;
+    if(target.kind==='chapter-note'){if(c.clues.indexOf(target.clueId)<0)c.clues.push(target.clueId);target.used=true;target.active=false;s.message=target.title+'：'+target.text;}
+    else if(target.kind==='timber-winch'){if(Math.abs(c.cart.position-c.cart.target)>.00001){s.message='绞盘还在转。先让车停稳，留开轨道。';s.messageTime=2;return false;}c.cart.target=c.cart.target?0:1;s.message='绞盘动了。留开轨道，让车过去。';}
+    else if(target.kind==='timber-worker'){c.workerFreed=true;c.shortcutOpen=true;target.used=true;target.active=false;s.message='工人：拉我一把……谢了！旁边那扇门能回绞盘棚。先让吊木机停下来，我们才敢走。';spawnTimberBoss(s);}
+    else if(target.kind==='timber-supplies'){c.suppliesTaken=true;target.used=true;target.active=false;alivePlayers(s).forEach(function(q){q.hp=Math.min(q.maxHp,q.hp+3);});s.message='纱布和药都还能用。先把伤口包上。';burst(s,'heal',target.x,target.y,'#8ce6b0',12);}
+    else if(target.kind==='timber-extraction'){if(!c.workerFreed||!c.bossDefeated)return false;c.evacuated=true;c.phase='complete';target.used=true;target.active=false;finish(s,'won');return true;}
+    else return false;
+    event(s,target.kind==='chapter-note'?'chapter-note':target.kind,{playerId:p.id,x:target.x,y:target.y});s.messageTime=6;syncTimber(s);setHint(s);return true;
+  }
+  function jamTimber(s,boss,owner) {
+    if(!boss||!boss.timber||boss.hp<=0)return;boss.rhythm=null;boss.chargeTime=0;boss.stagger=Math.max(boss.stagger,2);boss.attackCd=1;openWeakpoint(s,boss,owner,'counter');
+    s.message='吊钩卡住了！趁现在！';s.messageTime=2.5;particle(s,'counter',boss.x,boss.y,{r:80,ttl:.4,life:.4,color:'#d9edc2'});
+  }
+  function updateTimberBoss(s,e,target,dt) {
+    if(dt<=0)return;e.y=150;e.x=e.timber.railX;e.stagger=Math.max(0,e.stagger-dt);if(e.stagger>0)return;
+    if(e.rhythm){updateRhythm(s,e,target,dt);e.x=e.timber.railX;e.y=150;return;}
+    e.attackCd-=dt;
+    var desired=clamp(target.x,260,760),delta=desired-e.timber.railX;e.timber.railDir=delta<0?-1:1;
+    e.timber.railX=clamp(e.timber.railX+Math.sign(delta)*Math.min(Math.abs(delta),105*dt),260,760);e.x=e.timber.railX;e.facing=Math.atan2(target.y-e.y,target.x-e.x);
+    if(e.attackCd>0)return;
+    var distance=dist(e,target),type=distance<145?'combo':distance<390&&e.rhythmCycle%3===2?'sweep':'hook';
+    e.rhythmCycle+=1;rhythmWindup(s,e,type,1,type==='combo'?2:1,target);
+    if(type==='hook')e.rhythm.range=760;
+    if(type==='sweep')e.rhythm.range=315;
   }
   function createRelay(s) {
     s.mission.name = '接力夺宝'; s.mission.goal = '带回炉芯，在苔灯撤离站按 E 交付';
@@ -990,7 +1087,8 @@
     if (s.mode === 'hunt' && !initial && (!previous || previous.neighbors.indexOf(index) < 0)) return false;
     if ((s.mode === 'random' || s.mode === 'relay' || s.mode === 'chapter') && !initial) {
       if (!previous || previous.neighbors.indexOf(index) < 0) return false;
-      if (s.mode === 'chapter' && index === 4 && !s.chapter.sluiceOpen) return false;
+      if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && !s.chapter.sluiceOpen) return false;
+      if (isTimber(s) && !timberGate(s, previous.index, index)) return false;
       // A carried object belongs to its original room. Place it safely before
       // saving, rather than duplicating it at the next room's entrance.
       var carriers = Object.keys(s.players).map(function (key) { return s.players[key]; }).filter(function (p) { return p.carry; });
@@ -1051,7 +1149,7 @@
     event(s, 'room-enter', { room: index, name: s.room.name });
     s.message = s.room.name; s.messageTime = 2;
     if (s.mode === 'chapter' && initial) {
-      s.message = '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。'; s.messageTime = 8;
+      s.message = isTimber(s) ? '阿禾：灯还在闪。先进去找人，听见敲铁管就回应一声。' : '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。'; s.messageTime = 8;
     }
     return true;
   }
@@ -1171,6 +1269,7 @@
     if (s.status !== 'playing') return;
     if (s.practice) { s.objective = '击败持刀守卫'; s.hint = ''; return; }
     if (s.mode === 'chapter') {
+      if (isTimber(s)) { s.objective = s.chapter.bossDefeated ? '返回信号岗 · 接应工人回营' : s.chapter.workerFreed ? '让吊木守卫停下来 · 木车能卡住吊钩' : s.chapter.cart.position >= .99 ? '穿过料门 · 救出塌棚工人' : '进入吊装场 · 拉开挡路木车'; s.hint = ''; return; }
       s.objective = s.chapter.fireTaken ? '带火回营 · 点亮归途灯' : s.chapter.bossDefeated ? '取出备用火种' :
         s.chapter.sluiceOpen ? '稳定备用炉心' : s.chapter.phase === 'depart' ? '前往苔火工坊借火' : '寻找冷却水闸';
       s.hint = ''; return;
@@ -1470,10 +1569,11 @@
     }
     if (s.mode === 'chapter') {
       var clearChapter = !s.enemies.some(function (e) { return e.hp > 0; });
+      if (isTimber(s) && s.room.index === 5 && !s.chapter.bossDefeated) clearChapter = false;
       if (clearChapter && !s.rooms[s.room.index].cleared) {
         s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
         event(s, 'room-clear', { room: s.room.index });
-        if (s.room.index !== 4) s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 300, r: 14, amount: 2 });
+        if (isTimber(s) ? s.room.index !== 5 : s.room.index !== 4) s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 300, r: 14, amount: 2 });
       }
       s.room.cleared = s.rooms[s.room.index].cleared;
       syncChapter(s); setHint(s); return;
@@ -1559,8 +1659,8 @@
       event(s, 'reward', clone(s.reward));
       s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
       if (s.mode === 'chapter') {
-        s.message = '归途灯重新亮起，采集队循着灯光回到了营地。旧线路里，另一座废弃哨站传来微弱的求援声。';
-        s.objective = '第一节完成 · 今夜的归路重新亮起';
+        s.message = isTimber(s) ? '工人回到灯下，终于松了口气：“你们也在找炉芯？那晚有人借了辆重车，走的西边旧线。”' : '归途灯重新亮起，采集队循着灯光回到了营地。旧线路里，另一座废弃哨站传来微弱的求援声。';
+        s.objective = isTimber(s) ? '第二节完成 · 木场工人已安全回营' : '第一节完成 · 今夜的归路重新亮起';
       }
     } else if (status === 'lost') {
       s.mission.phase = 'failed';
@@ -1671,6 +1771,7 @@
     if (target) {
       if (!target.active) {
         s.message = target.kind === 'refuge-relic' ? '本局遗物已齐全，仍可在另一盏灯旁歇息' :
+          target.kind === 'timber-extraction' ? '工人：先让那台吊木机停下来，我们才能安心撤。' :
           target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
           target.kind === 'chapter-lamp' ? '归途灯没有火种。守灯人还在等工坊的备用火。' :
           target.kind === 'storehouse-cache' ? s.roomEvent && s.roomEvent.stage === 'active' ? '先击退被声响引来的巡逻队' : '转动外侧机关，或击碎仓门封板' :
@@ -1688,6 +1789,7 @@
         return true;
       }
       if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
+      if (isTimber(s) && target.kind.indexOf('timber-') === 0) return interactTimber(s, p, target);
       if (target.kind === 'refuge-rest' || target.kind === 'refuge-relic') return chooseRefuge(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
@@ -1859,7 +1961,7 @@
     }
     if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
     e.hp -= amount; e.flash = 0.12;
-    if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
+    if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && !e.timber && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
       e.stage = 2; e.rhythm = null; e.chargeTime = 0; e.rushHitIds = []; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0; delete e.pursuit;
       s.walls = s.walls.filter(function (w) {
         var boundary = w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28;
@@ -2190,6 +2292,7 @@
   }
   function rhythmWindup(s, e, type, beat, beats, target) {
     var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' || type === 'hook' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
+    if (e.timber && type === 'hook') duration = 1.15;
     if (s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && type === 'quake' && beat === 2) duration = 1.05;
     e.rhythm = { type: type, phase: 'windup', remaining: duration, duration: duration,
       beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x), targetId: target.id,
@@ -2236,7 +2339,7 @@
     return stopped;
   }
   function bossPursuit(s, e, target, dt) {
-    if (s.practice || e.kind !== 'boss' || (s.mode !== 'chapter' && s.mode !== 'random') || dt <= 0) return null;
+    if (s.practice || e.kind !== 'boss' || e.timber || (s.mode !== 'chapter' && s.mode !== 'random') || dt <= 0) return null;
     var realTarget = target && s.players[target.id] === target && target.hp > 0 && !target.downed;
     var pressure = e.pursuit, distance = realTarget ? dist(e, target) : 0;
     var visible = realTarget && foxSight(s, e, target, 3);
@@ -2662,6 +2765,7 @@
         e.facing = Math.atan2(follow.y - e.y, follow.x - e.x);
         return;
       }
+      if (e.timber && isTimber(s)) { updateTimberBoss(s,e,p,dt); return; }
       if (e.kind === 'duelist' || e.kind === 'boss' || e.kind === 'brute' || e.kind === 'pyromancer' || e.kind === 'hookwarden') { updateRhythm(s, e, p, dt); return; }
       if (!s.practice && dt <= 0) return;
       var brain = !s.practice && hasOrdinaryBrain(e) ? ordinaryBrain(s, e) : null;
@@ -2787,12 +2891,13 @@
     s.bullets.forEach(function (b) {
       if (b.dead) return;
       b.ttl -= dt;
-      var hookCaster = b.hook && s.enemies.find(function (e) { return e.id === b.owner && e.kind === 'hookwarden' && e.hp > 0; });
+      var hookCaster = b.hook && s.enemies.find(function (e) { return e.id === b.owner && (e.kind === 'hookwarden' || e.timber && isTimber(s)) && e.hp > 0; });
       if (b.hook && (b.ttl <= 0 || !hookCaster)) { b.dead = true; return; }
       var n = Math.max(1, Math.ceil(len(b.vx, b.vy) * dt / 10));
       for (var stepIndex = 0; stepIndex < n && !b.dead; stepIndex += 1) {
         var fromX = b.x, fromY = b.y;
         b.x += b.vx * dt / n; b.y += b.vy * dt / n;
+        if (b.hook && hookCaster.timber && s.walls.some(function(w){return w.timberCart && circleRect(b,w);})) { burst(s,'spark',b.x,b.y,'#f5d194',10);jamTimber(s,hookCaster,null); b.dead=true; break; }
         if (b.hook && !lineClear(s, hookCaster, b, 3)) { b.dead = true; break; }
         if (b.x < 25 || b.x > W - 25 || b.y < 25 || b.y > H - 25 ||
             s.walls.some(function (w) { return circleRect(b, w); }) ||
@@ -2854,8 +2959,9 @@
                 if (rangedHook && !guardBlock(s, target, b, b.damage, 'hook', true)) { b.dead = true; break; }
                 if (!target.downed) {
                   grantCounter(s, target, hookCaster, 'parry', rangedHook);
-                  hookPull(s, hookCaster, target, 360, hookCaster, target.id, 'enemy');
-                  hookCaster.rhythm = null; hookCaster.stagger = Math.max(hookCaster.stagger, 1.3); hookCaster.attackCd = 0.8;
+                  if (hookCaster.timber) jamTimber(s,hookCaster,target.id);
+                  else { hookPull(s, hookCaster, target, 360, hookCaster, target.id, 'enemy');
+                    hookCaster.rhythm = null; hookCaster.stagger = Math.max(hookCaster.stagger, 1.3); hookCaster.attackCd = 0.8; }
                   event(s, 'hook-reflected', { enemyId: hookCaster.id, playerId: target.id, x: target.x, y: target.y });
                 }
               } else if (!guardBlock(s, target, b, b.damage, 'hook', false)) {
@@ -2914,7 +3020,7 @@
         volleyId: b.volleyId, amount: len(foe.x - x, foe.y - y), x: foe.x, y: foe.y });
     });
     s.bullets = s.bullets.filter(function (b) {
-      return !b.dead && (!b.hook || s.enemies.some(function (e) { return e.id === b.owner && e.kind === 'hookwarden' && e.hp > 0; }));
+      return !b.dead && (!b.hook || s.enemies.some(function (e) { return e.id === b.owner && (e.kind === 'hookwarden' || e.timber && isTimber(s)) && e.hp > 0; }));
     });
     if (s.bullets.length > 160) s.bullets.splice(0, s.bullets.length - 160);
     s.enemies = s.enemies.filter(function (e) { return e.hp > 0; });
@@ -3047,6 +3153,7 @@
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (special) {
       if (!special.active) return special.kind === 'refuge-relic' ? '遗物已齐全，可在另一盏灯旁歇息' : special.kind === 'chapter-fire' ? '炉心仍在暴走' :
+        special.kind === 'timber-extraction' ? '先救出工人，让吊木守卫停下来' :
         special.kind === 'chapter-lamp' ? '归途灯还缺火种' : special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
         special.kind === 'extraction' ? '补给尚未齐全：返回前 3 间房搜索蓝箱' : '守住当前波次后可操作信标';
       return 'E · ' + special.label + (special.kind === 'relic' && s.mode !== 'random' ? '（同组只能选一件）' : '');
@@ -3136,7 +3243,7 @@
       if (interactEdge) interact(s, key);
     });
     if (s.room.index !== roomBefore) return s;
-    updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateEnemies(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
+    updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateTimber(s, dt); updateEnemies(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     alivePlayers(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');

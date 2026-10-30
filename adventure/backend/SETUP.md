@@ -100,6 +100,22 @@ RPC 必须使用已登录玩家自己的会话调用。公开入口 `public.save
 
 本地 `work/adventure-fox-persistence-check.cjs` 使用真实 PostgreSQL WASM 验证重复安装不改行、旧客户端保留伙伴、合法边界名字、非法嵌套记录原子拒绝、版本冲突与跨账号隔离；它不连接线上数据库。线上部署后应再核对函数定义、原存档指纹和权限，并在回滚事务中验证新旧保存形状。回退网页时可保留这份兼容函数，不要改写玩家的伙伴记录。
 
+### 已有项目升级到第一章第二节
+
+发布第 36 版网页前，由现有私有函数所有者执行 **upgrade-timber-section.sql**；新项目直接执行最新 **schema.sql**。这与此前升级相同，是随游戏发布的独立部署 SQL，不是 Supabase CLI 的迁移历史文件。它只替换 `ruins_private.save_ruins_profile_impl(jsonb,bigint)`，不改存档行、表、RLS、公开 RPC、函数所有者、执行权限或 CAS 条件。
+
+档案仍为 **v2、10 个顶层字段**。`missions` 新增可选的第二节记录，旧九字段档案和仅含三项旧任务、第一节的档案仍然有效：
+
+```json
+"chapter1_2": { "clears": 0, "hardClears": 0, "bestTime": null }
+```
+
+新客户端为旧档补齐空记录。完成第一节后可选择第二节；联机搭档可跟随队长完成尚未亲自解锁的小节，分别记录自己的通关。第二节最多带回 50 星屑，并沿用同一 runId 只结算一次的规则。维修工回营依据第二节通关记录显示，不增加账号字段、货币或永久升级。
+
+旧网页上传缺少 `chapter1_2` 的档案时，服务端在原 CAS 更新中保留该账号已存的第二节记录；缺少第一节、营地或伙伴时，原来的兼容保留继续生效。显式提交第二节记录时仍按玩家选择的整份档案保存，余额不相加。服务器只校验格式与范围，仍是云备份而非服务器验证战绩。
+
+本地 `work/adventure-timber-persistence-check.cjs` 使用真实 PostgreSQL WASM 验证当前 v35 升级、重复安装、第二节读写、旧客户端保留、非法记录拒绝、身份隔离及 CAS。部署后先核对原存档指纹与权限，再用回滚事务调用现有公开 RPC 验证新旧形状。需要回退网页时可保留新版兼容函数，不能再用旧版升级 SQL 覆盖它。
+
 ## 4. 填写公开配置并发布
 
 从项目 Connect / API Keys 中取得 **Project URL** 和 **publishable key**，填写 `coop-adventure/cloud-config.js`：

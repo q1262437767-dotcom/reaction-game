@@ -15,7 +15,8 @@
     Object.freeze({ id: 2, name: '险境', description: '三盏灯全部点亮后开放；敌人更强，带回更多星屑。', bonus: 20 })
   ]);
   var CHAPTERS = Object.freeze([
-    Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 })
+    Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 }),
+    Object.freeze({ id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', description: '旧木场的求援灯还在闪。挪开木车，救出被困的维修工。', goal: '救出维修工，停下吊木守卫，再回信号岗接应撤离', reward: 50 })
   ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
@@ -87,6 +88,7 @@
 
   function canPlay(profile, id, difficulty) {
     if (id === 'chapter1') return difficulty === undefined || difficulty === 1;
+    if (id === 'chapter1_2') return (difficulty === undefined || difficulty === 1) && normalize(profile).missions.chapter1.clears > 0;
     var index = MISSIONS.findIndex(function (mission) { return mission.id === id; });
     if (index < 0 || (difficulty !== undefined && difficulty !== 1 && difficulty !== 2)) return false;
     var p = normalize(profile);
@@ -154,9 +156,10 @@
   }
 
   function chapterProgress(profile) {
-    var record = normalize(profile).missions.chapter1;
+    var normalized = normalize(profile), record = normalized.missions.chapter1, second = normalized.missions.chapter1_2;
     return { completed: record.clears > 0, clears: record.clears, hardClears: record.hardClears,
-      bestTime: record.bestTime, nextChapter: null };
+      bestTime: record.bestTime, secondCompleted: second.clears > 0, secondClears: second.clears,
+      secondBestTime: second.bestTime, nextChapter: record.clears > 0 && second.clears === 0 ? 'chapter1_2' : null };
   }
 
   function canUseSpear(profile) {
@@ -173,6 +176,39 @@
     if (p.clearedRuns.includes(runId)) { result.duplicate = true; return result; }
     var missionId = object(state.mission).id || 'ember';
     var mission = missionById(missionId), difficulty = state.difficulty === undefined ? 1 : state.difficulty;
+    if (state.mode === 'chapter' && missionId === 'chapter1_2') {
+      var timber = object(state.chapter), timberWon = state.status === 'won', cart = object(timber.cart);
+      var timberKeys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
+      if (difficulty !== 1 || timber.id !== 'chapter1_2' || timber.version !== 1 ||
+          Object.keys(timber).length !== timberKeys.length || !timberKeys.every(function (key) { return Object.prototype.hasOwnProperty.call(timber, key); }) ||
+          !['workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'].every(function (key) { return typeof timber[key] === 'boolean'; }) ||
+          !Array.isArray(timber.clues) || timber.clues.length > 2 || new Set(timber.clues).size !== timber.clues.length ||
+          timber.clues.some(function (clue) { return !['timber-tracks', 'timber-bandage'].includes(clue); }) ||
+          Object.keys(cart).length !== 2 || !Object.prototype.hasOwnProperty.call(cart, 'position') || !Object.prototype.hasOwnProperty.call(cart, 'target') ||
+          !Number.isFinite(cart.position) || cart.position < 0 || cart.position > 1 || ![0, 1].includes(cart.target) ||
+          timber.shortcutOpen !== timber.workerFreed || timber.bossDefeated && !timber.workerFreed ||
+          timber.evacuated !== timberWon || timberWon && (!timber.workerFreed || !timber.bossDefeated) ||
+          timber.phase !== (timberWon ? 'complete' : 'failed')) return result;
+      p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80); p.runs = Math.min(LIMIT, p.runs + 1);
+      (Array.isArray(state.runBuffs) ? state.runBuffs : []).forEach(function (buff) {
+        if (RELICS.includes(buff) && !p.relics.includes(buff)) p.relics.push(buff);
+      });
+      if (p.relics.length === RELICS.length) earn('collector');
+      if (timberWon) {
+        var timberCoins = object(state.reward).coins;
+        result.reward = typeof timberCoins === 'number' && Number.isFinite(timberCoins) ? Math.min(50, count(timberCoins)) : 50;
+        p.coins = Math.min(LIMIT, p.coins + result.reward); p.wins = Math.min(LIMIT, p.wins + 1);
+        var timberRecord = p.missions.chapter1_2;
+        timberRecord.clears = Math.min(LIMIT, timberRecord.clears + 1);
+        if (typeof state.elapsed === 'number' && Number.isFinite(state.elapsed) && state.elapsed >= 0) {
+          var timberTime = Math.min(86400, Math.round(state.elapsed * 10) / 10);
+          timberRecord.bestTime = timberRecord.bestTime === null ? timberTime : Math.min(timberRecord.bestTime, timberTime);
+        }
+        if (object(state.stats).damage === 0) earn('flawless');
+        if (!chapterProgress(profile).secondCompleted) unlocks.push('第二节完成 · 维修工回营');
+      }
+      return result;
+    }
     if (state.mode === 'chapter') {
       var chapter = object(state.chapter), won = state.status === 'won';
       if (missionId !== 'chapter1' || difficulty !== 1 || chapter.id !== 'chapter1' || chapter.version !== 1 ||
@@ -196,12 +232,12 @@
         }
         if (object(state.stats).damage === 0) earn('flawless');
         if (!chapterProgress(profile).completed) {
-          unlocks.push('第一节完成 · 归途灯重明', '武器解锁 · 遗迹长枪');
+          unlocks.push('第一节完成 · 归途灯重明', '武器解锁 · 遗迹长枪', '第二节解锁 · 木场求援');
         }
       }
       return result;
     }
-    if (missionId === 'chapter1') return result;
+    if (missionId === 'chapter1' || missionId === 'chapter1_2') return result;
     // A malformed result cannot grant currency or unlock a mission.
     // A guest can accompany a host on a mission not yet unlocked in their own camp.
     // Selection locks belong to canPlay; a valid completed expedition still counts.
