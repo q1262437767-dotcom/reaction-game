@@ -67,7 +67,7 @@
   }
   function chapterEndingCaption() {
     const age = chapterEnding.age;
-    $('chapter-ending-line').textContent = age < 1.5 ? '归途灯亮了。远处，终于传来了脚步声。' : age < 6.5 ? '阿禾：跟着灯走……我们到家了。' : age < 9 ? '老岑：回来了。慢些，灯就在这儿。' : '阿禾：等等……旧木场那边，也有人在打灯。';
+    $('chapter-ending-line').textContent = age < 1.5 ? '灯亮了，东边传来了脚步声。' : age < 6.5 ? '阿禾：老岑！我们回来了！他腿伤了，快搭把手。' : age < 9 ? '老岑：哎，来了！先扶他坐下。' : '阿禾：等等……旧木场那边，是不是有人在打灯？';
   }
   function finishChapterEnding() {
     if (!chapterEndingActive()) return;
@@ -178,11 +178,11 @@
   }
   function resetSounds() { stopSounds(); heardEvents.clear(); soundAt.clear(); chapterNotesSeen.clear(); chapterMomentsSeen.clear(); soundLast = 0; }
   const chapterMoments = {
-    sluiceOpen: '冷却水重新流动，热浪退去了。备用炉心的轰鸣从东侧传来。',
-    bossDefeated: '炉心守卫停止了暴走。备用火仍在燃烧，可以带它回营地。',
-    suppliesTaken: '取出了尚未损坏的药物。小队恢复了体力，可以继续寻找火种。',
-    beaconLit: '旧线路接通了。守灯人回应：“看见信号了，等你们带火回来。”',
-    fireTaken: '备用火种已装入提灯。沿路返回营地，采集队还在等归途灯。'
+    sluiceOpen: '水通了，没刚才那么烫了。东边还响着备用炉心的轰鸣。',
+    bossDefeated: '总算停下来了。备用火还在，带回去就行。',
+    suppliesTaken: '药还能用。大家缓了口气，继续找火种。',
+    beaconLit: '老岑：“看见你们的信号了！路上小心，我在营地等你们。”',
+    fireTaken: '火种装好了。回去吧，别让他们再摸黑走路了。'
   };
   function primeChapterNarration() {
     if (!state || state.mode !== 'chapter') return;
@@ -190,7 +190,7 @@
     // Show its journal, but never present that old state as a fresh story event.
     state.chapter.clues.forEach(clue => chapterNotesSeen.add(clue));
     Object.keys(chapterMoments).forEach(flag => { if (state.chapter[flag]) chapterMomentsSeen.add(flag); });
-    if (state.status === 'playing' && state.chapter.phase === 'depart' && state.elapsed < 1) toast('守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。', 7000);
+    if (state.status === 'playing' && state.chapter.phase === 'depart' && state.elapsed < 1) toast('老岑：灯灭了，采集队到现在还没回来。你去苔火工坊借点火，我在这儿等他们。', 7000);
   }
   function chapterUpdates() {
     if (!state || state.mode !== 'chapter' || !state.chapter || state.status !== 'playing' || paused || hasDialog()) return;
@@ -733,10 +733,10 @@
     const mission = missionInfo(state.mission && state.mission.id);
     const random = state.mode === 'random', relay = state.mode === 'relay', hunt = state.mode === 'hunt', chapter = state.mode === 'chapter';
     $('end-title').textContent = chapter ? won ? '归途灯，重新亮了' : '这簇火，还没带回家' : hunt ? won ? '猎场归来，巨兽倒下了' : '这次，猎物先找到了你' : won ? relay ? '炉芯已安全送达' : `${random ? '迷雾远征' : mission.name} · 探险完成` : relay ? '炉芯还在等下一次归途' : '这次，走到这里';
-    $('end-copy').textContent = chapter ? won ? '借回的火种点亮了归途灯，失散的采集队循光回营。眼前的归路，终于又安全了。' : '维修小队暂时退了回来。重新准备，再去把火种带回家。' : hunt ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 诱敌 ${state.hunt.lures} 次 · 击败 ${state.stats.kills} 名敌人 · 用时 ${Math.floor(state.elapsed)} 秒` : relay ? `投掷 ${state.relay.throws} 次 · 接住 ${state.relay.catches} 次 · 精准接住 ${state.relay.perfectCatches} 次 · 用时 ${Math.floor(state.elapsed)} 秒` : won ? `击败 ${state.stats.kills} 名守卫 · 用时 ${Math.floor(state.elapsed / 60)} 分 ${Math.floor(state.elapsed % 60)} 秒${state.secretCleared ? ' · 找到了隐藏星藏' : ''}` : '探险暂时告一段落。营地的灯火仍在等你。';
+    $('end-copy').textContent = chapter ? won ? '采集队回来了，伤员也安顿下了。这趟没白跑。' : '先缓缓，别急。准备好了，再去把火种带回来。' : hunt ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 诱敌 ${state.hunt.lures} 次 · 击败 ${state.stats.kills} 名敌人 · 用时 ${Math.floor(state.elapsed)} 秒` : relay ? `投掷 ${state.relay.throws} 次 · 接住 ${state.relay.catches} 次 · 精准接住 ${state.relay.perfectCatches} 次 · 用时 ${Math.floor(state.elapsed)} 秒` : won ? `击败 ${state.stats.kills} 名守卫 · 用时 ${Math.floor(state.elapsed / 60)} 分 ${Math.floor(state.elapsed % 60)} 秒${state.secretCleared ? ' · 找到了隐藏星藏' : ''}` : '探险暂时告一段落。营地的灯火仍在等你。';
     $('end-reward').textContent = result.duplicate ? `本次记录已保存 · 营地现有 ${camp.coins} 星屑` : won ? `+ ${camp.coins - before.coins} 星屑 · 营地现有 ${camp.coins}` : `本局未带回星屑 · 营地仍有 ${camp.coins}`;
     $('end-goal').textContent = chapter ? `第一章 · 第一节 · 借火归营 · ${won ? '已完成' : '未完成'} · ${Math.floor(state.elapsed)} 秒` : hunt ? won ? '苔火猎场 · 狩猎完成' : '苔火猎场 · 狩猎未完成' : relay ? won ? '接力夺宝 · 撤离成功' : '接力夺宝 · 撤离未完成' : random ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 遗物 ${state.runBuffs.length} 件` : `营灯 ${C.progress(camp).lit} / 3 · ${won ? mission.goal : state.objective}`;
-    $('end-unlocks').textContent = chapter ? won ? '阿禾发现旧木场亮起了微弱的求援灯讯。归来的人们还没坐稳，远处又有人在等待火光。后续小节尚未开放。' : '击败守卫后，仍需取走火种，回到营地点亮归途灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
+    $('end-unlocks').textContent = chapter ? won ? '阿禾：“旧木场那边打的是求援灯讯。咱们得去看看。”后续小节尚未开放。' : '把守卫解决了，还得取上火种，再回营地点灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
     if (!C.canUseSpear(before) && C.canUseSpear(camp)) $('end-unlocks').textContent = '遗迹长枪已解锁，可在出发前选择。' + $('end-unlocks').textContent;
     $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
     if (state.mode === 'story' && won && C.progress(camp).nextMission) { $('mission-select').value = C.progress(camp).nextMission; showMission(); }
@@ -786,6 +786,10 @@
     }
     for (const enemy of s.enemies) {
       if (!enemy || !bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
+      if (enemy.pursuit !== undefined) {
+        const pursuit = enemy.pursuit;
+        if (s.practice || !['chapter', 'random'].includes(s.mode) || enemy.kind !== 'boss' || !pursuit || typeof pursuit !== 'object' || Array.isArray(pursuit) || Object.keys(pursuit).length !== 3 || !['time', 'cooldown', 'targetId'].every(key => Object.prototype.hasOwnProperty.call(pursuit, key)) || !bounded(pursuit.time, 1.6) || !bounded(pursuit.cooldown, 7.5) || ![null, 'p1', 'p2'].includes(pursuit.targetId) || pursuit.time > 0 && pursuit.targetId === null) return false;
+      }
       if (enemy.ai !== undefined) {
         const ai = enemy.ai;
         if (s.practice || !['chaser', 'shooter', 'shield'].includes(enemy.kind) || !ai || typeof ai !== 'object' || Array.isArray(ai) || Object.keys(ai).length !== 3 || !['mode', 'time', 'side'].every(key => Object.prototype.hasOwnProperty.call(ai, key)) || !['approach', 'circle', 'recover', 'reposition', 'retreat', 'guard', 'wait', 'windup'].includes(ai.mode) || !bounded(ai.time, 2) || ![-1, 1].includes(ai.side)) return false;

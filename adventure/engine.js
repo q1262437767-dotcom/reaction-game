@@ -1001,7 +1001,7 @@
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     // Do not cache a pending strike and resume it on a later room visit.
-    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); delete e.ai; });
+    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); delete e.ai; delete e.pursuit; });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
@@ -1009,7 +1009,7 @@
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
-    s.enemies.forEach(function (e) { delete e.ai; });
+    s.enemies.forEach(function (e) { delete e.ai; delete e.pursuit; });
     s.roomEvent = data.roomEvent || null; s.decoys = [];
     carried.forEach(function (p) { if (!s.props.some(function (q) { return q.id === p.id; })) s.props.push(p); });
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
@@ -1860,7 +1860,7 @@
     if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
     e.hp -= amount; e.flash = 0.12;
     if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
-      e.stage = 2; e.rhythm = null; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0;
+      e.stage = 2; e.rhythm = null; e.chargeTime = 0; e.rushHitIds = []; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0; delete e.pursuit;
       s.walls = s.walls.filter(function (w) {
         var boundary = w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28;
         if (!boundary) burst(s, 'wood', w.x + w.w / 2, w.y + w.h / 2, '#bcaa8d', 6);
@@ -2235,13 +2235,40 @@
     }
     return stopped;
   }
+  function bossPursuit(s, e, target, dt) {
+    if (s.practice || e.kind !== 'boss' || (s.mode !== 'chapter' && s.mode !== 'random') || dt <= 0) return null;
+    var realTarget = target && s.players[target.id] === target && target.hp > 0 && !target.downed;
+    var pressure = e.pursuit, distance = realTarget ? dist(e, target) : 0;
+    var visible = realTarget && foxSight(s, e, target, 3);
+    // Keep initial generation and ordinary close combat untouched. Sustained
+    // separation, rather than a held weapon, is what calls for a pursuit.
+    if (!pressure && realTarget && visible && distance > 280) {
+      pressure = e.pursuit = { time: 0, cooldown: 0, targetId: target.id };
+    }
+    if (!pressure) return null;
+    pressure.cooldown = Math.max(0, pressure.cooldown - dt);
+    if (!realTarget) { pressure.time = 0; pressure.targetId = null; return pressure; }
+    if (pressure.targetId !== target.id || !visible) pressure.time = 0;
+    pressure.targetId = target.id;
+    if (!visible) return pressure;
+    if (distance > 280) pressure.time = Math.min(1.6, pressure.time + dt);
+    else if (pressure.time < 1.6) pressure.time = 0;
+    return pressure;
+  }
   function updateRhythm(s, e, target, dt) {
+    // An earned counter can interrupt a charge before this enemy update. Keep
+    // a cancelled Boss lane from retaining its movement or its charge pose.
+    if (dt > 0 && !s.practice && e.kind === 'boss' && (s.mode === 'chapter' || s.mode === 'random') &&
+        e.chargeTime > 0 && (!e.rhythm || e.rhythm.type !== 'rush' || e.rhythm.phase !== 'active')) {
+      e.chargeTime = 0; e.rushHitIds = [];
+    }
+    var pressure = bossPursuit(s, e, target, dt);
     e.stagger = Math.max(0, e.stagger - dt);
     if (e.stagger > 0) return true;
     var r = e.rhythm;
     if (r) {
       if (r.type === 'rush' && r.phase === 'active' && e.chargeTime > 0) {
-        var speed = 430;
+        var speed = !s.practice && e.kind === 'boss' && (s.mode === 'chapter' || s.mode === 'random') ? 620 : 430;
         e.chargeTime = Math.max(0, e.chargeTime - dt);
         var blocked = rushMove(s, e, speed * dt);
         particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#efaa72' });
@@ -2295,10 +2322,16 @@
     var overload = s.mode === 'random' && boss && e.stage === 2;
     if (overload) type = ['combo', 'thrust', 'sweep', 'quake'][e.rhythmCycle % 4];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
+    var pursuing = pressure && pressure.time >= 1.6 && pressure.cooldown <= 0;
+    if (pursuing && distance > 128 && distance <= 190 && e.attackCd <= 0 && foxSight(s, e, target, 3)) {
+      pressure.time = 0; pressure.cooldown = 7.5;
+      rhythmWindup(s, e, 'rush', 1, 1, target); return true;
+    }
     // A telegraph must start within the strike's reach. Previously a stationary
     // beginner saw slashes at ~168px even though they could only connect at 159px.
     var engageRange = type === 'combo' ? 128 : type === 'hook' ? 430 : type === 'thrust' ? 250 : type === 'rush' || type === 'fireball' ? 560 : type === 'quake' ? 460 : 230;
     if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
+      if (pressure) pressure.time = 0;
       e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? overload ? 3 : 2 : type === 'quake' && overload ? 2 : 1, target); return true;
     }
     var approachRange = type === 'combo' ? 118 : type === 'hook' ? 320 : type === 'fireball' ? 320 : type === 'rush' ? 360 : boss ? 150 : 118;
@@ -2306,7 +2339,8 @@
       e.navTime -= dt;
       if (e.navTime <= 0) { var wp = waypoint(s, e, target); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.35; }
       var dx = e.navX - e.x, dy = e.navY - e.y, length = len(dx, dy) || 1;
-      move(s, e, dx / length * e.speed * dt, dy / length * e.speed * dt, false);
+      var approachSpeed = pursuing ? 255 : e.speed;
+      move(s, e, dx / length * approachSpeed * dt, dy / length * approachSpeed * dt, false);
       e.facing = Math.atan2(target.y - e.y, target.x - e.x);
     }
     return true;
