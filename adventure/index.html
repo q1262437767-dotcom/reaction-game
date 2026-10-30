@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#0b1413">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=33">
-  <script defer src="engine.js?v=33"></script>
-  <script defer src="renderer.js?v=33"></script>
-  <script defer src="vendor/peerjs.min.js?v=33"></script>
-  <script defer src="net.js?v=33"></script>
-  <script defer src="campaign.js?v=33"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=33"></script>
-  <script defer src="cloud-config.js?v=33"></script>
-  <script defer src="cloud.js?v=33"></script>
-  <script defer src="account.js?v=33"></script>
-  <script defer src="app.js?v=33"></script>
+  <link rel="stylesheet" href="style.css?v=34">
+  <script defer src="engine.js?v=34"></script>
+  <script defer src="renderer.js?v=34"></script>
+  <script defer src="vendor/peerjs.min.js?v=34"></script>
+  <script defer src="net.js?v=34"></script>
+  <script defer src="campaign.js?v=34"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=34"></script>
+  <script defer src="cloud-config.js?v=34"></script>
+  <script defer src="cloud.js?v=34"></script>
+  <script defer src="account.js?v=34"></script>
+  <script defer src="app.js?v=34"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -109,6 +109,7 @@
           <section class="screen-card pause-card" aria-labelledby="pause-title"><div class="pause-heading"><span class="pause-mark" aria-hidden="true"></span><h2 id="pause-title">已暂停</h2><p id="pause-copy">准备好后，继续出发。</p></div><div class="stack-actions pause-actions"><button id="resume-game" class="button button-primary" type="button">继续游戏 <span aria-hidden="true">→</span></button><button id="pause-settings" class="button button-secondary" type="button" aria-haspopup="dialog" aria-controls="settings-dialog">设置</button><button id="help-button" class="button button-secondary" type="button" aria-haspopup="dialog" aria-controls="help-dialog">操作指南</button><button id="restart-game" class="button button-secondary" type="button">重新出发</button><button id="back-camp" class="text-button" type="button">返回主菜单</button></div></section>
         </div>
 
+        <section id="chapter-ending" class="chapter-ending" role="region" aria-label="归途灯 · 归营" hidden><p id="chapter-ending-line" aria-live="polite" aria-atomic="true"></p><button id="chapter-ending-skip" class="text-button" type="button">查看结算 <span aria-hidden="true">→</span></button></section>
         <div id="end-screen" class="screen centered-screen" hidden>
           <section class="screen-card end-card" aria-labelledby="end-title">
             <header class="end-heading"><span class="end-eyebrow">远征记录</span><h2 id="end-title">带着火光归来</h2><p id="end-copy">这一次探索，让营地离重新亮起又近一步。</p><p id="end-goal" class="end-goal"></p></header>

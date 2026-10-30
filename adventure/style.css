@@ -894,3 +894,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
   #game-wrap[data-touch-controls="true"] .touch-shoot{width:48px;height:48px;font-size:18px;right:0;bottom:0}
   #game-wrap[data-touch-controls="true"] .touch-switch{width:29px;height:29px;left:48px;top:5px;font-size:13px}
 }
+
+/* First-section return: a local, skippable scene over the frozen camp. */
+.chapter-ending{position:absolute;z-index:16;left:8%;right:8%;bottom:6%;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 22px;color:#f2dfb5;background:linear-gradient(90deg,rgba(13,19,23,.92),rgba(13,19,23,.78));border-left:2px solid #c79c54;box-shadow:0 12px 38px #0005;pointer-events:none}
+.chapter-ending[hidden]{display:none}
+.chapter-ending p{margin:0;font-size:clamp(12px,1.5vw,16px);line-height:1.7;letter-spacing:.04em}
+.chapter-ending button{flex-shrink:0;min-height:44px;padding:8px 12px;color:#d5b57a;pointer-events:auto;white-space:nowrap}
+#game-wrap[data-chapter-ending="true"] .hud,#game-wrap[data-chapter-ending="true"] .game-toolbar,#game-wrap[data-chapter-ending="true"] .interaction-hint,#game-wrap[data-chapter-ending="true"] .toast,#game-wrap[data-chapter-ending="true"] .touch-controls{visibility:hidden;pointer-events:none}
+@media(max-width:600px){.chapter-ending{left:5%;right:5%;bottom:5%;gap:10px;padding:12px 14px}.chapter-ending p{font-size:12px}.chapter-ending button{font-size:12px;padding:8px}}

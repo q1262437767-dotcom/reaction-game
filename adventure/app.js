@@ -31,6 +31,7 @@
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   let menuScreen = 'title';
   let homeAccountReturn = false;
+  let chapterEnding = null, chapterEndingEligible = '';
   const dialogIds = ['help-dialog', 'camp-dialog', 'coop-dialog', 'account-dialog', 'settings-dialog'];
   const blank = () => C.normalize(null);
   function readCamp() {
@@ -51,6 +52,46 @@
   const playing = () => !!state && state.status === 'playing';
   const hasDialog = () => dialogIds.some(id => $(id).open);
   const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function clearChapterEnding() {
+    chapterEnding = null; chapterEndingEligible = '';
+    $('chapter-ending').hidden = true;
+    $('game-wrap').setAttribute('data-chapter-ending', 'false');
+  }
+  function chapterEndingActive() {
+    return !!(chapterEnding && chapterEnding.runId === runId && state && state.mode === 'chapter' && state.status === 'won');
+  }
+  function presentResults() {
+    $('end-screen').hidden = false;
+    $(mode === 'guest' ? 'end-camp' : 'end-next-action').focus();
+    menuSound(state.status === 'won' ? 'win' : 'lost');
+  }
+  function chapterEndingCaption() {
+    const age = chapterEnding.age;
+    $('chapter-ending-line').textContent = age < 1.5 ? '归途灯亮了。远处，终于传来了脚步声。' : age < 6.5 ? '阿禾：跟着灯走……我们到家了。' : age < 9 ? '老岑：回来了。慢些，灯就在这儿。' : '阿禾：等等……旧木场那边，也有人在打灯。';
+  }
+  function finishChapterEnding() {
+    if (!chapterEndingActive()) return;
+    clearChapterEnding(); clearInput(); presentResults();
+  }
+  function beginChapterEnding() {
+    chapterEnding = { runId, age: 0, last: 0 };
+    clearTimeout(toastTimer); $('toast').hidden = true;
+    $('interaction-hint').hidden = true; $('end-screen').hidden = true;
+    $('chapter-ending').hidden = false;
+    $('game-wrap').setAttribute('data-chapter-ending', 'true');
+    chapterEndingCaption(); $('chapter-ending-skip').focus();
+  }
+  function advanceChapterEnding(now) {
+    if (!chapterEndingActive()) {
+      if (chapterEnding) clearChapterEnding();
+      return;
+    }
+    if (paused || hasDialog() || document.hidden) { chapterEnding.last = 0; return; }
+    if (chapterEnding.last) chapterEnding.age = Math.min(12, chapterEnding.age + Math.max(0, Math.min(.1, (now - chapterEnding.last) / 1000)));
+    chapterEnding.last = now;
+    chapterEndingCaption();
+    if (chapterEnding.age >= 12) finishChapterEnding();
+  }
   function readTouchPreference() {
     try { const value = localStorage.getItem(TOUCH_STORE); return ['auto', 'show', 'hide'].includes(value) ? value : 'auto'; }
     catch (_) { return 'auto'; }
@@ -561,6 +602,7 @@
   }
   function home() {
     companionUpdates();
+    clearChapterEnding();
     shutdownNet(); state = null; mode = 'solo'; paused = false; disconnected = false;
     finished = ''; runId = ''; resultNext = null; clearInput(); resetSounds(); closeDialogs();
     $('start-screen').hidden = false; $('pause-screen').hidden = true; $('end-screen').hidden = true;
@@ -586,7 +628,7 @@
     state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', meleeLoadout: selectedMelee(), partnerMeleeLoadout: isCoop ? remoteMelee : 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty, camp: C.departure(camp), partnerCamp: isCoop ? remoteCamp : undefined, companion: C.companionDeparture(camp), partnerCompanion: isCoop ? remoteCompanion : null, unlocks: { foxRescued: camp.camp.companion.rescued && (!isCoop || remoteFoxRescued) } });
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
-    runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
+    clearChapterEnding(); runId = newRunId(); chapterEndingEligible = gameMode === 'chapter' ? runId : ''; finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
     if (isCoop && !net.send({ type: 'start', state: E.snapshot(state, true), runId })) {
@@ -596,7 +638,7 @@
   }
   function beginPractice() {
     if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
-    shutdownNet(); mode = 'solo';
+    clearChapterEnding(); shutdownNet(); mode = 'solo';
     state = E.create({ practice: true, mode: 'story', players: 1, loadout: 'blade', seed: newSeed(), mission: 'ember', difficulty: 1 });
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
@@ -650,6 +692,7 @@
   }
   function prepareResultMode(gameMode) {
     if (mode === 'guest') return;
+    clearChapterEnding();
     const mission = state && state.mission && state.mission.id, difficulty = state && state.difficulty || 1;
     // A host's room survives preparation; departure still requires its ordinary
     // explicit start button, and guests continue waiting in their own result.
@@ -693,15 +736,17 @@
     $('end-copy').textContent = chapter ? won ? '借回的火种点亮了归途灯，失散的采集队循光回营。眼前的归路，终于又安全了。' : '维修小队暂时退了回来。重新准备，再去把火种带回家。' : hunt ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 诱敌 ${state.hunt.lures} 次 · 击败 ${state.stats.kills} 名敌人 · 用时 ${Math.floor(state.elapsed)} 秒` : relay ? `投掷 ${state.relay.throws} 次 · 接住 ${state.relay.catches} 次 · 精准接住 ${state.relay.perfectCatches} 次 · 用时 ${Math.floor(state.elapsed)} 秒` : won ? `击败 ${state.stats.kills} 名守卫 · 用时 ${Math.floor(state.elapsed / 60)} 分 ${Math.floor(state.elapsed % 60)} 秒${state.secretCleared ? ' · 找到了隐藏星藏' : ''}` : '探险暂时告一段落。营地的灯火仍在等你。';
     $('end-reward').textContent = result.duplicate ? `本次记录已保存 · 营地现有 ${camp.coins} 星屑` : won ? `+ ${camp.coins - before.coins} 星屑 · 营地现有 ${camp.coins}` : `本局未带回星屑 · 营地仍有 ${camp.coins}`;
     $('end-goal').textContent = chapter ? `第一章 · 第一节 · 借火归营 · ${won ? '已完成' : '未完成'} · ${Math.floor(state.elapsed)} 秒` : hunt ? won ? '苔火猎场 · 狩猎完成' : '苔火猎场 · 狩猎未完成' : relay ? won ? '接力夺宝 · 撤离成功' : '接力夺宝 · 撤离未完成' : random ? `探索 ${state.rooms.filter(room => room.visited).length} / ${state.rooms.length} 间 · 遗物 ${state.runBuffs.length} 件` : `营灯 ${C.progress(camp).lit} / 3 · ${won ? mission.goal : state.objective}`;
-    $('end-unlocks').textContent = chapter ? won ? '接通的旧线路传来微弱求援信号——来自已经废弃的旧木场。后续小节尚未开放。' : '击败守卫后，仍需取走火种，回到营地点亮归途灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
+    $('end-unlocks').textContent = chapter ? won ? '阿禾发现旧木场亮起了微弱的求援灯讯。归来的人们还没坐稳，远处又有人在等待火光。后续小节尚未开放。' : '击败守卫后，仍需取走火种，回到营地点亮归途灯。' : hunt ? won ? '下一次，可以换个地方设伏，或与搭档一人诱敌、一人截击。' : '猎兽会追随声响。换条路，先为下一次交手做好准备。' : relay ? won ? '下次试试换个位置传球，或与搭档轮流掩护。' : '可以先放下炉芯迎敌，再拾取继续撤离。' : random ? (won ? '下一次出发，地图与精英位置将重新生成。' : '本次发现的遗物已记入图鉴。') : result.unlocks.length ? result.unlocks.join(' · ') : (won ? '可以返回营地选择下一项任务，或挑战更好的成绩。' : '这次发现的遗物已记入图鉴，重新准备后再来。');
     if (!C.canUseSpear(before) && C.canUseSpear(camp)) $('end-unlocks').textContent = '遗迹长枪已解锁，可在出发前选择。' + $('end-unlocks').textContent;
     $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
     if (state.mode === 'story' && won && C.progress(camp).nextMission) { $('mission-select').value = C.progress(camp).nextMission; showMission(); }
     $('end-restart').disabled = mode === 'guest';
     $('end-restart').textContent = mode === 'guest' ? '等待房主重新出发' : chapter ? '重玩第一节 ↗' : '再探一次 ↗';
     showResultDetails(details);
-    $('end-screen').hidden = false;
-    $(mode === 'guest' ? 'end-camp' : 'end-next-action').focus(); menuSound(won ? 'win' : 'lost');
+    // Rewards are already durable above. This local presentation never delays
+    // a save or advances the ended simulation, and each partner can skip alone.
+    if (chapter && won && chapterEndingEligible === runId && !result.duplicate) beginChapterEnding();
+    else presentResults();
   }
   function safeInput(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -900,11 +945,15 @@
         if (preparation && companion !== false && (msg.foxRescued !== false || companion === null)) { remoteWeapon = msg.weapon; remoteMelee = msg.melee || 'blade'; remoteCamp = preparation; remoteCompanion = companion; remoteFoxRescued = msg.foxRescued === true || !!companion; remoteCampReady = true; updateLobbyMenu(); }
       }
     } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && validState(msg.state)) {
+      if (msg.runId === runId && state) return;
+      clearChapterEnding();
       mode = 'guest'; state = msg.state; runId = msg.runId; finished = ''; paused = false; disconnected = false;
+      chapterEndingEligible = state.mode === 'chapter' && state.status === 'playing' ? runId : '';
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
       clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing');
       startTutorial(); primeChapterNarration(); displayPause(); canvas.focus(); hud();
     } else if (msg.type === 'state' && msg.runId === runId && validState(msg.state)) {
+      if (state && state.mode === 'chapter' && finished === runId && state.status !== msg.state.status) return;
       state = msg.state; settle();
     }
     if (msg.type === 'pause' && msg.reason === 'tutorial') {
@@ -933,6 +982,12 @@
       E.removePlayer(state, 'p2'); shutdownNet(); mode = 'solo';
       toast('搭档已断线，你可以继续独自探险。');
     } else if (mode === 'guest') {
+      // An already settled run has no simulation to pause. Its local return
+      // scene and result actions must remain available when the host leaves.
+      if (!playing()) {
+        shutdownNet(); disconnected = true; paused = false; clearInput(); displayPause();
+        return;
+      }
       disconnected = true; paused = true; clearInput(); displayPause(); toast('与房主的连接已断开。');
     }
   }
@@ -1027,7 +1082,7 @@
     catch (_) { toast(`请手动复制房间码：${net.roomCode}`); }
   };
   $('start-room').onclick = () => begin(true);
-  $('leave-room').onclick = () => { shutdownNet(); $('room-message').textContent = '已离开房间。'; };
+  $('leave-room').onclick = () => { if (chapterEndingActive()) finishChapterEnding(); shutdownNet(); $('room-message').textContent = '已离开房间。'; };
   $('close-coop').onclick = () => $('coop-dialog').close();
   $('help-game').onclick = () => openDialog('help-dialog');
   $('help-button').onclick = () => openDialog('help-dialog');
@@ -1084,6 +1139,7 @@
   $('resume-game').onclick = () => pause(false);
   $('restart-game').onclick = $('end-restart').onclick = () => { if (mode !== 'guest') { if (state && state.practice) beginPractice(); else begin(mode === 'host'); } };
   $('back-camp').onclick = $('end-camp').onclick = home;
+  $('chapter-ending-skip').onclick = finishChapterEnding;
   $('end-next-action').onclick = () => {
     if (!resultNext || resultNext.kind === 'wait') return;
     if (resultNext.kind === 'practice') beginPractice();
@@ -1133,6 +1189,11 @@
   }
   const controlKeys = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyE','KeyJ','KeyK','KeyQ']);
   window.addEventListener('keydown', event => {
+    if (chapterEndingActive() && !hasDialog() && ['Enter', 'Escape'].includes(event.code)) {
+      event.preventDefault();
+      if (!event.repeat) finishChapterEnding();
+      return;
+    }
     if (event.code === 'Escape' && !hasDialog()) {
       event.preventDefault();
       if (!event.repeat) {
@@ -1191,7 +1252,7 @@
   window.addEventListener('pointercancel', clearInput);
   canvas.addEventListener('contextmenu', event => event.preventDefault());
   window.addEventListener('blur', () => { clearInput(); stopSounds(); if (playing() && !paused) pause(true); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); stopSounds(); if (playing() && !paused) pause(true); } });
+  document.addEventListener('visibilitychange', () => { if (chapterEnding) chapterEnding.last = 0; if (document.hidden) { clearInput(); stopSounds(); if (playing() && !paused) pause(true); } });
   const joystick = $('joystick');
   function moveStick(event) {
     const bounds = joystick.getBoundingClientRect(), radius = bounds.width * .32;
@@ -1300,7 +1361,8 @@
       net.send({ type: 'state', state: E.snapshot(state, true), runId }); lastSend = now;
     }
     settle();
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion() }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    advanceChapterEnding(now);
+    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);

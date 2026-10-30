@@ -2224,10 +2224,88 @@
     label(c, `${discovered} / ${rooms.length}`, left + width - 12, top + height - 12, '#92a38a', 8, 'right');
     c.restore();
   }
+  // This short return home belongs only to presentation. Its clock is supplied
+  // by the local client; no civilian or timeline enters the saved world.
+  function chapterEndingScene(state, options = {}) {
+    if (state.mode !== 'chapter' || state.status !== 'won' || !state.chapter || !state.chapter.lampLit || num(state.room && state.room.index, -1) !== 0) return null;
+    const age = Math.max(0, Math.min(12, num(options.chapterEndingAge, 12)));
+    const t = options.reducedMotion ? 12 : age, walk = Math.max(0, Math.min(1, (t - 1) / 5.5));
+    const move = (start, end) => start + (end - start) * walk;
+    const gait = walk > 0 && walk < 1 ? Math.sin((t - 1) * 8) : 0;
+    const welcome = Math.max(0, Math.min(1, (t - 6.5) / 1.6));
+    return { age, t, gait, seated: t >= 7.6, looking: t >= 8.5,
+      lead: { x: move(868, 533), y: move(296, 255) },
+      pair: { x: move(913, 543), y: move(322, 350) },
+      elder: { x: 395 + welcome * 76, y: 354 },
+      pulse: options.reducedMotion ? .16 : t >= 8.5 && t < 11.8 ? Math.pow(Math.max(0, Math.sin((t - 8.5) * Math.PI * 2 / 1.1)), 2) * .7 : .12 };
+  }
+  function chapterEndingCivilian(c, x, y, role, gait = 0, looking = false, seated = false) {
+    const elder = role === 'elder', hurt = role === 'injured', lead = role === 'lead';
+    const coat = lead ? '#668a82' : hurt ? '#8c7764' : elder ? '#8b7b58' : '#77855a';
+    const light = lead ? '#a9c4ab' : hurt ? '#c1a184' : elder ? '#c5b47b' : '#b9c08b';
+    const shade = lead ? '#344f54' : elder ? '#554f3b' : '#455342';
+    shadow(c, x, y, seated ? 19 : 14, .3);
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    const bob = seated ? 8 : Math.abs(gait) * (hurt ? .7 : 1);
+    c.translate(hurt && !seated ? 2 : 0, bob);
+    if (seated) {
+      rect(c, -10, -1, 17, 8, shade); rect(c, -13, 5, 17, 5, '#25383c');
+      rect(c, 3, 3, 17, 5, '#c8c8ab'); rect(c, 9, 5, 5, 2, '#848e80'); rect(c, 18, 3, 7, 6, '#293a3d');
+      rect(c, -14, 9, 14, 3, '#1c2c32');
+    } else {
+      for (const [bx, phase] of [[-8, 1], [3, -1]]) {
+        const by = 3 + gait * phase * (hurt ? 1 : 2);
+        rect(c, bx, by, 6, 10, '#25343b'); rect(c, bx + 1, by, 4, 6, '#645b4a');
+        rect(c, bx, by + 8, 8, 3, '#1b2a30'); rect(c, bx + 1, by + 7, 4, 1, '#a39271');
+        if (hurt && phase === -1) { rect(c, bx, by, 6, 7, '#d7d8b9'); rect(c, bx + 1, by + 2, 5, 1, '#9da48f'); rect(c, bx, by + 5, 5, 1, '#a0a78e'); }
+      }
+    }
+    rect(c, -11, -16, 22, 22, '#172b31'); rect(c, -9, -16, 18, 20, shade);
+    rect(c, -8, -15, 15, 16, coat); rect(c, -8, -14, 3, 13, light); rect(c, 5, -13, 3, 15, shade);
+    rect(c, -9, 0, 18, 4, '#67513c'); rect(c, -1, 0, 4, 4, '#c0a16a');
+    if (!elder) { rect(c, 6, -18, 11, 19, '#263a36'); rect(c, 8, -17, 9, 17, '#7b6950'); rect(c, 8, -17, 8, 3, '#baa473'); rect(c, 11, -13, 2, 12, '#9a875e'); }
+    rect(c, -9, -32, 18, 17, '#25343a'); rect(c, -7, -30, 14, 14, '#b98f6e'); rect(c, -6, -29, 12, 6, '#d9b68c');
+    rect(c, -9, -33, 17, 7, elder ? '#a2aaa0' : '#3a3e36'); rect(c, -10, -28, 4, 10, elder ? '#919c91' : '#3b4137');
+    rect(c, looking ? 4 : -6, -24, 3, 2, '#25323a'); rect(c, looking ? 7 : -8, -21, 3, 3, '#d9b48c');
+    if (elder) { rect(c, -5, -19, 10, 7, '#c0c2aa'); rect(c, -2, -16, 4, 8, '#adb69e'); rect(c, -13, -13, 4, 21, '#ab9262'); rect(c, -14, 7, 5, 4, '#635539'); }
+    else { rect(c, -9, -18, 18, 4, lead ? '#d5aa6c' : '#a59165'); rect(c, -4, -14, 4, 10, lead ? '#ae7955' : '#97875d'); }
+    if (lead) {
+      rect(c, -14, -13, 5, 13, shade); rect(c, -14, -1, 5, 4, '#cfab82');
+      if (looking) { path(c, [[8, -11], [18, -18], [27, -28]], coat, 5); rect(c, 25, -31, 4, 5, '#d9b48c'); }
+      else { rect(c, 8, -12, 5, 15, shade); rect(c, 8, 1, 5, 4, '#d3af86'); }
+    }
+    if (hurt) { rect(c, -2, -31, 9, 3, '#dcdac0'); rect(c, 3, -30, 3, 5, '#b7bca4'); }
+    c.restore();
+  }
+  function chapterEndingPair(c, scene) {
+    const x = scene.pair.x, y = scene.pair.y, gait = scene.gait;
+    // One composite sprite keeps the supporting arm attached throughout the
+    // walk. The bandaged right leg drags while the helper takes shorter steps.
+    chapterEndingCivilian(c, x + 21, y + (scene.seated ? 6 : -2), 'injured', gait * .55, false, scene.seated);
+    chapterEndingCivilian(c, x - 5, y, 'helper', gait * .7);
+    if (!scene.seated) {
+      path(c, [[x + 3, y - 20], [x + 13, y - 13], [x + 24, y - 17]], '#a89b73', 5);
+      rect(c, x + 20, y - 20, 6, 4, '#d2ad86');
+      path(c, [[x + 15, y - 20], [x + 7, y - 26], [x - 8, y - 23]], '#887862', 5);
+      rect(c, x - 11, y - 25, 5, 4, '#c5a081');
+    } else { path(c, [[x + 3, y - 12], [x + 12, y - 3], [x + 16, y - 5]], '#a1ad80', 4); }
+  }
+  function chapterEndingLight(c, scene) {
+    const warm = Math.min(1, scene.t);
+    glow(c, 450, 280, 145 + warm * 50, '#f6c47c20');
+    ellipse(c, 458, 318, 82 + warm * 28, 32, '#e3b36b0e');
+    if (scene.t < 8.5) return;
+    // A distant, sheltered amber slit suggests the lumberyard's signal rather
+    // than a new interactable in this room. Three slow pulses are non-flashing.
+    const x = 704, y = 39;
+    alpha(c, .45, () => { rect(c, x - 18, y - 28, 36, 36, '#14282e'); rect(c, x - 15, y - 25, 30, 3, '#526359'); rect(c, x - 14, y - 22, 28, 22, '#172b31'); rect(c, x - 18, y + 1, 36, 5, '#53645b'); });
+    alpha(c, .2 + scene.pulse, () => { glow(c, x, y - 12, 41, '#e0b66b35'); rect(c, x - 3, y - 20, 6, 13, '#e1b673'); rect(c, x - 1, y - 18, 2, 9, '#f7d6a2'); });
+  }
   function draw(c, state, options = {}) {
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
-    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = combatMotion(events, still);
+    const ending = chapterEndingScene(state, options);
+    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
@@ -2236,6 +2314,7 @@
     expeditionFloor(c, state, time, still);
     lanternAuras(c, state);
     values(state.walls).forEach(w => wall(c, w));
+    if (ending) chapterEndingLight(c, ending);
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
     values(state.portals).forEach(p => portal(c, p, time));
@@ -2258,13 +2337,19 @@
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id)) })),
-      ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
+      ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
+      ...(ending ? [
+        { y: ending.lead.y, draw: () => chapterEndingCivilian(c, ending.lead.x, ending.lead.y, 'lead', ending.gait, ending.looking) },
+        { y: ending.pair.y + 6, draw: () => chapterEndingPair(c, ending) },
+        { y: ending.elder.y, draw: () => chapterEndingCivilian(c, ending.elder.x, ending.elder.y, 'elder', 0, true) }
+      ] : [])
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b, state));
-    values(state.particles).forEach(p => particle(c, p, time));
-    combatEffects(c, events, state, still);
-    aimReticle(c, state.players && state.players[localId], time);
+    if (ending) { if (ending.t < .8) alpha(c, 1 - ending.t / .8, () => values(state.particles).forEach(p => particle(c, p, time))); }
+    else values(state.particles).forEach(p => particle(c, p, time));
+    if (!ending) combatEffects(c, events, state, still);
+    if (!ending) aimReticle(c, state.players && state.players[localId], time);
     ambient(c, state, time);
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
