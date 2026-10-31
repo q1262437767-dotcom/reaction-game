@@ -2521,12 +2521,49 @@
     rect(c, 862, 451, 38, 6, '#ad9660'); rect(c, 865, 457, 5, 18, '#5c5c3e'); rect(c, 892, 457, 5, 18, '#5c5c3e');
     rect(c, 865, 448, 30, 3, '#e0c082'); path(c, [[871, 442], [884, 448]], '#c2c7a5', 3); rect(c, 868, 440, 6, 4, '#e4d5a4');
   }
+  function openWorld(c, view) {
+    c.save();
+    c.imageSmoothingEnabled = false;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+    if (view && view.w > 0 && view.h > 0) {
+      const sx = c.canvas.width / view.w, sy = c.canvas.height / view.h;
+      c.setTransform(sx, 0, 0, sy, -view.x * sx, -view.y * sy);
+    }
+  }
+  function resetHudTransform(c, view) {
+    if (view) c.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  function paintAnchored(c, scale, x, y, fn) {
+    if (!(scale > 1.02)) { fn(); return; }
+    c.save();
+    c.translate(x, y);
+    c.scale(scale, scale);
+    c.translate(-x, -y);
+    fn();
+    c.restore();
+  }
+  function paintCornerMap(c, state, options, drawMap) {
+    paintAnchored(c, num(options && options.uiScale, 1), 942, 18, () => drawMap(c, state));
+  }
+  function paintTopStatus(c, state, options) {
+    const ui = num(options && options.uiScale, 1);
+    if (!(ui > 1.02)) { practiceStatus(c, state); huntStatus(c, state); return; }
+    const scale = Math.min(ui, 1.35);
+    c.save();
+    c.translate(12, 148);
+    c.scale(scale, scale);
+    c.translate(-(W / 2 - 136), -18);
+    practiceStatus(c, state);
+    huntStatus(c, state);
+    c.restore();
+  }
   function timberDraw(c, state, options = {}) {
     if (!c) return;
     const localId = options.localId || 'p1', time = num(state.time) * 1000, still = !!(options.paused || options.reducedMotion);
     const events = combatEvents(state), motion = state.status === 'playing' ? combatMotion(events, still) : { x: 0, y: 0, flash: 0 };
     const poses = enemyMotionFrame(c, state, options);
-    c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H); rect(c, 0, 0, W, H, '#23382e'); c.save(); c.translate(motion.x, motion.y);
+    openWorld(c, options.view); rect(c, 0, 0, W, H, '#23382e'); c.save(); c.translate(motion.x, motion.y);
     timberFloor(c, state); lanternAuras(c, state);
     values(state.walls).filter(w => !w.timberCart).forEach(w => timberWall(c, w));
     values(state.doors).forEach(d => door(c, d, time)); values(state.portals).forEach(p => portal(c, p, time)); values(state.portals).forEach(p => portalDestination(c, p, state, localId));
@@ -2547,7 +2584,8 @@
     if (state.status === 'playing') { values(state.particles).forEach(p => particle(c, p, time)); combatEffects(c, events, state, still); aimReticle(c, state.players && state.players[localId], time); }
     ambient(c, state, time); c.restore();
     if (motion.flash > 0) alpha(c, motion.flash, () => rect(c, 0, 0, W, H, '#fff0c4'));
-    timberMap(c, state); c.restore();
+    resetHudTransform(c, options.view);
+    paintCornerMap(c, state, options, timberMap); c.restore();
   }
   function draw(c, state, options = {}) {
     if (state && state.mode === 'chapter' && state.chapter && state.chapter.id === 'chapter1_2') { timberDraw(c, state, options); return; }
@@ -2556,7 +2594,7 @@
     const ending = chapterEndingScene(state, options);
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
-    c.save(); c.imageSmoothingEnabled = false; c.clearRect(0, 0, W, H);
+    openWorld(c, options.view);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
     chapterFloor(c, state, time);
@@ -2602,9 +2640,9 @@
     ambient(c, state, time);
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
-    practiceStatus(c,state);
-    huntStatus(c,state);
-    minimap(c, state);
+    resetHudTransform(c, options.view);
+    paintTopStatus(c, state, options);
+    paintCornerMap(c, state, options, minimap);
     c.restore();
   }
 

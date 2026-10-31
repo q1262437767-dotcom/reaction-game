@@ -28,6 +28,8 @@
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, guard: false, active: false };
   const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
   let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
+  let playFullscreen = false, orientationLocked = false, rotateHold = false, rotateAttempt = 0, rotatePromptShown = false;
+  let playView = null;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   let menuScreen = 'title';
   let homeAccountReturn = false;
@@ -106,11 +108,173 @@
       try { return !!(window.matchMedia && window.matchMedia(query).matches); } catch (_) { return false; }
     });
   }
+  function isHandheldViewport() {
+    const shortSide = Math.min(window.innerWidth, window.innerHeight);
+    const longSide = Math.max(window.innerWidth, window.innerHeight);
+    return shortSide <= 540 && longSide <= 1400;
+  }
+  function isPortraitViewport() {
+    if (window.matchMedia && window.matchMedia('(orientation: portrait)').matches) return true;
+    return window.innerHeight > window.innerWidth;
+  }
+  function getFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || null;
+  }
+  function requestDocumentFullscreen() {
+    const attempt = (el, withOptions) => {
+      if (!el) return Promise.reject(new Error('fullscreen-unavailable'));
+      if (typeof el.requestFullscreen === 'function') {
+        try {
+          return Promise.resolve(withOptions ? el.requestFullscreen({ navigationUI: 'hide' }) : el.requestFullscreen());
+        } catch (error) { return Promise.reject(error); }
+      }
+      const legacy = el.webkitRequestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+      if (typeof legacy !== 'function') return Promise.reject(new Error('fullscreen-unavailable'));
+      try {
+        const result = legacy.call(el);
+        return result && typeof result.then === 'function' ? result : Promise.resolve();
+      } catch (error) { return Promise.reject(error); }
+    };
+    // Standard call first so Android Chrome and Edge receive navigationUI.
+    // Retry without options only when the browser rejects the argument itself.
+    // A denied or missing fullscreen (in-app browsers) must not prompt again.
+    const optionsRejected = error => !error || error.name === 'TypeError';
+    return attempt(document.documentElement, true).catch(error => optionsRejected(error) ? attempt(document.documentElement, false) : Promise.reject(error))
+      .catch(error => optionsRejected(error) ? attempt(document.body, false) : Promise.reject(error));
+  }
+  function lockLandscapeOrientation() {
+    // Chrome and Edge reject lock() unless the document is already fullscreen.
+    if (screen.orientation && typeof screen.orientation.lock === 'function') {
+      if (!getFullscreenElement()) return Promise.reject(new Error('fullscreen-required'));
+      return screen.orientation.lock('landscape');
+    }
+    const legacy = screen.lockOrientation || screen.mozLockOrientation || screen.msLockOrientation;
+    if (typeof legacy !== 'function') return Promise.reject(new Error('lock-unavailable'));
+    try {
+      const ok = legacy.call(screen, 'landscape');
+      return ok === false ? Promise.reject(new Error('lock-rejected')) : Promise.resolve();
+    } catch (error) { return Promise.reject(error); }
+  }
+  function exitDocumentFullscreen() {
+    if (!getFullscreenElement()) return Promise.resolve();
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (typeof exit !== 'function') return Promise.resolve();
+    try { return Promise.resolve(exit.call(document)).catch(() => {}); }
+    catch (_) { return Promise.resolve(); }
+  }
+  function unlockOrientation() {
+    try { if (screen.orientation && typeof screen.orientation.unlock === 'function') screen.orientation.unlock(); } catch (_) {}
+    try {
+      const unlock = screen.unlockOrientation || screen.mozUnlockOrientation || screen.msUnlockOrientation;
+      if (typeof unlock === 'function') unlock.call(screen);
+    } catch (_) {}
+  }
+  // Fullscreen must be requested before orientation.lock, and both have to
+  // stay on the user-gesture promise chain (Android Chrome and Edge).
+  function enterLandscapePlay() {
+    if (!isHandheldViewport()) return;
+    rotateAttempt += 1;
+    const finish = locked => {
+      if (locked) orientationLocked = true;
+      rotateAttempt = Math.max(0, rotateAttempt - 1);
+      if (!getFullscreenElement()) { try { window.scrollTo(0, 1); } catch (_) {} }
+      updatePlayChrome();
+    };
+    const lockAfterFullscreen = () => lockLandscapeOrientation().then(() => true, () => false);
+    if (getFullscreenElement()) {
+      playFullscreen = true;
+      lockAfterFullscreen().then(finish);
+      return;
+    }
+    requestDocumentFullscreen().then(() => {
+      playFullscreen = !!getFullscreenElement();
+      return lockAfterFullscreen();
+    }, () => false).then(finish);
+  }
+  function leaveLandscapePlay() {
+    if (orientationLocked) unlockOrientation();
+    orientationLocked = false;
+    rotateHold = false;
+    rotateAttempt = 0;
+    setRotatePrompt(false);
+    if (!playFullscreen && !getFullscreenElement()) return;
+    playFullscreen = false;
+    exitDocumentFullscreen();
+  }
+  function togglePlayFullscreen() {
+    if (!isHandheldViewport()) return;
+    if (getFullscreenElement()) {
+      playFullscreen = false;
+      if (orientationLocked) unlockOrientation();
+      orientationLocked = false;
+      exitDocumentFullscreen().finally(updatePlayChrome);
+      return;
+    }
+    enterLandscapePlay();
+  }
+  function runNeedsLandscape() {
+    return !!state && $('start-screen').hidden && $('end-screen').hidden;
+  }
+  function setRotatePrompt(show) {
+    const prompt = $('rotate-prompt');
+    if (!prompt) return;
+    prompt.hidden = !show;
+    try { $('game-wrap').inert = !!show; } catch (_) {}
+    if (show && !rotatePromptShown && !hasDialog()) $('rotate-fullscreen').focus();
+    rotatePromptShown = show;
+  }
+  function updatePlayChrome() {
+    const handheld = isHandheldViewport();
+    document.body.setAttribute('data-handheld', handheld ? 'true' : 'false');
+    const activeFullscreen = !!getFullscreenElement();
+    if (playFullscreen && !activeFullscreen) { playFullscreen = false; orientationLocked = false; }
+    const wantRotate = handheld && isPortraitViewport() && runNeedsLandscape();
+    rotateHold = wantRotate && playing();
+    // Hide the prompt while a lock attempt is in flight so Android Chrome/Edge
+    // can rotate without a flash. If lock is rejected, the prompt appears.
+    setRotatePrompt(wantRotate && rotateAttempt === 0);
+    const rotateButton = $('rotate-fullscreen');
+    if (rotateButton) rotateButton.textContent = activeFullscreen ? '锁定横屏' : '进入全屏';
+    const button = $('fullscreen-game');
+    if (!button) return;
+    const active = activeFullscreen;
+    const showButton = handheld && runNeedsLandscape();
+    button.hidden = !showButton;
+    button.setAttribute('data-active', String(active));
+    const label = active ? '退出全屏' : '全屏';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+  }
+  function syncPlayCanvas() {
+    const handheldPlay = isHandheldViewport() && !isPortraitViewport() && state && $('start-screen').hidden;
+    if (!handheldPlay) {
+      playView = null;
+      if (canvas.width !== 960 || canvas.height !== 600) { canvas.width = 960; canvas.height = 600; }
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
+    const viewW = 960;
+    const viewH = Math.max(280, Math.min(600, viewW * cssH / cssW));
+    const bufH = Math.round(viewH);
+    if (canvas.width !== viewW || canvas.height !== bufH) { canvas.width = viewW; canvas.height = bufH; }
+    const player = state.players && state.players[localId()];
+    const focus = player && Number.isFinite(player.y) ? player.y : 300;
+    playView = { x: 0, y: Math.max(0, Math.min(600 - viewH, focus - viewH / 2)), w: viewW, h: viewH };
+  }
+  function playUiScale() {
+    if (!isHandheldViewport() || isPortraitViewport()) return 1;
+    const width = canvas.getBoundingClientRect().width;
+    if (!(width > 80)) return 1;
+    const shown = width / 960;
+    if (shown >= 0.95) return 1;
+    return Math.min(1.1, Math.max(1, 10 / (9 * shown)));
+  }
   function touchGameActive() {
-    return playing() && !paused && !hasDialog() && !remoteTutorialPending && !((state.practice || relayTutorial || huntTutorial) && tutorialPending);
+    return playing() && !paused && !rotateHold && !hasDialog() && !remoteTutorialPending && !((state.practice || relayTutorial || huntTutorial) && tutorialPending);
   }
   function updateTouchControls() {
-    const enabled = touchPreference === 'show' || touchPreference === 'auto' && supportsTouch();
+    const enabled = touchPreference === 'show' || touchPreference === 'auto' && (supportsTouch() || isHandheldViewport());
     $('game-wrap').setAttribute('data-touch-controls', String(enabled));
     $('touch-controls').hidden = !enabled || !touchGameActive();
     const label = { auto: '自动', show: '显示', hide: '隐藏' }[touchPreference];
@@ -627,6 +791,7 @@
     updateLobbyMenu();
   }
   function home() {
+    leaveLandscapePlay();
     companionUpdates();
     clearChapterEnding();
     shutdownNet(); state = null; mode = 'solo'; paused = false; disconnected = false;
@@ -651,6 +816,7 @@
     // Restart the actual expedition, including after the player edited camp settings.
     if (state && state.mission) { mission = state.mission.id; difficulty = state.difficulty || 1; gameMode = state.mode || 'story'; }
     if (!canStart(gameMode, mission, difficulty)) { toast('这项故事任务尚未解锁，请先完成前一项任务。'); return; }
+    enterLandscapePlay();
     state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', meleeLoadout: selectedMelee(), partnerMeleeLoadout: isCoop ? remoteMelee : 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty, camp: C.departure(camp), partnerCamp: isCoop ? remoteCamp : undefined, companion: C.companionDeparture(camp), partnerCompanion: isCoop ? remoteCompanion : null, unlocks: { foxRescued: camp.camp.companion.rescued && (!isCoop || remoteFoxRescued) } });
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
@@ -664,6 +830,7 @@
   }
   function beginPractice() {
     if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
+    enterLandscapePlay();
     clearChapterEnding(); shutdownNet(); mode = 'solo';
     state = E.create({ practice: true, mode: 'story', players: 1, loadout: 'blade', seed: newSeed(), mission: 'ember', difficulty: 1 });
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
@@ -1188,6 +1355,8 @@
     camp = C.equipRelic(camp, selected); writeCamp(); refreshResultPreparation();
   });
   $('pause-game').onclick = () => pause(!paused);
+  $('fullscreen-game').onclick = () => togglePlayFullscreen();
+  $('rotate-fullscreen').onclick = () => enterLandscapePlay();
   $('pause-settings').onclick = () => openDialog('settings-dialog');
   $('close-settings').onclick = () => $('settings-dialog').close();
   $('settings-sound').onclick = () => $('mute-game').click();
@@ -1296,7 +1465,11 @@
   window.addEventListener('pointerdown', event => {
     if (event.pointerType === 'touch' && !touchSeen) { touchSeen = true; updateTouchControls(); }
   }, true);
-  window.addEventListener('resize', () => { clearInput(); updateTouchControls(); });
+  window.addEventListener('resize', () => { clearInput(); updateTouchControls(); updatePlayChrome(); });
+  window.addEventListener('orientationchange', () => updatePlayChrome());
+  document.addEventListener('fullscreenchange', () => updatePlayChrome());
+  document.addEventListener('webkitfullscreenchange', () => updatePlayChrome());
+  try { if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => updatePlayChrome()); } catch (_) {}
   for (const query of ['(any-pointer: coarse)', '(pointer: coarse)']) {
     try {
       const media = window.matchMedia && window.matchMedia(query);
@@ -1307,8 +1480,15 @@
   }
   function pointerAim(event) {
     const bounds = canvas.getBoundingClientRect();
-    mouse.x = Math.max(0, Math.min(960, (event.clientX - bounds.left) * 960 / bounds.width));
-    mouse.y = Math.max(0, Math.min(600, (event.clientY - bounds.top) * 600 / bounds.height));
+    const nx = bounds.width ? (event.clientX - bounds.left) / bounds.width : 0;
+    const ny = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0;
+    if (playView) {
+      mouse.x = Math.max(0, Math.min(960, playView.x + nx * playView.w));
+      mouse.y = Math.max(0, Math.min(600, playView.y + ny * playView.h));
+    } else {
+      mouse.x = Math.max(0, Math.min(960, nx * 960));
+      mouse.y = Math.max(0, Math.min(600, ny * 600));
+    }
     mouse.active = true;
   }
   canvas.addEventListener('pointermove', pointerAim);
@@ -1403,6 +1583,7 @@
     $('touch-shoot').textContent = p && p.activeSlot === 'ranged' ? '射' : p && p.weapons.melee === 'spear' ? '刺' : '斩';
     $('touch-switch').disabled = !p || p.rangedBroken;
     $('touch-switch').setAttribute('aria-label', p && p.rangedBroken ? '远程武器损坏，本局无法切换' : p && p.activeSlot === 'ranged' ? '切换为' + meleeName : '切换为' + rangedName);
+    updatePlayChrome();
     $('chapter-journal').hidden = !chapter;
     if (chapter) $('chapter-journal').querySelector('h3').textContent = missionInfo(state.mission.id).name + ' · 已发现记录';
     $('chapter-notes').innerHTML = chapter && state.chapter.clues.length ? state.chapter.clues.map(id => {
@@ -1412,7 +1593,7 @@
   }
   function frame(now) {
     const delta = last ? Math.min((now - last) / 1000, .1) : 0; last = now;
-    if (playing() && !paused && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
+    if (playing() && !paused && !rotateHold && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
       if (mode === 'guest') {
         if (net && net.connected && now - lastSend >= 30) {
           if (net.send({ type: 'input', input: input(), seq: ++seq })) { dashPulse = guardPulse = interactPulse = switchPulse = false; lastSend = now; }
@@ -1436,7 +1617,8 @@
     }
     settle();
     advanceChapterEnding(now);
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, paused: paused || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    syncPlayCanvas();
+    try { if (state) R.draw(ctx, state, { localId: localId(), now, view: playView, uiScale: playUiScale(), paused: paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);
