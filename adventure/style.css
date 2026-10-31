@@ -902,3 +902,95 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .chapter-ending button{flex-shrink:0;min-height:44px;padding:8px 12px;color:#d5b57a;pointer-events:auto;white-space:nowrap}
 #game-wrap[data-chapter-ending="true"] .hud,#game-wrap[data-chapter-ending="true"] .game-toolbar,#game-wrap[data-chapter-ending="true"] .interaction-hint,#game-wrap[data-chapter-ending="true"] .toast,#game-wrap[data-chapter-ending="true"] .touch-controls{visibility:hidden;pointer-events:none}
 @media(max-width:600px){.chapter-ending{left:5%;right:5%;bottom:5%;gap:10px;padding:12px 14px}.chapter-ending p{font-size:12px}.chapter-ending button{font-size:12px;padding:8px}}
+
+/* Phone play is a landscape screen. The 8:5 world stays fully visible; the
+   joystick and action buttons sit in the side gutters instead of on the map. */
+html,body{overscroll-behavior:none}
+#fullscreen-game svg{width:18px;height:18px;display:block}
+.rotate-prompt{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 22px max(24px,env(safe-area-inset-bottom));background:#0b1413f5}
+.rotate-prompt[hidden]{display:none!important}
+.rotate-card{width:min(360px,100%);padding:28px 22px 22px;text-align:center;background:linear-gradient(160deg,#26362cf7,#15231cfb);border:1px solid #b79a6280;box-shadow:0 24px 70px #000a}
+.rotate-card h2{margin:0 0 12px;font-size:26px;letter-spacing:2px}
+.rotate-card p{margin:0 0 22px;font-size:15px;line-height:1.75;color:#c5d0bc}
+.rotate-card .button{width:100%}
+.rotate-phone{width:46px;height:72px;margin:0 auto 18px;position:relative;border:3px solid #e6ba6d;border-radius:8px;transform:rotate(90deg);animation:rotate-phone 1.8s ease-in-out infinite}
+.rotate-phone span{position:absolute;top:7px;left:50%;width:10px;height:3px;margin-left:-5px;border-radius:2px;background:#e6ba6d}
+@keyframes rotate-phone{0%,18%{transform:rotate(0deg)}55%,100%{transform:rotate(90deg)}}
+@media(orientation:landscape) and (max-height:540px){
+  body[data-handheld="true"] .game-stage:has(#start-screen[hidden]){
+    container-type:size;
+    box-sizing:border-box;
+    width:100%;
+    height:100%;
+    max-width:none;
+    padding:env(safe-area-inset-top,0px) calc(env(safe-area-inset-right,0px) + var(--gutter-right,0px)) env(safe-area-inset-bottom,0px) calc(env(safe-area-inset-left,0px) + var(--gutter-left,0px));
+  }
+  body[data-handheld="true"] .game-stage:has(#game-wrap[data-touch-controls="true"]):has(#start-screen[hidden]){--gutter-left:118px;--gutter-right:148px}
+  body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]){
+    width:min(100%,calc((100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)) * 1.6));
+    width:min(100cqw,calc(100cqh * 1.6));
+    height:auto;
+    max-width:100%;
+    max-height:100%;
+    min-width:0;
+    min-height:0;
+    flex:0 0 auto;
+    aspect-ratio:8/5;
+  }
+  body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) .hud{top:8px;left:108px;right:40%;max-width:none;gap:4px}
+  body[data-handheld="true"] #game-wrap .stat-health{font-size:15px;min-height:30px;padding:4px 9px}
+  body[data-handheld="true"] #game-wrap .hud-location>#hud-objective{font-size:13px;line-height:1.45}
+  body[data-handheld="true"] #game-wrap .weapon-slot,
+  body[data-handheld="true"] #game-wrap .quiet-status,
+  body[data-handheld="true"] #game-wrap .opportunity-status{font-size:13px;padding:4px 8px}
+  body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) .game-toolbar{top:8px;left:8px;right:auto;z-index:6}
+  body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) .game-toolbar .icon-button{width:44px;height:44px;min-height:44px}
+  body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) #interaction-hint{font-size:14px;line-height:1.5;max-width:72%;bottom:12px;padding:8px 12px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .joystick{
+    position:fixed;
+    left:max(8px,env(safe-area-inset-left,0px));
+    top:calc(env(safe-area-inset-top,0px) + (100% - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)) / 2);
+    bottom:auto;
+    transform:translateY(-50%);
+    width:104px;
+    height:104px;
+    z-index:7;
+    margin:0;
+  }
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .joystick-stick{width:44px;height:44px;left:29px;top:29px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .joystick:before{width:1px;height:54px;left:51px;top:25px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .joystick:after{height:1px;width:54px;top:51px;left:25px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-actions{
+    position:fixed;
+    right:max(6px,env(safe-area-inset-right,0px));
+    left:auto;
+    bottom:auto;
+    top:calc(env(safe-area-inset-top,0px) + (100% - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)) / 2);
+    transform:translateY(-50%);
+    width:136px;
+    height:214px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:54px 54px 78px;
+    align-items:center;
+    justify-items:center;
+    gap:8px 4px;
+    z-index:7;
+  }
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-button{
+    position:relative;
+    inset:auto;
+    left:auto;
+    right:auto;
+    top:auto;
+    bottom:auto;
+    width:52px;
+    height:52px;
+    font-size:22px;
+  }
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-switch{grid-column:1;grid-row:1;width:46px;height:46px;font-size:16px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-guard{grid-column:2;grid-row:1;width:52px;height:52px;font-size:24px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-interact{grid-column:1;grid-row:2;width:48px;height:48px;font-size:16px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-dash{grid-column:2;grid-row:2;width:52px;height:52px;font-size:24px}
+  body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-shoot{grid-column:1 / -1;grid-row:3;width:74px;height:74px;font-size:28px;justify-self:end}
+}

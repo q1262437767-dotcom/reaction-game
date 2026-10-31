@@ -2521,6 +2521,30 @@
     rect(c, 862, 451, 38, 6, '#ad9660'); rect(c, 865, 457, 5, 18, '#5c5c3e'); rect(c, 892, 457, 5, 18, '#5c5c3e');
     rect(c, 865, 448, 30, 3, '#e0c082'); path(c, [[871, 442], [884, 448]], '#c2c7a5', 3); rect(c, 868, 440, 6, 4, '#e4d5a4');
   }
+  function paintAnchored(c, scale, x, y, fn) {
+    if (!(scale > 1.02)) { fn(); return; }
+    c.save();
+    c.translate(x, y);
+    c.scale(scale, scale);
+    c.translate(-x, -y);
+    fn();
+    c.restore();
+  }
+  function paintCornerMap(c, state, options, drawMap) {
+    paintAnchored(c, num(options && options.uiScale, 1), 942, 18, () => drawMap(c, state));
+  }
+  function paintTopStatus(c, state, options) {
+    const ui = num(options && options.uiScale, 1);
+    if (!(ui > 1.02)) { practiceStatus(c, state); huntStatus(c, state); return; }
+    const scale = Math.min(ui, 1.35);
+    c.save();
+    c.translate(12, 148);
+    c.scale(scale, scale);
+    c.translate(-(W / 2 - 136), -18);
+    practiceStatus(c, state);
+    huntStatus(c, state);
+    c.restore();
+  }
   function timberDraw(c, state, options = {}) {
     if (!c) return;
     const localId = options.localId || 'p1', time = num(state.time) * 1000, still = !!(options.paused || options.reducedMotion);
@@ -2547,7 +2571,7 @@
     if (state.status === 'playing') { values(state.particles).forEach(p => particle(c, p, time)); combatEffects(c, events, state, still); aimReticle(c, state.players && state.players[localId], time); }
     ambient(c, state, time); c.restore();
     if (motion.flash > 0) alpha(c, motion.flash, () => rect(c, 0, 0, W, H, '#fff0c4'));
-    timberMap(c, state); c.restore();
+    paintCornerMap(c, state, options, timberMap); c.restore();
   }
   function draw(c, state, options = {}) {
     if (state && state.mode === 'chapter' && state.chapter && state.chapter.id === 'chapter1_2') { timberDraw(c, state, options); return; }
@@ -2602,9 +2626,8 @@
     ambient(c, state, time);
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
-    practiceStatus(c,state);
-    huntStatus(c,state);
-    minimap(c, state);
+    paintTopStatus(c, state, options);
+    paintCornerMap(c, state, options, minimap);
     c.restore();
   }
 

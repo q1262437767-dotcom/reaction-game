@@ -4,19 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1413">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=36">
-  <script defer src="engine.js?v=36"></script>
-  <script defer src="renderer.js?v=36"></script>
-  <script defer src="vendor/peerjs.min.js?v=36"></script>
-  <script defer src="net.js?v=36"></script>
-  <script defer src="campaign.js?v=36"></script>
-  <script defer src="vendor/supabase-2.118.0.js?v=36"></script>
-  <script defer src="cloud-config.js?v=36"></script>
-  <script defer src="cloud.js?v=36"></script>
-  <script defer src="account.js?v=36"></script>
-  <script defer src="app.js?v=36"></script>
+  <link rel="stylesheet" href="style.css?v=37">
+  <script defer src="engine.js?v=37"></script>
+  <script defer src="renderer.js?v=37"></script>
+  <script defer src="vendor/peerjs.min.js?v=37"></script>
+  <script defer src="net.js?v=37"></script>
+  <script defer src="campaign.js?v=37"></script>
+  <script defer src="vendor/supabase-2.118.0.js?v=37"></script>
+  <script defer src="cloud-config.js?v=37"></script>
+  <script defer src="cloud.js?v=37"></script>
+  <script defer src="account.js?v=37"></script>
+  <script defer src="app.js?v=37"></script>
 </head>
 <body>
   <main class="app-shell">
@@ -24,7 +27,7 @@
       <div id="game-wrap" class="game-wrap" data-mode="random">
         <canvas id="game" width="960" height="600" tabindex="0" aria-label="遗迹探险游戏画面，使用 WASD 移动，J 或鼠标左键攻击，K 或鼠标右键格挡与静步，Q 切换短刃与远程武器，空格闪避，E 互动。"></canvas>
         <div class="game-grain" aria-hidden="true"></div>
-        <nav id="game-toolbar" class="game-toolbar" aria-label="游戏菜单"><button id="pause-game" class="icon-button" type="button" title="暂停游戏" aria-label="暂停游戏"><span class="pause-icon" aria-hidden="true"></span></button></nav>
+        <nav id="game-toolbar" class="game-toolbar" aria-label="游戏菜单"><button id="pause-game" class="icon-button" type="button" title="暂停游戏" aria-label="暂停游戏"><span class="pause-icon" aria-hidden="true"></span></button><button id="fullscreen-game" class="icon-button" type="button" hidden title="全屏" aria-label="全屏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg></button></nav>
         <div class="hud">
           <div class="hud-location"><span class="eyebrow">探索中</span><strong id="hud-stage">遗迹入口</strong><span id="hud-objective">唤醒并击败炉心守卫</span><span id="route-progress" class="route-progress"></span><div class="weapon-hud" aria-label="本局携带武器"><span id="hud-melee" class="weapon-slot" data-active="false">短刃</span><span id="hud-ranged" class="weapon-slot" data-active="false" data-broken="false">手枪</span><span id="hud-quiet" class="quiet-status" hidden>静步</span><span id="hud-opportunity" class="opportunity-status" hidden></span></div></div>
           <div class="hud-stats">
@@ -238,5 +241,13 @@
     <details class="save-backup"><summary>存档备份与恢复</summary><p>将营地进度下载为文件，也可以从以前的备份恢复。</p><div class="backup-actions"><button id="export-save" class="button button-secondary" type="button">下载备份</button><label class="button button-secondary backup-import" for="import-save"><span>导入备份</span><input id="import-save" type="file" accept=".json,application/json" aria-label="选择营地存档备份文件"></label></div><p class="backup-note">导入会先核对存档，再由你确认是否替换当前进度。</p></details>
     <p class="quiet-note account-footnote">关闭后可继续探险，当前进度会保留。</p>
   </dialog>
+  <div id="rotate-prompt" class="rotate-prompt" hidden>
+    <div class="rotate-card" role="dialog" aria-modal="true" aria-labelledby="rotate-title">
+      <div class="rotate-phone" aria-hidden="true"><span></span></div>
+      <h2 id="rotate-title">请把手机横过来</h2>
+      <p>遗迹小队用横屏游玩。如果没有自动转成横向，请先关掉竖屏锁定，再把手机横过来，画面就会铺满屏幕。</p>
+      <button id="rotate-fullscreen" class="button button-primary" type="button">进入全屏</button>
+    </div>
+  </div>
 </body>
 </html>
