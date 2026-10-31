@@ -29,6 +29,7 @@
   const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
   let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
   let playFullscreen = false, orientationLocked = false, rotateHold = false, rotateAttempt = 0, rotatePromptShown = false;
+  let playView = null;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   let menuScreen = 'title';
   let homeAccountReturn = false;
@@ -244,13 +245,30 @@
     button.title = label;
     button.setAttribute('aria-label', label);
   }
+  function syncPlayCanvas() {
+    const handheldPlay = isHandheldViewport() && !isPortraitViewport() && state && $('start-screen').hidden;
+    if (!handheldPlay) {
+      playView = null;
+      if (canvas.width !== 960 || canvas.height !== 600) { canvas.width = 960; canvas.height = 600; }
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
+    const viewW = 960;
+    const viewH = Math.max(280, Math.min(600, viewW * cssH / cssW));
+    const bufH = Math.round(viewH);
+    if (canvas.width !== viewW || canvas.height !== bufH) { canvas.width = viewW; canvas.height = bufH; }
+    const player = state.players && state.players[localId()];
+    const focus = player && Number.isFinite(player.y) ? player.y : 300;
+    playView = { x: 0, y: Math.max(0, Math.min(600 - viewH, focus - viewH / 2)), w: viewW, h: viewH };
+  }
   function playUiScale() {
     if (!isHandheldViewport() || isPortraitViewport()) return 1;
     const width = canvas.getBoundingClientRect().width;
     if (!(width > 80)) return 1;
     const shown = width / 960;
     if (shown >= 0.95) return 1;
-    return Math.min(1.8, Math.max(1, 11 / (9 * shown)));
+    return Math.min(1.1, Math.max(1, 10 / (9 * shown)));
   }
   function touchGameActive() {
     return playing() && !paused && !rotateHold && !hasDialog() && !remoteTutorialPending && !((state.practice || relayTutorial || huntTutorial) && tutorialPending);
@@ -1462,8 +1480,15 @@
   }
   function pointerAim(event) {
     const bounds = canvas.getBoundingClientRect();
-    mouse.x = Math.max(0, Math.min(960, (event.clientX - bounds.left) * 960 / bounds.width));
-    mouse.y = Math.max(0, Math.min(600, (event.clientY - bounds.top) * 600 / bounds.height));
+    const nx = bounds.width ? (event.clientX - bounds.left) / bounds.width : 0;
+    const ny = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0;
+    if (playView) {
+      mouse.x = Math.max(0, Math.min(960, playView.x + nx * playView.w));
+      mouse.y = Math.max(0, Math.min(600, playView.y + ny * playView.h));
+    } else {
+      mouse.x = Math.max(0, Math.min(960, nx * 960));
+      mouse.y = Math.max(0, Math.min(600, ny * 600));
+    }
     mouse.active = true;
   }
   canvas.addEventListener('pointermove', pointerAim);
@@ -1592,7 +1617,8 @@
     }
     settle();
     advanceChapterEnding(now);
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, uiScale: playUiScale(), paused: paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    syncPlayCanvas();
+    try { if (state) R.draw(ctx, state, { localId: localId(), now, view: playView, uiScale: playUiScale(), paused: paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);
