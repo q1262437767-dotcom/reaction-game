@@ -443,7 +443,13 @@
         if (same(ticket, owner)) { identityBusy = false; render(); }
       }
     };
-    $('open-account').onclick = function () { clearPasswords(); options.openDialog(); render(); };
+    $('open-account').onclick = function () {
+      clearPasswords(); options.openDialog(); render();
+      if (typeof cloud.prepare !== 'function') return;
+      cloud.prepare().catch(function (error) {
+        if (!disposed && error && error.code === 'script') message(error.message || '账号组件加载失败，请检查网络后重试。', true);
+      });
+    };
     $('close-account').onclick = function () { clearPasswords(); $('account-dialog').close(); };
     $('account-dialog').addEventListener('close', function () { clearPasswords(); resetIdentityDraft(); });
     $('account-dialog').addEventListener('cancel', function () { clearPasswords(); resetIdentityDraft(); });
