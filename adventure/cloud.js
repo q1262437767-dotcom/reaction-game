@@ -12,7 +12,7 @@
       var match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Tests and non-browser callers use the current cache key. */ }
-    return '?v=42';
+    return '?v=43';
   })();
   var MAX_PROFILE_BYTES = 32768;
   var messages = Object.freeze({
@@ -31,6 +31,7 @@
     weak_password: '新密码需为8至128个字符，并符合云服务的密码要求。',
     same_password: '新密码不能与当前密码相同。',
     invalid_profile: '存档数据格式不正确，请保留本地存档并联系游戏维护者。',
+    progress_rejected: '云端拒绝了这次存档：相对已有进度出现倒退，或单次增加超出正常游玩范围。本机进度已保留。',
     invalid_identity: '昵称请使用 1–16 个汉字、字母、数字或空格，头像请选择预设款式。',
     script: '账号组件加载失败，请检查网络后重试。',
     unknown: '云服务暂时无法完成操作，请稍后重试。'
@@ -49,6 +50,7 @@
     var code = String(error && error.code || '').toLowerCase();
     var text = String(error && error.message || '').toLowerCase();
     var status = Number(error && error.status || 0);
+    if (text.includes('progress_rejected')) return failure('progress_rejected');
     if (code === 'p0001' && text.includes('save_conflict')) return failure('conflict');
     if (status === 429 || /rate_limit|over_email_send_rate_limit|over_request_rate_limit/.test(code) || /rate limit|too many requests/.test(text)) return failure('rate_limit');
     if (code === 'invalid_credentials') return failure('invalid_credentials');

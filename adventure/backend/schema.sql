@@ -1,5 +1,7 @@
--- Ruins Squad cloud backup v1. Run as the Supabase project database owner.
+-- Ruins Squad cloud backup. Run as the Supabase project database owner.
 -- Re-running preserves saves. Only this game's table, policies and RPC are changed.
+-- Updates against an existing row reject regressions and single-save spikes.
+-- The first insert (expected revision 0) still accepts any well-shaped profile.
 begin;
 
 create table if not exists public.ruins_saves (
@@ -42,6 +44,296 @@ create schema if not exists ruins_private;
 revoke all on schema ruins_private from public, anon, authenticated;
 grant usage on schema ruins_private to authenticated;
 
+-- Relative progress gate used by the save implementation below. Not part of the
+-- exposed API: authenticated can already execute the impl, which calls this as
+-- its owner. Keep EXECUTE away from API roles so it cannot be invoked directly.
+create or replace function ruins_private.reject_ruins_progress_jump(
+  p_old jsonb,
+  p_new jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
+declare
+  v_old_coins numeric;
+  v_new_coins numeric;
+  v_old_wins numeric;
+  v_new_wins numeric;
+  v_old_runs numeric;
+  v_new_runs numeric;
+  v_run_delta numeric;
+  v_win_delta numeric;
+  v_spend numeric := 0;
+  v_key text;
+  v_old_mission jsonb;
+  v_new_mission jsonb;
+  v_old_clears numeric;
+  v_new_clears numeric;
+  v_old_hard numeric;
+  v_new_hard numeric;
+  v_old_time jsonb;
+  v_new_time jsonb;
+  v_clear_delta numeric;
+  v_clear_sum numeric := 0;
+  v_bad_window boolean;
+  v_old_upgrades jsonb;
+  v_new_upgrades jsonb;
+begin
+  -- Bounds below are acceptance limits for one save versus the stored row.
+  -- They do not change the rewards the game itself pays out.
+  --
+  -- Profile coins gained on a win (campaign.js applyResult / engine.js finish):
+  --   ember 40, salvage 30, holdout 35
+  --   story hard +20, one cleared secret +12
+  --   richest story win = 40 + 20 + 12 = 72
+  --   chapter1 is stored at most 40, chapter1_2 at most 50
+  --   hunt 32, relay 24
+  --   a loss or the practice arena adds no coins
+  -- So each new win explains at most 72 coins. New wins cannot exceed new runs.
+  --
+  -- Unlocks are paid from coins in the same save that first records them:
+  --   scatter 30, ward 40, stride 60, relicCase 80
+  -- With no new win, the balance must fall by exactly that cost.
+  -- With wins, it must sit in [old - cost, old + wins * 72 - cost].
+  --
+  -- 480 new runs is only the offline backlog ceiling. While online, account.js
+  -- uploads about one expedition after a 650ms debounce, so a live save is
+  -- +0 or +1 run. 480 five-minute runs is 40 hours. The largest coin jump is
+  -- therefore 480 * 72 = 34560, which still rejects 0 → 100000 and 0 → 1000000.
+  -- Revision 0 never reaches this function: the first cloud row, including a
+  -- guest import onto an empty account, stays shape-checked only.
+  --
+  -- Still not authoritative: bestTime may improve all the way to 0, a new
+  -- account can upload a fully developed guest camp once, and many legal
+  -- saves can still grind. This is not a per-chapter settlement RPC.
+  if jsonb_typeof(p_old->'coins') is distinct from 'number'
+     or jsonb_typeof(p_old->'wins') is distinct from 'number'
+     or jsonb_typeof(p_old->'runs') is distinct from 'number'
+     or jsonb_typeof(p_old->'scatter') is distinct from 'boolean'
+     or jsonb_typeof(p_old->'clearedRuns') is distinct from 'array'
+     or jsonb_typeof(p_old->'missions') is distinct from 'object'
+     or jsonb_typeof(p_old->'badges') is distinct from 'array'
+     or jsonb_typeof(p_old->'relics') is distinct from 'array'
+     or jsonb_typeof(p_new->'coins') is distinct from 'number'
+     or jsonb_typeof(p_new->'wins') is distinct from 'number'
+     or jsonb_typeof(p_new->'runs') is distinct from 'number' then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  v_old_coins := (p_old->>'coins')::numeric;
+  v_new_coins := (p_new->>'coins')::numeric;
+  v_old_wins := (p_old->>'wins')::numeric;
+  v_new_wins := (p_new->>'wins')::numeric;
+  v_old_runs := (p_old->>'runs')::numeric;
+  v_new_runs := (p_new->>'runs')::numeric;
+  if trunc(v_old_coins) <> v_old_coins or trunc(v_old_wins) <> v_old_wins
+     or trunc(v_old_runs) <> v_old_runs then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  v_run_delta := v_new_runs - v_old_runs;
+  v_win_delta := v_new_wins - v_old_wins;
+  -- 480 expeditions, and no more wins than expeditions, in a single save.
+  if v_run_delta < 0 or v_run_delta > 480 or v_win_delta < 0 or v_win_delta > v_run_delta then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  if (p_old->>'scatter') = 'true' and (p_new->>'scatter') is distinct from 'true' then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if (p_old->>'scatter') is distinct from 'true' and (p_new->>'scatter') = 'true' then
+    v_spend := v_spend + 30;
+  end if;
+
+  if p_old ? 'camp' and jsonb_typeof(p_old#>'{camp,upgrades}') is distinct from 'array' then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  v_old_upgrades := coalesce(p_old#>'{camp,upgrades}', '[]'::jsonb);
+  v_new_upgrades := coalesce(p_new#>'{camp,upgrades}', '[]'::jsonb);
+  if jsonb_typeof(v_new_upgrades) is distinct from 'array' then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements_text(v_old_upgrades) as item(id)
+    where not (v_new_upgrades ? item.id)
+  ) then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if (v_new_upgrades ? 'ward') and not (v_old_upgrades ? 'ward') then
+    v_spend := v_spend + 40;
+  end if;
+  if (v_new_upgrades ? 'stride') and not (v_old_upgrades ? 'stride') then
+    v_spend := v_spend + 60;
+  end if;
+  if (v_new_upgrades ? 'relicCase') and not (v_old_upgrades ? 'relicCase') then
+    v_spend := v_spend + 80;
+  end if;
+
+  -- 72 is the richest honest win (ember + hard + secret), minus unlocks above.
+  if v_new_coins < v_old_coins - v_spend
+     or v_new_coins > v_old_coins + v_win_delta * 72 - v_spend then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  foreach v_key in array array['ember','salvage','holdout','chapter1','chapter1_2'] loop
+    v_old_mission := p_old->'missions'->v_key;
+    v_new_mission := p_new->'missions'->v_key;
+    if v_old_mission is null then
+      v_old_clears := 0;
+      v_old_hard := 0;
+      v_old_time := 'null'::jsonb;
+    elsif jsonb_typeof(v_old_mission) is distinct from 'object'
+       or jsonb_typeof(v_old_mission->'clears') is distinct from 'number'
+       or jsonb_typeof(v_old_mission->'hardClears') is distinct from 'number' then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    else
+      v_old_clears := (v_old_mission->>'clears')::numeric;
+      v_old_hard := (v_old_mission->>'hardClears')::numeric;
+      v_old_time := v_old_mission->'bestTime';
+      if v_old_time is null then
+        v_old_time := 'null'::jsonb;
+      end if;
+    end if;
+    if v_new_mission is null then
+      v_new_clears := 0;
+      v_new_hard := 0;
+      v_new_time := 'null'::jsonb;
+    elsif jsonb_typeof(v_new_mission) is distinct from 'object'
+       or jsonb_typeof(v_new_mission->'clears') is distinct from 'number'
+       or jsonb_typeof(v_new_mission->'hardClears') is distinct from 'number' then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    else
+      v_new_clears := (v_new_mission->>'clears')::numeric;
+      v_new_hard := (v_new_mission->>'hardClears')::numeric;
+      v_new_time := v_new_mission->'bestTime';
+      if v_new_time is null then
+        v_new_time := 'null'::jsonb;
+      end if;
+    end if;
+    if trunc(v_old_clears) <> v_old_clears or trunc(v_old_hard) <> v_old_hard
+       or v_new_clears < v_old_clears then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    end if;
+    v_clear_delta := v_new_clears - v_old_clears;
+    -- Chapter sections have no hard mode. Story hard clears cannot outrun
+    -- that mission's new clears, and cannot fall.
+    if v_key in ('chapter1', 'chapter1_2') then
+      if v_new_hard <> v_old_hard then
+        raise exception using errcode = '22023', message = 'progress_rejected';
+      end if;
+    elsif v_new_hard < v_old_hard or v_new_hard > v_old_hard + v_clear_delta then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    end if;
+    if v_old_time <> 'null'::jsonb and jsonb_typeof(v_old_time) is distinct from 'number' then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    end if;
+    -- A smaller bestTime is a better time. It can change only when that
+    -- mission records at least one new clear, and it cannot be erased.
+    if v_clear_delta = 0 then
+      if v_new_time is distinct from v_old_time then
+        raise exception using errcode = '22023', message = 'progress_rejected';
+      end if;
+    elsif v_old_time <> 'null'::jsonb then
+      if v_new_time = 'null'::jsonb or jsonb_typeof(v_new_time) is distinct from 'number'
+         or (v_new_time #>> '{}')::numeric > (v_old_time #>> '{}')::numeric then
+        raise exception using errcode = '22023', message = 'progress_rejected';
+      end if;
+    end if;
+    v_clear_sum := v_clear_sum + v_clear_delta;
+  end loop;
+  -- Hunt and relay wins do not increment a mission clear, so clears may lag wins.
+  if v_clear_sum > v_win_delta then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  if exists (
+    select 1 from jsonb_array_elements_text(p_old->'badges') as item(id)
+    where not (p_new->'badges' ? item.id)
+  ) or exists (
+    select 1 from jsonb_array_elements_text(p_old->'relics') as item(id)
+    where not (p_new->'relics' ? item.id)
+  ) then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  -- Discoveries are written by applyResult on an expedition, not from camp.
+  if v_run_delta < 1 and (
+    exists (
+      select 1 from jsonb_array_elements_text(p_new->'badges') as item(id)
+      where not (p_old->'badges' ? item.id)
+    ) or exists (
+      select 1 from jsonb_array_elements_text(p_new->'relics') as item(id)
+      where not (p_old->'relics' ? item.id)
+    )
+  ) then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  if coalesce(p_old#>'{camp,companion,rescued}', 'false'::jsonb) = 'true'::jsonb
+     and coalesce(p_new#>'{camp,companion,rescued}', 'false'::jsonb) is distinct from 'true'::jsonb then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if coalesce(p_new#>'{camp,companion,rescued}', 'false'::jsonb) = 'true'::jsonb
+     and coalesce(p_old#>'{camp,companion,rescued}', 'false'::jsonb) is distinct from 'true'::jsonb
+     and v_run_delta < 1 then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+
+  -- clearedRuns is the last 80 expedition ids, not a permanent unlock list.
+  -- A save may drop a prefix and append new ids. It may not reorder, rewrite,
+  -- or keep the list frozen while runs increase.
+  if v_run_delta = 0 then
+    if (p_new->'clearedRuns') is distinct from (p_old->'clearedRuns') then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    end if;
+  else
+    with new_items as (
+      select cleared.id, cleared.pos
+      from jsonb_array_elements(p_new->'clearedRuns') with ordinality as cleared(id, pos)
+    ),
+    old_items as (
+      select cleared.id, cleared.pos
+      from jsonb_array_elements(p_old->'clearedRuns') with ordinality as cleared(id, pos)
+    ),
+    marked as (
+      select new_items.pos, new_items.id,
+             not exists (
+               select 1 from old_items where old_items.id = new_items.id
+             ) as fresh
+      from new_items
+    ),
+    head as (
+      select pos, id from marked where not fresh
+    ),
+    suffix as (
+      select old_items.id, row_number() over (order by old_items.pos) as pos
+      from old_items
+      where old_items.pos > (select count(*) from old_items) - (select count(*) from head)
+    )
+    select
+      coalesce((select count(*) from marked where fresh), 0) > v_run_delta
+      or coalesce((
+        select bool_or(earlier.fresh and not later.fresh)
+        from marked as earlier
+        join marked as later on earlier.pos < later.pos
+      ), false)
+      or exists (
+        select 1 from head
+        full join suffix on head.pos = suffix.pos
+        where head.id is distinct from suffix.id
+      )
+      or not coalesce((select fresh from marked order by pos desc limit 1), false)
+    into v_bad_window;
+    if v_bad_window is distinct from false then
+      raise exception using errcode = '22023', message = 'progress_rejected';
+    end if;
+  end if;
+end;
+$function$;
+
+revoke all on function ruins_private.reject_ruins_progress_jump(jsonb, jsonb) from public, anon, authenticated;
+
 create or replace function ruins_private.save_ruins_profile_impl(
   p_profile jsonb,
   p_expected_revision bigint
@@ -59,6 +351,8 @@ declare
   v_camp jsonb;
   v_companion jsonb;
   v_count numeric;
+  v_stored jsonb;
+  v_effective jsonb;
 begin
   -- Identity comes from the verified JWT, never from a client-supplied user ID.
   if v_user_id is null then
@@ -70,7 +364,8 @@ begin
   end if;
 
   -- Keep only the current game's bounded v2 profile. No email, token or user ID
-  -- belongs here. These checks validate shape, not honest gameplay outcomes.
+  -- belongs here. Every write is shape-checked. An update is then compared with
+  -- the stored row; a revision 0 insert is not.
   if p_profile is null or jsonb_typeof(p_profile) is distinct from 'object'
       or octet_length(p_profile::text) > 32768 then
     raise exception using errcode = '22023', message = 'invalid_profile';
@@ -241,6 +536,7 @@ begin
 
   -- Each single statement is atomic. A racing initial insert cannot replace a
   -- save, and a stale update cannot pass its revision predicate after waiting.
+  -- Revision 0 is the first insert and is not compared with an older profile.
   if p_expected_revision = 0 then
     return query
       insert into public.ruins_saves as saved (user_id, profile, revision, updated_at)
@@ -248,31 +544,39 @@ begin
       on conflict (user_id) do nothing
       returning saved.profile, saved.revision, saved.updated_at;
   else
+    select saved.profile into v_stored
+    from public.ruins_saves as saved
+    where saved.user_id = v_user_id and saved.revision = p_expected_revision
+    for update;
+    if not found then
+      raise exception using errcode = 'P0001', message = 'save_conflict';
+    end if;
+    -- Missing fields in older clients must not erase newer same-owner records.
+    -- Retain an equipped relic's discovery too, keeping the preserved camp valid.
+    v_effective := p_profile || jsonb_build_object('missions', (p_profile->'missions')
+                  || (case when not ((p_profile->'missions') ? 'chapter1') and ((v_stored->'missions') ? 'chapter1')
+                           then jsonb_build_object('chapter1', v_stored#>'{missions,chapter1}')
+                           else '{}'::jsonb end)
+                  || (case when not ((p_profile->'missions') ? 'chapter1_2') and ((v_stored->'missions') ? 'chapter1_2')
+                           then jsonb_build_object('chapter1_2', v_stored#>'{missions,chapter1_2}')
+                           else '{}'::jsonb end))
+                  || (case when not (p_profile ? 'camp') and (v_stored ? 'camp')
+                           then jsonb_build_object('camp', v_stored->'camp')
+                           else '{}'::jsonb end)
+                  || (case when p_profile ? 'camp' and not ((p_profile->'camp') ? 'companion')
+                                and (v_stored#>'{camp,companion}') is not null
+                           then jsonb_build_object('camp', (p_profile->'camp') ||
+                                jsonb_build_object('companion', v_stored#>'{camp,companion}'))
+                           else '{}'::jsonb end)
+                  || (case when not (p_profile ? 'camp') and (v_stored ? 'camp')
+                                and jsonb_typeof(v_stored#>'{camp,startingRelic}') = 'string'
+                                and not ((p_profile->'relics') ? (v_stored#>>'{camp,startingRelic}'))
+                           then jsonb_build_object('relics', (p_profile->'relics') || jsonb_build_array(v_stored#>>'{camp,startingRelic}'))
+                           else '{}'::jsonb end);
+    perform ruins_private.reject_ruins_progress_jump(v_stored, v_effective);
     return query
       update public.ruins_saves as saved
-      -- Missing fields in older clients must not erase newer same-owner records.
-      -- Retain an equipped relic's discovery too, keeping the preserved camp valid.
-      set profile = p_profile || jsonb_build_object('missions', (p_profile->'missions')
-                    || (case when not ((p_profile->'missions') ? 'chapter1') and ((saved.profile->'missions') ? 'chapter1')
-                             then jsonb_build_object('chapter1', saved.profile#>'{missions,chapter1}')
-                             else '{}'::jsonb end)
-                    || (case when not ((p_profile->'missions') ? 'chapter1_2') and ((saved.profile->'missions') ? 'chapter1_2')
-                             then jsonb_build_object('chapter1_2', saved.profile#>'{missions,chapter1_2}')
-                             else '{}'::jsonb end))
-                    || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
-                             then jsonb_build_object('camp', saved.profile->'camp')
-                             else '{}'::jsonb end)
-                    || (case when p_profile ? 'camp' and not ((p_profile->'camp') ? 'companion')
-                                  and (saved.profile#>'{camp,companion}') is not null
-                             then jsonb_build_object('camp', (p_profile->'camp') ||
-                                  jsonb_build_object('companion', saved.profile#>'{camp,companion}'))
-                             else '{}'::jsonb end)
-                    || (case when not (p_profile ? 'camp') and (saved.profile ? 'camp')
-                                  and jsonb_typeof(saved.profile#>'{camp,startingRelic}') = 'string'
-                                  and not ((p_profile->'relics') ? (saved.profile#>>'{camp,startingRelic}'))
-                             then jsonb_build_object('relics', (p_profile->'relics') || jsonb_build_array(saved.profile#>>'{camp,startingRelic}'))
-                             else '{}'::jsonb end),
-          revision = saved.revision + 1, updated_at = clock_timestamp()
+      set profile = v_effective, revision = saved.revision + 1, updated_at = clock_timestamp()
       where saved.user_id = v_user_id and saved.revision = p_expected_revision
       returning saved.profile, saved.revision, saved.updated_at;
   end if;
