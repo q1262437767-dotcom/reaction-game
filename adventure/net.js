@@ -1,4 +1,5 @@
-/* Two-player transport. PeerJS 1.5.5 is vendored in vendor/peerjs.min.js (MIT).
+/* Two-player transport. PeerJS 1.5.5 is vendored in vendor/peerjs.min.js (MIT)
+ * and loaded on the first create/join, not with the single-player page.
  * PeerServer Cloud is free signaling only; no TURN credentials or relay is bundled.
  * Some NAT/firewall combinations cannot connect. A timeout is a failure, never a
  * successful lobby. Room codes contain 40 cryptographically random bits.
@@ -77,6 +78,45 @@
 
   function normalizeCode(value) {
     return String(value || '').toUpperCase().replace(/[\s-]/g, '');
+  }
+
+  const assetQuery = (function () {
+    try {
+      const src = global.document && global.document.currentScript && global.document.currentScript.src || '';
+      const match = src.match(/[?&]v=([^&#]+)/);
+      if (match) return '?v=' + match[1];
+    } catch (_) { /* Fall back to the current page cache key. */ }
+    return '?v=42';
+  })();
+  let peerLibrary = null;
+
+  function loadPeerLibrary() {
+    if (typeof global.Peer === 'function') return Promise.resolve();
+    if (peerLibrary) return peerLibrary;
+    const pending = new Promise(function (resolve, reject) {
+      const doc = global.document;
+      if (!doc || typeof doc.createElement !== 'function') {
+        reject(new Error('联机组件加载失败，请检查网络后重试。'));
+        return;
+      }
+      const script = doc.createElement('script');
+      script.src = 'vendor/peerjs.min.js' + assetQuery;
+      script.async = true;
+      script.onload = function () {
+        if (typeof global.Peer === 'function') resolve();
+        else reject(new Error('联机组件加载失败，请检查网络后重试。'));
+      };
+      script.onerror = function () {
+        reject(new Error('联机组件加载失败，请检查网络后重试。'));
+      };
+      (doc.head || doc.documentElement).appendChild(script);
+    });
+    const wrapped = pending.catch(function (error) {
+      if (peerLibrary === wrapped) peerLibrary = null;
+      throw error;
+    });
+    peerLibrary = wrapped;
+    return wrapped;
   }
 
   function randomCode() {
@@ -368,15 +408,18 @@
       roomCode = code || '';
       return new Promise(function (resolve, reject) {
         pending = { resolve, reject };
-        if (typeof global.Peer !== 'function') { failure('library-missing', '联机组件未加载，请刷新页面后重试。'); return; }
-        if (role === 'guest' && !/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/.test(roomCode)) {
-          failure('invalid-code', '请输入有效的 8 位房间码。');
-          return;
-        }
-        try {
-          if (role === 'host') roomCode = randomCode();
-          const token = generation;
-          status('connecting', role === 'host' ? '正在创建联机房间…' : '正在寻找房间并建立直连…', 'signaling');
+        const token = generation;
+        if (typeof global.Peer !== 'function') status('connecting', '正在加载联机组件…', 'library');
+        loadPeerLibrary().then(function () {
+          if (token !== generation) return;
+          if (typeof global.Peer !== 'function') { failure('library-missing', '联机组件加载失败，请检查网络后重试。'); return; }
+          if (role === 'guest' && !/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/.test(roomCode)) {
+            failure('invalid-code', '请输入有效的 8 位房间码。');
+            return;
+          }
+          try {
+            if (role === 'host') roomCode = randomCode();
+            status('connecting', role === 'host' ? '正在创建联机房间…' : '正在寻找房间并建立直连…', 'signaling');
           // Omit host/key to use official free PeerServer Cloud. Only public
           // STUN is configured: no account, shared secret, or paid TURN relay.
           peer = new global.Peer(role === 'host' ? PREFIX + roomCode : undefined, {
@@ -435,9 +478,14 @@
           peer.on('close', function () {
             if (token === generation) failure('peer-closed', '联机连接已关闭，请重新创建或加入房间。');
           });
-        } catch (error) {
-          failure('browser-error', error.message || '此浏览器无法创建联机连接。');
-        }
+          } catch (error) {
+            if (token !== generation) return;
+            failure('browser-error', error.message || '此浏览器无法创建联机连接。');
+          }
+        }).catch(function () {
+          if (token !== generation) return;
+          failure('library-missing', '联机组件加载失败，请检查网络后重试。');
+        });
       });
     }
 

@@ -5,6 +5,15 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
 
+  // Captured while this file evaluates. create() runs later, after currentScript is gone.
+  var assetQuery = (function () {
+    try {
+      var src = root.document && root.document.currentScript && root.document.currentScript.src || '';
+      var match = src.match(/[?&]v=([^&#]+)/);
+      if (match) return '?v=' + match[1];
+    } catch (_) { /* Tests and non-browser callers use the current cache key. */ }
+    return '?v=42';
+  })();
   var MAX_PROFILE_BYTES = 32768;
   var messages = Object.freeze({
     unavailable: '云存档服务尚未接通，当前仍可使用游客存档。',
@@ -23,6 +32,7 @@
     same_password: '新密码不能与当前密码相同。',
     invalid_profile: '存档数据格式不正确，请保留本地存档并联系游戏维护者。',
     invalid_identity: '昵称请使用 1–16 个汉字、字母、数字或空格，头像请选择预设款式。',
+    script: '账号组件加载失败，请检查网络后重试。',
     unknown: '云服务暂时无法完成操作，请稍后重试。'
   });
 
@@ -127,10 +137,52 @@
 
   function create(config, options) {
     options = options || {};
-    var checked = validateConfig(config), sdk = root.supabase;
-    var disabled = checked.error || (!sdk || typeof sdk.createClient !== 'function' ? 'unavailable' : null);
+    var checked = validateConfig(config);
+    var disabled = checked.error || null;
     var client = null, user = null, subscription = null, initialized = false, initializing = null, generation = 0, disposed = false, requestFetch = null;
-    if (!disabled) {
+    var sdkPromise = null, connecting = null;
+    var storageKey = checked.ref ? 'ruins-squad-auth-' + checked.ref : '';
+
+    // A saved Supabase session means this browser still has an account to restore.
+    // Guests have no such key, so single-player startup does not download the SDK.
+    function storedSession() {
+      if (!storageKey) return false;
+      try {
+        var storage = root.localStorage;
+        if (!storage || typeof storage.getItem !== 'function') return false;
+        var raw = storage.getItem(storageKey);
+        return typeof raw === 'string' && raw.length > 2 && raw !== 'null';
+      } catch (_) { return false; }
+    }
+
+    function loadSdk() {
+      var sdk = root.supabase;
+      if (sdk && typeof sdk.createClient === 'function') return Promise.resolve(sdk);
+      if (sdkPromise) return sdkPromise;
+      var pending = new Promise(function (resolve, reject) {
+        var doc = root.document;
+        if (!doc || typeof doc.createElement !== 'function') { reject(failure('script')); return; }
+        var script = doc.createElement('script');
+        script.src = 'vendor/supabase-2.118.0.js' + assetQuery;
+        script.async = true;
+        script.onload = function () {
+          var loaded = root.supabase;
+          if (loaded && typeof loaded.createClient === 'function') resolve(loaded);
+          else reject(failure('script'));
+        };
+        script.onerror = function () { reject(failure('script')); };
+        (doc.head || doc.documentElement).appendChild(script);
+      });
+      var wrapped = pending.catch(function (error) {
+        if (sdkPromise === wrapped) sdkPromise = null;
+        throw error && error.name === 'AdventureCloudError' ? error : failure('script');
+      });
+      sdkPromise = wrapped;
+      return wrapped;
+    }
+
+    function attachClient(sdk) {
+      if (client || disabled || !sdk || typeof sdk.createClient !== 'function') return;
       try {
         var network = { headers: { 'X-Client-Info': 'ruins-squad-cloud/1' } };
         if (typeof root.fetch === 'function' && typeof root.AbortController === 'function' && typeof root.clearTimeout === 'function') {
@@ -147,7 +199,7 @@
         }
         client = sdk.createClient(checked.url, checked.key, {
           auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false,
-            storageKey: 'ruins-squad-auth-' + checked.ref },
+            storageKey: storageKey },
           global: network
         });
         var registration = client.auth.onAuthStateChange(function (event, session) {
@@ -166,20 +218,40 @@
           }, 0);
         });
         subscription = registration && registration.data && registration.data.subscription;
-      } catch (_) { disabled = 'config'; }
+      } catch (_) { disabled = 'config'; client = null; }
     }
 
-    function ready() {
-      if (disposed || disabled || !client) throw failure(disabled || 'unavailable');
+    function ensureReady() {
+      if (client && !disposed && !disabled) return Promise.resolve();
+      if (disposed) return Promise.reject(failure('unavailable'));
+      if (disabled) return Promise.reject(failure(disabled));
+      if (connecting) return connecting;
+      var attempt = (async function () {
+        var sdk = await loadSdk();
+        if (disposed) throw failure('unavailable');
+        if (!client) attachClient(sdk);
+        if (disabled || !client) throw failure(disabled || 'script');
+      })();
+      var wrapped = attempt.catch(function (error) {
+        if (connecting === wrapped) connecting = null;
+        throw error && error.name === 'AdventureCloudError' ? error : failure('script');
+      });
+      connecting = wrapped;
+      return wrapped;
     }
 
     async function init() {
-      ready();
+      if (disposed) throw failure('unavailable');
+      if (disabled) throw failure(disabled);
       if (initialized) return user;
       if (initializing) return initializing;
+      // Guests have nothing to restore. Opening the account dialog calls prepare().
+      if (!client && !storedSession()) { user = null; return null; }
       initializing = (async function () {
         var observedGeneration = generation;
         try {
+          await ensureReady();
+          if (initialized) return user;
           var local = await client.auth.getSession();
           if (local.error) throw translate(local.error, 'init');
           if (observedGeneration !== generation) throw failure('auth');
@@ -202,7 +274,7 @@
     }
 
     async function requestCode(email, requestOptions) {
-      ready();
+      await ensureReady();
       var clean = emailAddress(email);
       try {
         var response = await client.auth.signInWithOtp({ email: clean, options: { shouldCreateUser: !requestOptions || requestOptions.shouldCreateUser !== false } });
@@ -212,7 +284,7 @@
     }
 
     async function resendSignup(email) {
-      ready();
+      await ensureReady();
       var clean = emailAddress(email);
       try {
         // OTP's MagicLink fallback can replace an unconfirmed user's password.
@@ -232,7 +304,7 @@
     }
 
     async function signUp(email, password) {
-      ready();
+      await ensureReady();
       var clean = emailAddress(email), credential = passwordValue(password, true);
       try {
         var response = await client.auth.signUp({ email: clean, password: credential });
@@ -244,7 +316,7 @@
     }
 
     async function signInWithPassword(email, password) {
-      ready();
+      await ensureReady();
       var clean = emailAddress(email), credential = passwordValue(password, false);
       try {
         var response = await client.auth.signInWithPassword({ email: clean, password: credential });
@@ -254,7 +326,7 @@
     }
 
     async function verifyCode(email, token) {
-      ready();
+      await ensureReady();
       var clean = emailAddress(email), code = typeof token === 'string' ? token.trim() : '';
       if (!/^\d{6,8}$/.test(code)) throw failure('invalid_code');
       try {
@@ -269,7 +341,7 @@
     }
 
     async function signOut() {
-      ready();
+      await ensureReady();
       try {
         // Signing out this browser does not evict the player's other devices.
         var response = await client.auth.signOut({ scope: 'local' });
@@ -280,7 +352,7 @@
     }
 
     async function signedIn(boundRequest) {
-      ready();
+      await ensureReady();
       if (!initialized) await init();
       if (!user) throw failure('auth');
       var request = boundRequest || { id: user.id, generation: generation };
@@ -303,7 +375,7 @@
     }
 
     async function setPassword(password) {
-      ready();
+      await ensureReady();
       var credential = passwordValue(password, true);
       if (!user) throw failure('auth');
       // Capture identity before any await. Never let the SDK resolve a later
@@ -332,7 +404,7 @@
     }
 
     async function setIdentity(nickname, avatar) {
-      ready();
+      await ensureReady();
       var clean = cleanNickname(nickname);
       if (!clean || avatarIds.indexOf(avatar) < 0) throw failure('invalid_identity');
       if (!user) throw failure('auth');
@@ -390,13 +462,20 @@
       } catch (error) { throw translate(error, 'save'); }
     }
 
+    async function prepare() {
+      await ensureReady();
+      return init();
+    }
+
     function dispose() {
       disposed = true; user = null; generation += 1;
       if (subscription && typeof subscription.unsubscribe === 'function') subscription.unsubscribe();
     }
 
-    return Object.freeze({ available: !disabled, reason: disabled ? messages[disabled] : '',
-      init: init, requestCode: requestCode, resendSignup: resendSignup, verifyCode: verifyCode, signUp: signUp, signInWithPassword: signInWithPassword,
+    return Object.freeze({
+      get available() { return !disabled; },
+      get reason() { return disabled ? messages[disabled] || '' : ''; },
+      init: init, prepare: prepare, requestCode: requestCode, resendSignup: resendSignup, verifyCode: verifyCode, signUp: signUp, signInWithPassword: signInWithPassword,
       setPassword: setPassword, setIdentity: setIdentity, signOut: signOut, load: load, save: save, dispose: dispose });
   }
 
