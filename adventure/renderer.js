@@ -2543,8 +2543,21 @@
     fn();
     c.restore();
   }
+  // Handheld play can pass mapScale plus a top-right anchor. Desktop keeps the
+  // existing uiScale anchor so keyboard play is unchanged.
   function paintCornerMap(c, state, options, drawMap) {
-    paintAnchored(c, num(options && options.uiScale, 1), 942, 18, () => drawMap(c, state));
+    if (!options || !Number.isFinite(options.mapScale)) {
+      paintAnchored(c, num(options && options.uiScale, 1), 942, 18, () => drawMap(c, state));
+      return;
+    }
+    const scale = Math.max(.45, Math.min(1.45, num(options.mapScale, 1)));
+    const ax = num(options.mapAnchorX, 942), ay = num(options.mapAnchorY, 18);
+    c.save();
+    c.translate(ax, ay);
+    c.scale(scale, scale);
+    c.translate(-942, -18);
+    drawMap(c, state);
+    c.restore();
   }
   function paintTopStatus(c, state, options) {
     const ui = num(options && options.uiScale, 1);
