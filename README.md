@@ -1,24 +1,21 @@
-# 放置修仙
+# 遗迹小队 · Ruin Runners
 
-在线游玩：https://q1262437767-dotcom.github.io/reaction-game/
+在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 
-一个简单的单人修仙挂机游戏。首页只需修炼、突破和历练，不用学习采集配方。
+浏览器里的俯视角合作冒险。静态 HTML / CSS / JavaScript，无需构建。玩法、联机、账号与云存档的说明都在 [`adventure/`](adventure/)（见 [adventure/README.md](adventure/README.md)）。
 
-## 怎么玩
+仓库首页会跳转到 `adventure/`。GitHub Pages 从 `main` 发布后，打开 https://q1262437767-dotcom.github.io/reaction-game/ 也会进入同一款游戏。
 
-1. 点击「开始修炼」，自动积累修为，自动选用已解锁的高效功法。
-2. 修为足够时点击「突破境界」。突破必定成功，只消耗修为。
-3. 点击「开始历练」，出发自动恢复气血并选择可持续挑战的妖兽，挂机赚灵石。
-4. 灵石足够时点击「提升装备」，自动购买并穿戴更好的法器。
+## 本地运行
 
-修炼与历练每次进行一项，可以随时切换。原来的采药、炼丹、炼器等功能放在「更多玩法（可选）」里，默认收起。
+在仓库根目录：
 
-## 存档
+```bash
+python -m http.server 8000
+```
 
-每5秒自动保存到当前浏览器，离线最多结算8小时。原版存档和进度会继续使用。右上角「存档」可以导出和导入备份，换设备或清理浏览器数据前请先导出。同一浏览器的多个标签页只有一个负责结算，可以主动接管。
+打开 http://localhost:8000/ ，应进入遗迹小队。也可以直接打开 http://localhost:8000/adventure/ 。
 
-游戏没有云端存档，不会自动跨设备同步。
+## 旧版
 
-## 文件
-
-index.html、style.css、simple.css、game.js、app.js 放在同一个目录，无须构建或后端。GitHub Pages 从 main 分支根目录发布。
+根目录原先的单机放置游戏「放置修仙」已挪到 [`legacy/`](legacy/)，不再作为站点入口。

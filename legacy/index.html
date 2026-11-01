@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173d33">
+  <meta name="description" content="简单的放置修仙游戏：挂机修炼、点击突破、自动历练。一键提升装备，离线最多结算八小时。">
+  <title>放置修仙 · 道途始于此刻</title>
+  <link rel="stylesheet" href="style.css?v=simple-1">
+  <link rel="stylesheet" href="simple.css?v=simple-1">
+  <script src="game.js?v=simple-1" defer></script>
+  <script src="app.js?v=simple-1" defer></script>
+</head>
+<body class="simple-mode">
+  <div class="simple-shell">
+    <header class="simple-header"><div class="simple-brand"><span class="simple-mark" aria-hidden="true">道</span><span>放置修仙<small>慢慢修炼，轻松成仙</small></span></div><button class="simple-save-button" type="button" data-op="save">存档</button></header>
+    <main class="simple-main" aria-label="修炼与历练">
+      <div class="simple-intro"><h1>修炼，突破，再变强。</h1><p>挂机攒修为，足够后点击突破。</p></div>
+      <div id="simple-warning" class="notice simple-warning" hidden></div>
+      <section class="simple-hero" aria-label="当前境界与修为">
+        <div id="simple-scene" class="simple-mountain" aria-hidden="true"></div>
+        <div class="simple-avatar" aria-hidden="true">仙</div>
+        <h2 id="simple-realm" class="simple-realm">炼气一层</h2>
+        <div class="simple-progress-head"><span id="simple-next">下一境界：炼气二层</span><b id="simple-cultivation">0 / 80 修为</b></div>
+        <div class="simple-track"><span id="simple-fill"></span></div>
+        <div class="simple-actions"><button id="simple-practice" class="simple-main-button" type="button" data-op="practice">开始修炼</button><button id="simple-breakthrough" class="simple-main-button" type="button" data-op="breakthrough" disabled>突破境界</button></div>
+        <p id="simple-hint" class="simple-hint">点「开始修炼」，就会自动积累修为。</p>
+      </section>
+      <div class="simple-stats"><div><strong id="simple-coins">25</strong><small>灵石</small></div><div><strong id="simple-attack">7</strong><small>攻击</small></div><div><strong id="simple-defense">0</strong><small>防御</small></div></div>
+      <section class="simple-adventure" aria-label="自动历练与装备升级"><h2>下山历练</h2><p>出发自动整备，挑选合适的妖兽赚灵石。装备点一下就能提升。</p><div class="simple-actions"><button id="simple-expedition" class="simple-main-button" type="button" data-op="expedition">开始历练</button><button id="simple-gear" class="simple-main-button" type="button" data-op="gear">提升装备 · 60 灵石</button></div><div id="simple-combat" hidden></div></section>
+      <details class="simple-details simple-record"><summary>最近的修行</summary><ul id="simple-log"></ul></details>
+    </main>
+    <details id="advanced-mode" class="simple-details advanced-mode"><summary>更多玩法（可选）</summary>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="./" aria-label="放置修仙首页"><span class="brand-mark" aria-hidden="true">道</span><span>放置修仙<small>一念入道 · 日积月累</small></span></a>
+      <div class="sidebar-world"><span class="live-dot"></span> 山中无岁月 <span>初入仙途</span></div>
+      <div class="nav-caption">修行技艺</div>
+      <nav id="skill-nav" aria-label="游戏导航"></nav>
+      <div class="sidebar-footer"><span>一呼一吸，皆为修行。</span><small>离线修行 · 最多结算 8 小时</small></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>洞府</span><span class="breadcrumb-slash">/</span><strong id="breadcrumb">打坐修炼</strong></div>
+        <div class="topbar-actions"><span class="coin-pill"><span aria-hidden="true">◇</span><b id="coins">25</b><small>灵石</small></span><button id="save-menu" class="icon-button" type="button" aria-label="打开存档管理">存档 <span aria-hidden="true">↗</span></button></div>
+      </header>
+      <div id="session-warning" class="notice" hidden></div>
+      <div class="content-layout">
+        <main id="main-content" class="main-content">
+          <section class="page-heading"><div><div id="section-kicker" class="eyebrow">修行 / 吐纳天地</div><h1 id="section-title">打坐修炼</h1><p id="section-description">静心吐纳，积蓄修为。一点一滴，踏上长生之路。</p></div><div id="section-level" class="level-badge"><span>技艺等级</span><strong id="skill-level">1</strong></div></section>
+          <div id="skill-xp" class="skill-xp"><div><span id="xp-label">技艺经验</span><b id="xp-number">0 / 100</b></div><div class="track"><span id="xp-fill"></span></div></div>
+          <section id="region-banner" class="region-banner" aria-label="修行之地"><div class="region-copy"><span class="region-tag">大道漫漫，从此启程</span><h2>山间洞府</h2><p>云起青山，灵气渐聚。守得一方清静，自有一日精进。</p><div class="region-meta"><span>● 灵气充盈</span><span>修炼持续进行</span></div></div><div id="region-scene" class="region-scene" aria-hidden="true"></div></section>
+          <div id="section-tools" class="section-tools"><h2 id="cards-title">选择修炼法门</h2><span id="cards-subtitle">选定一项活动后，便会持续自动进行。</span></div>
+          <section id="cards" class="cards" aria-label="活动选择"></section>
+          <section id="combat-display" class="combat-display" hidden></section>
+          <p id="empty-state" class="empty-state" hidden></p>
+          <section id="cultivation-profile" class="cultivation-profile" aria-label="境界与修为"></section>
+          <section id="journey" class="journey"><div class="section-row"><h2>初入仙途</h2><span id="journey-count">0 / 4</span></div><div id="journey-steps" class="journey-steps"></div></section>
+          <section class="log-panel"><div class="section-row"><h2>修行记录</h2><span>最近的进展</span></div><ul id="event-log"><li>道友，先从打坐开始，积蓄第一次突破的修为。</li></ul></section>
+        </main>
+        <aside class="right-rail" aria-label="角色与当前活动">
+          <section class="player-card">
+            <div class="player-heading"><div class="avatar" aria-hidden="true">仙</div><div><strong>无名道友</strong><span>修行自此始，前路自此开。</span></div><span class="player-badge">散修</span></div>
+            <div class="realm-panel"><div class="realm-heading"><span>当前境界</span><strong id="realm-name">炼气一层</strong></div><div class="realm-progress-label"><span id="realm-next">下一境界：炼气二层</span><b id="cultivation-number">0 / 80</b></div><div class="track realm-track"><span id="realm-fill"></span></div><button id="breakthrough" class="primary-button breakthrough-button" type="button" disabled>修为尚不足</button></div>
+            <div class="hp-heading"><span>气血</span><b id="hp-number">100 / 100</b></div><div class="track hp-track"><span id="hp-fill"></span></div>
+            <div class="player-stats"><div><small>攻击</small><strong id="attack">0</strong></div><div><small>防御</small><strong id="defense">0</strong></div><div><small>历练胜场</small><strong id="kills">0</strong></div></div><div class="equipment-label">当前法器</div><div id="equipment" class="equipment"></div><div class="food-note"><span aria-hidden="true">◉</span><span>受伤时自动服用丹药</span><b id="food-count">5</b></div>
+          </section>
+          <section class="activity-card"><div class="activity-caption"><span id="activity-status">尚未开始修行</span><span class="live-dot"></span></div><div id="activity-icon" class="activity-icon" aria-hidden="true">☯</div><h2 id="activity-name">静心，开始修行</h2><p id="activity-detail">打坐、采集、炼制或历练，选定后即可自动进行。</p><div class="track activity-track"><span id="activity-fill"></span></div><div class="activity-timing"><span id="activity-time">等待开始</span><span id="activity-percent">—</span></div><button id="stop-action" class="secondary-button" type="button" disabled>停止修行</button><div class="offline-note">离开网页后，也会按当前活动结算修行所得。</div></section>
+          <section class="tip-card"><span class="eyebrow">修行手记</span><p id="game-tip">打坐积累修为，突破提升实力。采药炼丹可为历练恢复生命，采矿炼器可提升攻击和防御。</p><div class="tip-links"><button type="button" data-view="mining">去采矿 ↗</button><button type="button" data-view="smithing">去炼器 ↗</button></div></section>
+          <div class="save-status"><span id="save-dot" class="live-dot"></span><span id="save-status">自动存档已开启</span></div>
+        </aside>
+      </div>
+      <footer class="page-footer"><span>放置修仙 <span class="footer-dot">·</span> 初入仙途 v1.0</span><span>修行进度保存在当前浏览器。</span></footer>
+    </div>
+  </div>
+    </details>
+    <footer class="simple-footer"><span id="simple-save-status">自动保存已开启</span><span>离线最多结算 8 小时</span></footer>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="offline-dialog" class="game-dialog"><form method="dialog"><button class="dialog-close" aria-label="关闭离线收益">×</button><div class="dialog-symbol" aria-hidden="true">☯</div><div class="eyebrow">道友，欢迎归来</div><h2>山中一日，修行未歇。</h2><p id="offline-duration"></p><div id="offline-rewards" class="offline-rewards"></div><p id="offline-stop" class="dialog-hint"></p><button class="primary-button" value="close">继续修行</button></form></dialog>
+  <dialog id="save-dialog" class="game-dialog"><button id="close-save" class="dialog-close" type="button" aria-label="关闭存档管理">×</button><div class="eyebrow">留存修行所得</div><h2>存档与备份</h2><p>游戏会自动保存。导出一份备份，可以把修行进度带到另一个浏览器。</p><div class="save-options"><button id="export-save" class="primary-button" type="button">导出存档</button><label class="secondary-button file-label" for="import-file">选择存档文件<input id="import-file" type="file" accept="application/json,.json"></label></div><div id="import-preview" class="import-preview" hidden><p id="import-description"></p><button id="confirm-import" type="button" class="primary-button">载入这份存档</button><small>载入后会替换当前进度，请先导出备份。</small></div><p id="save-message" class="dialog-hint" role="status"></p></dialog>
+  <noscript><div class="noscript">这个小游戏需要浏览器启用 JavaScript。</div></noscript>
+</body>
+</html>
+
