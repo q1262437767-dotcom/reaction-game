@@ -7,7 +7,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 22;
+  const VERSION = 23;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -15,8 +15,8 @@
   const CONNECT_TIMEOUT = 22000;
   const HEARTBEAT_MS = 2000;
   const SILENCE_TIMEOUT = 20000;
-  const TYPES = new Set(['start', 'state', 'input', 'pause', 'lobby', 'loadout']);
-  const HOST_TYPES = new Set(['start', 'state', 'pause', 'lobby', 'loadout']);
+  const TYPES = new Set(['start', 'state', 'sync', 'input', 'pause', 'lobby', 'loadout']);
+  const HOST_TYPES = new Set(['start', 'state', 'sync', 'pause', 'lobby', 'loadout']);
   const GUEST_TYPES = new Set(['input', 'pause', 'lobby', 'loadout']);
   const REJECTIONS = {
     'room-full': '房间已有两名玩家，请创建新的房间。',

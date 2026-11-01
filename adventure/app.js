@@ -25,6 +25,9 @@
   let remoteFoxRescued = false;
   let remoteCampReady = false;
   let remoteInput = {}, remoteAt = 0, remoteSeq = -1, seq = 0, lastSend = 0;
+  let netRev = 0, netStamp = '', linkageSent = '', lastFullSend = 0, lastInputKey = '';
+  const netDebug = typeof location !== 'undefined' && /(?:\?|&)netdebug=1(?:&|$)/.test(location.search);
+  const netMeters = { full: 0, sync: 0, input: 0, fullBytes: 0, syncBytes: 0, inputBytes: 0, windowStart: 0 };
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
   let muted = false, audio = null, soundLast = 0, uiSoundAt = -Infinity, resultNext = null;
   const heardEvents = new Set(), soundNodes = new Set(), soundAt = new Map(), chapterNotesSeen = new Set(), chapterMomentsSeen = new Set();
@@ -1077,7 +1080,8 @@
     clearChapterEnding(); runId = newRunId(); chapterEndingEligible = gameMode === 'chapter' && mission === 'chapter1' ? runId : ''; finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
-    if (isCoop && !net.send({ type: 'start', state: E.snapshot(state, true), runId })) {
+    netRev = 1; netStamp = E.networkStamp(state); linkageSent = E.linkageStamp(state); lastFullSend = performance.now(); lastSend = 0; lastInputKey = '';
+    if (isCoop && !net.send({ type: 'start', state: E.snapshot(state, true), runId, rev: netRev })) {
       pause(true, false); toast('开局消息尚未送达，请稍后点“重新出发”。');
     }
     startTutorial(); primeChapterNarration(); enableAudio(); canvas.focus(); hud();
@@ -1417,6 +1421,80 @@
     }
     return true;
   }
+  function validSync(patch) {
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
+    const caps = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, interactables: 30, decoys: 8, companions: 2 };
+    for (const key of Object.keys(caps)) {
+      const value = patch[key];
+      if (value === undefined) continue;
+      if (!Array.isArray(value) || value.length > caps[key] || value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
+    }
+    const players = patch.players;
+    if (!players || typeof players !== 'object' || Array.isArray(players) || !players.p1 || !players.p2) return false;
+    for (const id of ['p1', 'p2']) {
+      const player = players[id];
+      if (!player || typeof player !== 'object' || Array.isArray(player) || !Number.isFinite(player.x) || !Number.isFinite(player.y) || !Number.isFinite(player.hp)) return false;
+    }
+    return true;
+  }
+  function meterNet(kind, message) {
+    if (!netDebug) return;
+    const now = performance.now();
+    if (!netMeters.windowStart) netMeters.windowStart = now;
+    const size = new TextEncoder().encode(JSON.stringify(message)).length;
+    netMeters[kind] += 1;
+    netMeters[kind + 'Bytes'] += size;
+    if (now - netMeters.windowStart < 2000) return;
+    const seconds = (now - netMeters.windowStart) / 1000;
+    console.info(`联机 ${(seconds).toFixed(1)}s：完整 ${netMeters.full} 次 ${netMeters.fullBytes} B，增量 ${netMeters.sync} 次 ${netMeters.syncBytes} B，输入 ${netMeters.input} 次 ${netMeters.inputBytes} B`);
+    netMeters.full = netMeters.sync = netMeters.input = netMeters.fullBytes = netMeters.syncBytes = netMeters.inputBytes = 0;
+    netMeters.windowStart = now;
+  }
+  function inputKey(sample) {
+    return [Math.round(sample.mx * 20), Math.round(sample.my * 20), Math.round(sample.aimX / 4), Math.round(sample.aimY / 4), sample.shoot ? 1 : 0, sample.dash ? 1 : 0, sample.guard ? 1 : 0, sample.guardPulse ? 1 : 0, sample.interact ? 1 : 0, sample.switchWeapon ? 1 : 0, sample.switchPulse ? 1 : 0].join(',');
+  }
+  function hostBusy(now) {
+    if (state.bullets.length || state.particles.length || (state.decoys && state.decoys.length)) return true;
+    for (const player of Object.values(state.players)) {
+      if (player.moving || player.dashTime > 0 || player.meleeTime > 0 || player.guarding || player.downed) return true;
+    }
+    for (const enemy of state.enemies) {
+      if (enemy.rhythm || enemy.chargeTime > 0 || enemy.stagger > 0 || enemy.windup > 0) return true;
+    }
+    if (state.chapter && state.chapter.cart && state.chapter.cart.position > 0 && state.chapter.cart.position < 1) return true;
+    if (now - remoteAt < 250 && remoteInput && (remoteInput.mx || remoteInput.my || remoteInput.shoot || remoteInput.dash || remoteInput.guard || remoteInput.interact || remoteInput.switchWeapon)) return true;
+    return false;
+  }
+  function sendHostState(now) {
+    const stamp = E.networkStamp(state);
+    const finishedRun = state.status !== 'playing';
+    if (finishedRun && stamp === netStamp && lastFullSend) return;
+    const needFull = !netRev || stamp !== netStamp || (!finishedRun && now - lastFullSend >= 400);
+    if (!needFull && now - lastSend < (hostBusy(now) ? 50 : 100)) return;
+    if (needFull) {
+      const message = { type: 'state', state: E.snapshot(state, true), runId, rev: netRev + 1 };
+      if (!net.send(message)) return;
+      netRev += 1; netStamp = stamp; linkageSent = E.linkageStamp(state); lastFullSend = now; lastSend = now;
+      meterNet('full', message);
+      return;
+    }
+    const linkage = E.linkageStamp(state);
+    const message = { type: 'sync', runId, rev: netRev, room: state.room.index, state: E.syncPatch(state, linkage === linkageSent) };
+    if (!net.send(message)) return;
+    linkageSent = linkage; lastSend = now;
+    meterNet('sync', message);
+  }
+  function sendGuestInput(now) {
+    const sample = input();
+    const pulsed = dashPulse || guardPulse || interactPulse || switchPulse;
+    const key = inputKey(sample);
+    const due = pulsed || key !== lastInputKey ? 30 : 100;
+    if (now - lastSend < due) return;
+    const message = { type: 'input', input: sample, seq: seq + 1 };
+    if (!net.send(message)) return;
+    seq += 1; lastInputKey = key; dashPulse = guardPulse = interactPulse = switchPulse = false; lastSend = now;
+    meterNet('input', message);
+  }
   function receive(msg) {
     if (!net || !msg || typeof msg !== 'object') return;
     if (net.role === 'host') {
@@ -1435,18 +1513,20 @@
         const preparation = safeCampLoadout(msg.camp), companion = safeCompanion(msg.companion);
         if (preparation && companion !== false && (msg.foxRescued !== false || companion === null)) { remoteWeapon = msg.weapon; remoteMelee = msg.melee || 'blade'; remoteCamp = preparation; remoteCompanion = companion; remoteFoxRescued = msg.foxRescued === true || !!companion; remoteCampReady = true; updateLobbyMenu(); }
       }
-    } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && validState(msg.state)) {
+    } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && Number.isInteger(msg.rev) && msg.rev >= 0 && validState(msg.state)) {
       if (msg.runId === runId && state) return;
       clearChapterEnding();
-      mode = 'guest'; state = msg.state; runId = msg.runId; finished = ''; paused = false; disconnected = false;
+      mode = 'guest'; state = msg.state; runId = msg.runId; netRev = msg.rev; lastSend = 0; lastInputKey = ''; finished = ''; paused = false; disconnected = false;
       chapterEndingEligible = state.mode === 'chapter' && state.chapter.id === 'chapter1' && state.status === 'playing' ? runId : '';
       if (state.mode === 'chapter') $('chapter-select').value = state.mission.id;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
       clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing');
       startTutorial(); primeChapterNarration(); displayPause(); canvas.focus(); hud();
-    } else if (msg.type === 'state' && msg.runId === runId && validState(msg.state)) {
+    } else if (msg.type === 'state' && msg.runId === runId && Number.isInteger(msg.rev) && msg.rev >= netRev && validState(msg.state)) {
       if (state && state.mode === 'chapter' && finished === runId && state.status !== msg.state.status) return;
-      state = msg.state; settle();
+      netRev = msg.rev; state = msg.state; settle();
+    } else if (msg.type === 'sync' && msg.runId === runId && state && msg.rev === netRev && msg.room === state.room.index && finished !== runId && validSync(msg.state)) {
+      E.applySync(state, msg.state); settle();
     }
     if (msg.type === 'pause' && msg.reason === 'tutorial') {
       if (msg.runId === runId && playing() && ['relay', 'hunt'].includes(state.mode) && typeof msg.paused === 'boolean') {
@@ -1889,9 +1969,7 @@
     const delta = last ? Math.min((now - last) / 1000, .1) : 0; last = now;
     if (!hudEditing && playing() && !paused && !rotateHold && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
       if (mode === 'guest') {
-        if (net && net.connected && now - lastSend >= 30) {
-          if (net.send({ type: 'input', input: input(), seq: ++seq })) { dashPulse = guardPulse = interactPulse = switchPulse = false; lastSend = now; }
-        }
+        if (net && net.connected) sendGuestInput(now);
       } else {
         accumulator += delta;
         while (accumulator >= 1 / 60 && state.status === 'playing') {
@@ -1906,9 +1984,7 @@
       }
     } else accumulator = 0;
     companionUpdates(); chapterUpdates(); soundEvents();
-    if (mode === 'host' && net && net.connected && state && now - lastSend >= 50) {
-      net.send({ type: 'state', state: E.snapshot(state, true), runId }); lastSend = now;
-    }
+    if (mode === 'host' && net && net.connected && state) sendHostState(now);
     settle();
     advanceChapterEnding(now);
     syncPlayCanvas();
