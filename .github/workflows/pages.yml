@@ -1,0 +1,64 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      build_type: ${{ steps.source.outputs.build_type }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:pages
+      - name: See whether Pages is set to GitHub Actions
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if build_type=$(gh api "repos/${{ github.repository }}/pages" --jq .build_type); then
+            echo "build_type=$build_type" >> "$GITHUB_OUTPUT"
+            echo "Pages build_type=$build_type"
+          else
+            echo "build_type=unknown" >> "$GITHUB_OUTPUT"
+            echo "Could not read the Pages setting. The site keeps serving the branch."
+          fi
+      - name: Upload the Pages artifact
+        if: steps.source.outputs.build_type == 'workflow'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Branch deploy is still the live source
+        if: steps.source.outputs.build_type != 'workflow'
+        run: |
+          echo "GitHub Pages source is '${{ steps.source.outputs.build_type }}', not GitHub Actions."
+          echo "main still serves the unminified files. Nothing was deployed from this workflow."
+          echo "After Settings → Pages → Source is GitHub Actions, re-run this workflow."
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.build_type == 'workflow'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

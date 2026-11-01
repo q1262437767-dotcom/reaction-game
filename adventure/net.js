@@ -86,7 +86,7 @@
       const match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Fall back to the current page cache key. */ }
-    return '?v=43';
+    return '?v=44';
   })();
   let peerLibrary = null;
 
@@ -514,4 +514,4 @@
   }
 
   global.AdventureNet = Object.freeze({ create, protocolVersion: VERSION });
-})(window);
+})(typeof globalThis !== 'undefined' ? globalThis : this);

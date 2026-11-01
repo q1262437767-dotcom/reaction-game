@@ -892,7 +892,12 @@
     if ((relayTutorial || huntTutorial) && net && net.connected) net.send({ type: 'pause', reason: 'tutorial', runId, paused: false });
     clearInput(); if (playing()) { enableAudio(); canvas.focus(); }
   }
-  function escapeHTML(value) { return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]); }
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
   function showMission() {
     const gameMode = selectedGameMode(), random = gameMode === 'random', relay = gameMode === 'relay', hunt = gameMode === 'hunt', chapter = gameMode === 'chapter';
     const mission = missionInfo(selectedMission()), completion = camp.missions[mission.id];
@@ -930,18 +935,35 @@
     $('chapter-camp-status').setAttribute('data-complete', String(chapterDone.completed));
     $('chapter-camp-copy').textContent = chapterDone.secondCompleted ? '木场工人已经安顿下来。他们看见过搬运炉芯的重车，车辙一直通向西边旧线。' : chapterDone.completed ? '采集队已经回营。第二节《木场求援》已开放，可以去回应旧木场的求援灯讯。' : '进入苔火工坊借回火种，回营点亮归途灯。本节通关记录可随账号保存。';
     $('camp-copy').textContent = `现有 ${camp.coins} 星屑。${chapterDone.completed ? '第一章第一节的归途灯已点亮。' : '第一章第一节等待你从工坊借回火种。'}旧版任务营灯 ${progress.lit} / 3，${progress.allCleared ? '险境任务已开放。' : '完成旧版三项任务可开启险境任务。'}${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
-    $('camp-objectives').innerHTML = C.MISSIONS.map((mission, i) => {
+    $('camp-objectives').replaceChildren(...C.MISSIONS.map((mission, i) => {
       const complete = camp.missions[mission.id].clears > 0;
-      return `<div class="camp-lamp${complete ? ' lit' : ''}" data-complete="${complete}"><i aria-hidden="true"></i><strong>第 ${i + 1} 盏营灯</strong><span>${escapeHTML(mission.name)} · ${complete ? '已点亮' : '等待修复'}</span></div>`;
-    }).join('');
-    $('journal-list').innerHTML = C.BADGES.map(badge => {
+      const lamp = el('div', 'camp-lamp' + (complete ? ' lit' : ''));
+      lamp.setAttribute('data-complete', String(complete));
+      lamp.append(el('i'), el('strong', '', '第 ' + (i + 1) + ' 盏营灯'), el('span', '', mission.name + ' · ' + (complete ? '已点亮' : '等待修复')));
+      lamp.firstElementChild.setAttribute('aria-hidden', 'true');
+      return lamp;
+    }));
+    $('journal-list').replaceChildren(...C.BADGES.map(badge => {
       const earned = camp.badges.includes(badge.id);
-      return `<div class="journal-item${earned ? ' earned' : ''}"><span class="journal-icon" aria-hidden="true"><span>${earned ? '◆' : '◇'}</span></span><div><strong>${escapeHTML(badge.name)}</strong><p>${escapeHTML(badge.description)}</p></div><span class="journal-status">${earned ? '已达成' : '未达成'}</span></div>`;
-    }).join('');
-    $('relic-journal').innerHTML = C.RELICS.map(id => {
+      const item = el('div', 'journal-item' + (earned ? ' earned' : ''));
+      const icon = el('span', 'journal-icon');
+      icon.setAttribute('aria-hidden', 'true');
+      icon.append(el('span', '', earned ? '◆' : '◇'));
+      const copy = el('div');
+      copy.append(el('strong', '', badge.name), el('p', '', badge.description));
+      item.append(icon, copy, el('span', 'journal-status', earned ? '已达成' : '未达成'));
+      return item;
+    }));
+    $('relic-journal').replaceChildren(...C.RELICS.map(id => {
       const relic = E.BUFFS[id] || { label: id, description: '' }, found = camp.relics.includes(id);
-      return `<div class="journal-item${found ? ' earned' : ''}"><span class="journal-icon" aria-hidden="true">${found ? '◆' : '◇'}</span><div><strong>${escapeHTML(relic.label)}</strong><p>${escapeHTML(relic.description)}</p></div><span class="journal-status">${found ? '已发现' : '待发现'}</span></div>`;
-    }).join('');
+      const item = el('div', 'journal-item' + (found ? ' earned' : ''));
+      const icon = el('span', 'journal-icon', found ? '◆' : '◇');
+      icon.setAttribute('aria-hidden', 'true');
+      const copy = el('div');
+      copy.append(el('strong', '', relic.label), el('p', '', relic.description));
+      item.append(icon, copy, el('span', 'journal-status', found ? '已发现' : '待发现'));
+      return item;
+    }));
     for (const mission of C.MISSIONS) {
       const item = $('mission-select').querySelector(`option[value="${mission.id}"]`);
       item.disabled = !C.canPlay(camp, mission.id, 1);
@@ -1901,30 +1923,40 @@
     };
     button.addEventListener('pointerup', event => release(event, false)); button.addEventListener('pointercancel', event => release(event, true)); button.addEventListener('lostpointercapture', event => release(event, true));
   }
+  const CHAPTER_NOTE_CAP = 8;
+  function chapterNoteArticle(id) {
+    const note = E.CHAPTER_NOTES[id];
+    const article = document.createElement('article');
+    article.dataset.clue = id;
+    article.append(el('strong', '', note.title), el('p', '', note.text));
+    return article;
+  }
   function renderChapterNotes() {
-    const clues = state && state.mode === 'chapter' && state.chapter && state.chapter.clues.length ? state.chapter.clues : null;
-    const key = clues ? clues.join('\0') : '';
+    const root = $('chapter-notes');
+    const raw = state && state.mode === 'chapter' && state.chapter && Array.isArray(state.chapter.clues) ? state.chapter.clues : [];
+    const clues = [];
+    for (const id of raw) {
+      if (typeof id === 'string' && E.CHAPTER_NOTES[id] && !clues.includes(id)) clues.push(id);
+    }
+    const shown = clues.slice(-CHAPTER_NOTE_CAP);
+    const key = shown.join('\0');
     if (key === chapterNotesKey) return;
     chapterNotesKey = key;
-    const root = $('chapter-notes');
-    if (!clues) {
-      const empty = document.createElement('p');
-      empty.textContent = '尚未发现记录。路标与旧工单可以按 E 查看。';
-      root.replaceChildren(empty);
+    if (!shown.length) {
+      root.replaceChildren(el('p', '', '尚未发现记录。路标与旧工单可以按 E 查看。'));
       return;
     }
-    const fragment = document.createDocumentFragment();
-    for (const id of clues) {
-      const note = E.CHAPTER_NOTES[id];
-      const article = document.createElement('article');
-      const title = document.createElement('strong');
-      const body = document.createElement('p');
-      title.textContent = note.title;
-      body.textContent = note.text;
-      article.append(title, body);
-      fragment.append(article);
+    const existing = [...root.querySelectorAll('article')].map(node => node.dataset.clue);
+    const prefix = existing.length <= shown.length && existing.every((id, index) => id === shown[index]);
+    if (!prefix) {
+      root.replaceChildren(...shown.map(chapterNoteArticle));
+      return;
     }
-    root.replaceChildren(fragment);
+    for (const child of [...root.childNodes]) {
+      if (child.nodeName !== 'ARTICLE') child.remove();
+    }
+    for (const id of shown.slice(existing.length)) root.append(chapterNoteArticle(id));
+    while (root.childElementCount > CHAPTER_NOTE_CAP) root.removeChild(root.firstElementChild);
   }
   function hud() {
     const p = state && state.players[localId()];
