@@ -401,6 +401,26 @@
   }
   function isTimber(s) { return s.mode === 'chapter' && s.chapter && s.chapter.id === 'chapter1_2'; }
   function timberCartWall(c) { return { id: 'timber-cart', timberCart: true, x: 438, y: 417 - 145 * c.cart.position, w: 84, h: 56 }; }
+  // Speculative slide rect only. Never inserted into a room; a blocked cart leaves the live wall as it was.
+  var timberSlide = { id: 'timber-cart', timberCart: true, x: 438, y: 417, w: 84, h: 56 };
+  function placeTimberCart(walls, position) {
+    if (!walls) return;
+    var y = 417 - 145 * position, last = walls.length - 1, wall = last >= 0 ? walls[last] : null, i;
+    if (wall && wall.timberCart) {
+      for (i = 0; i < last; i += 1) if (walls[i].timberCart) { wall = null; break; }
+      if (wall) { if (wall.y !== y) wall.y = y; return; }
+    }
+    var next = [], cart = null;
+    for (i = 0; i < walls.length; i += 1) {
+      if (walls[i].timberCart) cart = walls[i];
+      else next.push(walls[i]);
+    }
+    if (!cart) cart = timberCartWall({ cart: { position: position } });
+    cart.id = 'timber-cart'; cart.timberCart = true; cart.x = 438; cart.y = y; cart.w = 84; cart.h = 56;
+    next.push(cart);
+    walls.length = 0;
+    for (i = 0; i < next.length; i += 1) walls.push(next[i]);
+  }
   function createTimber(s) {
     var definitions = [['信号岗','camp',0,0,[1]],['堆木道','battle',1,0,[0,2]],['绞盘棚','puzzle',2,0,[1,3,5]],
       ['塌棚','rescue',2,1,[2,4]],['装车坪','battle',3,1,[3,5]],['吊装场','boss',3,0,[2,4]]];
@@ -447,7 +467,7 @@
       else if(q.used)q.active=false;
       if(q.kind==='relic'&&s.runBuffs.indexOf(q.buff)>=0){q.used=true;q.active=false;}
     });
-    if(s.room.index===5){s.walls=s.walls.filter(function(w){return !w.timberCart;});s.walls.push(timberCartWall(c));}
+    if(s.room.index===5)placeTimberCart(s.walls,c.cart.position);
   }
   function spawnTimberBoss(s) {
     if(!isTimber(s)||!s.chapter.workerFreed||s.chapter.bossDefeated)return;
@@ -456,10 +476,13 @@
   }
   function updateTimber(s,dt) {
     if(!isTimber(s)||dt<=0)return;var c=s.chapter,delta=c.cart.target-c.cart.position;
-    if(Math.abs(delta)>.00001){var next=clone(c);next.cart.position=clamp(c.cart.position+Math.sign(delta)*Math.min(Math.abs(delta),dt*.8),0,1);if(Math.abs(next.cart.position-c.cart.target)<.00001)next.cart.position=c.cart.target;var wall=timberCartWall(next);
-      var data=s.room.index===5?s:s.roomData[5],blocked=s.room.index===5&&Object.keys(s.players).some(function(k){return circleRect(s.players[k],wall);});
-      if(!blocked&&data)blocked=data.enemies.some(function(e){return e.hp>0&&!e.timber&&circleRect(e,wall);});
-      if(!blocked){c.cart.position=next.cart.position;if(data){data.walls=data.walls.filter(function(w){return !w.timberCart;});data.walls.push(wall);}}
+    if(Math.abs(delta)>.00001){
+      var nextPos=clamp(c.cart.position+Math.sign(delta)*Math.min(Math.abs(delta),dt*.8),0,1);
+      if(Math.abs(nextPos-c.cart.target)<.00001)nextPos=c.cart.target;
+      timberSlide.y=417-145*nextPos;
+      var data=s.room.index===5?s:s.roomData[5],blocked=s.room.index===5&&Object.keys(s.players).some(function(k){return circleRect(s.players[k],timberSlide);});
+      if(!blocked&&data)blocked=data.enemies.some(function(e){return e.hp>0&&!e.timber&&circleRect(e,timberSlide);});
+      if(!blocked){c.cart.position=nextPos;if(data)placeTimberCart(data.walls,nextPos);}
     }
     spawnTimberBoss(s);syncTimber(s);
   }
