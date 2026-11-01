@@ -29,6 +29,7 @@
   const netDebug = typeof location !== 'undefined' && /(?:\?|&)netdebug=1(?:&|$)/.test(location.search);
   const netMeters = { full: 0, sync: 0, input: 0, fullBytes: 0, syncBytes: 0, inputBytes: 0, windowStart: 0 };
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
+  let chapterNotesKey = null;
   let muted = false, audio = null, soundLast = 0, uiSoundAt = -Infinity, resultNext = null;
   const heardEvents = new Set(), soundNodes = new Set(), soundAt = new Map(), chapterNotesSeen = new Set(), chapterMomentsSeen = new Set();
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, guard: false, active: false };
@@ -1900,6 +1901,31 @@
     };
     button.addEventListener('pointerup', event => release(event, false)); button.addEventListener('pointercancel', event => release(event, true)); button.addEventListener('lostpointercapture', event => release(event, true));
   }
+  function renderChapterNotes() {
+    const clues = state && state.mode === 'chapter' && state.chapter && state.chapter.clues.length ? state.chapter.clues : null;
+    const key = clues ? clues.join('\0') : '';
+    if (key === chapterNotesKey) return;
+    chapterNotesKey = key;
+    const root = $('chapter-notes');
+    if (!clues) {
+      const empty = document.createElement('p');
+      empty.textContent = '尚未发现记录。路标与旧工单可以按 E 查看。';
+      root.replaceChildren(empty);
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const id of clues) {
+      const note = E.CHAPTER_NOTES[id];
+      const article = document.createElement('article');
+      const title = document.createElement('strong');
+      const body = document.createElement('p');
+      title.textContent = note.title;
+      body.textContent = note.text;
+      article.append(title, body);
+      fragment.append(article);
+    }
+    root.replaceChildren(fragment);
+  }
   function hud() {
     const p = state && state.players[localId()];
     const random = state && state.mode === 'random';
@@ -1959,10 +1985,7 @@
     updatePlayChrome();
     $('chapter-journal').hidden = !chapter;
     if (chapter) $('chapter-journal').querySelector('h3').textContent = missionInfo(state.mission.id).name + ' · 已发现记录';
-    $('chapter-notes').innerHTML = chapter && state.chapter.clues.length ? state.chapter.clues.map(id => {
-      const note = E.CHAPTER_NOTES[id];
-      return `<article><strong>${escapeHTML(note.title)}</strong><p>${escapeHTML(note.text)}</p></article>`;
-    }).join('') : '<p>尚未发现记录。路标与旧工单可以按 E 查看。</p>';
+    renderChapterNotes();
     applyHudLayout();
   }
   function frame(now) {
