@@ -1,6 +1,10 @@
 # 遗迹小队
 
-原创俯视角动作小游戏。静态 HTML、CSS、JavaScript，无构建步骤。
+原创俯视角动作小游戏。静态 HTML、CSS、JavaScript。`main` 分支仍可直接交给 GitHub Pages；压缩产物只在 Pages 来源改为 GitHub Actions 之后才会上线。
+
+## v44 测试、记录面板与页面体积
+
+`npm test` 覆盖云存档进度闸门（对 `backend/upgrade-progress-guard.sql` 跑真实 PostgreSQL）、联机增量同步的编码/应用往返，以及营地结算和购买。章节记录按条追加，不再整段重写；玩家、队友和云端名字仍只进文本节点。静态资源版本为 44。联机协议仍是 23，玩法和数据库规则没有改。
 
 ## 联机同步（协议 23）
 

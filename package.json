@@ -1,0 +1,13 @@
+{
+  "name": "ruin-runners",
+  "private": true,
+  "description": "Tests and the optional GitHub Pages minify step for 遗迹小队. The game itself stays plain scripts.",
+  "scripts": {
+    "test": "node --test",
+    "build:pages": "node scripts/build-pages.mjs",
+    "size": "node scripts/page-size.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.11"
+  }
+}

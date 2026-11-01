@@ -2,9 +2,11 @@
 
 在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 
-浏览器里的俯视角合作冒险。静态 HTML / CSS / JavaScript，无需构建。玩法、联机、账号与云存档的说明都在 [`adventure/`](adventure/)（见 [adventure/README.md](adventure/README.md)）。
+浏览器里的俯视角合作冒险。源文件仍是静态 HTML / CSS / JavaScript，从 `main` 发布时不需要构建。玩法、联机、账号与云存档的说明都在 [`adventure/`](adventure/)（见 [adventure/README.md](adventure/README.md)）。
 
-仓库首页会跳转到 `adventure/`。GitHub Pages 从 `main` 发布后，打开 https://q1262437767-dotcom.github.io/reaction-game/ 也会进入同一款游戏。
+仓库首页会跳转到 `adventure/`。GitHub Pages 从 `main` 发布后，打开 https://q1262437767-dotcom.github.io/reaction-game/ 也会进入同一款游戏。若在仓库设置里把 Pages 来源改成 GitHub Actions，则会改为发布压缩后的同一套文件；没改设置之前，线上继续直接使用 `main` 里的源文件。
+
+测试：`npm test`（进度闸门用例需要本机 PostgreSQL，或使用仓库里的 GitHub Actions）。
 
 ## 本地运行
 
