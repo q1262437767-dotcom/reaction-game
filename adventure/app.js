@@ -11,8 +11,11 @@
   const WEAPONS_TUTORIAL_STORE = 'ruins-squad-weapons-tutorial-v1';
   const TOUCH_STORE = 'ruins-squad-touch-controls-v1';
   const MELEE_STORE = 'ruins-squad-melee-choice-v1';
+  const HUD_STORE = 'ruins-squad-hud-layout-v1';
+  const MAP_W = 190, MAP_H = 164, MAP_EDGE = 18;
   let touchPreference = readTouchPreference(), touchSeen = false, joystickId = null;
   let meleeChoice = readMeleeChoice();
+  let hudLayout = readHudLayout(), hudView = hudLayout, hudEditing = false, hudDrag = null;
   const touchPointers = new Map();
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let account = null;
@@ -101,6 +104,254 @@
   function readMeleeChoice() {
     try { return localStorage.getItem(MELEE_STORE) === 'spear' ? 'spear' : 'blade'; }
     catch (_) { return 'blade'; }
+  }
+  function defaultHudLayout() {
+    return { mapScale: 0.76, mapInsetX: 6, mapInsetY: 4, stickScale: 1, stickInsetX: 36, stickInsetY: 24, skillsScale: 1, skillsInsetX: 22, skillsInsetY: 16 };
+  }
+  function clampNum(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+  function readHudLayout() {
+    const defaults = defaultHudLayout();
+    try {
+      const raw = JSON.parse(localStorage.getItem(HUD_STORE) || 'null');
+      if (!raw || typeof raw !== 'object') return defaults;
+      const pick = (key, min, max) => {
+        const value = Number(raw[key]);
+        return Number.isFinite(value) ? clampNum(value, min, max) : defaults[key];
+      };
+      return {
+        mapScale: pick('mapScale', 0.52, 1.2),
+        mapInsetX: pick('mapInsetX', 0, 800),
+        mapInsetY: pick('mapInsetY', 0, 600),
+        stickScale: pick('stickScale', 0.72, 1.3),
+        stickInsetX: pick('stickInsetX', 0, 1200),
+        stickInsetY: pick('stickInsetY', 0, 900),
+        skillsScale: pick('skillsScale', 0.72, 1.3),
+        skillsInsetX: pick('skillsInsetX', 0, 1200),
+        skillsInsetY: pick('skillsInsetY', 0, 900)
+      };
+    } catch (_) { return defaults; }
+  }
+  function saveHudLayout() {
+    try { localStorage.setItem(HUD_STORE, JSON.stringify(hudLayout)); }
+    catch (_) { /* This device keeps the layout for the current page. */ }
+  }
+  function safeInsets() {
+    const probe = $('safe-probe');
+    if (!probe) return { top: 0, right: 0, bottom: 0, left: 0 };
+    const style = getComputedStyle(probe);
+    const px = name => { const value = parseFloat(style[name]); return Number.isFinite(value) ? value : 0; };
+    return { top: px('borderTopWidth'), right: px('borderRightWidth'), bottom: px('borderBottomWidth'), left: px('borderLeftWidth') };
+  }
+  function handheldMapActive() {
+    return isHandheldViewport() && !isPortraitViewport() && !!state && $('start-screen').hidden;
+  }
+  function mapSpace() {
+    const rect = canvas.getBoundingClientRect();
+    if (handheldMapActive() && canvas.width > 0 && canvas.height > 0) return { w: canvas.width, h: canvas.height, rect };
+    const cssW = Math.max(1, rect.width || window.innerWidth || 960);
+    const cssH = Math.max(1, rect.height || window.innerHeight || 600);
+    return { w: 960, h: Math.round(clampNum(960 * cssH / cssW, 280, 600)), rect: rect.width ? rect : { left: 0, top: 0, width: cssW, height: cssH } };
+  }
+  function clampLayout(layout) {
+    const next = Object.assign({}, layout);
+    const space = mapSpace();
+    const safe = safeInsets();
+    next.mapScale = clampNum(next.mapScale, 0.52, 1.2);
+    next.stickScale = clampNum(next.stickScale, 0.72, 1.3);
+    next.skillsScale = clampNum(next.skillsScale, 0.72, 1.3);
+    if (space.rect.width > 40 && space.w > 40 && space.h > 40) {
+      const sx = space.w / space.rect.width, sy = space.h / space.rect.height;
+      const mapW = MAP_W * next.mapScale, mapH = MAP_H * next.mapScale;
+      next.mapInsetX = clampNum(next.mapInsetX, 0, Math.max(0, Math.min(space.w * 0.5 - mapW, space.w - MAP_EDGE - safe.right * sx - mapW - 8)));
+      next.mapInsetY = clampNum(next.mapInsetY, 0, Math.max(0, Math.min(space.h * 0.46 - mapH, space.h - MAP_EDGE - safe.top * sy - mapH - 8)));
+    }
+    const viewW = window.innerWidth || 0, viewH = window.innerHeight || 0;
+    if (viewW > 40 && viewH > 40) {
+      const stick = 118 * next.stickScale, skillsW = 200 * next.skillsScale, skillsH = 198 * next.skillsScale;
+      next.stickInsetX = clampNum(next.stickInsetX, 0, Math.max(0, Math.min(viewW * 0.5 - safe.left - stick, viewW - safe.left - safe.right - stick - 8)));
+      next.stickInsetY = clampNum(next.stickInsetY, 0, Math.max(0, viewH - safe.top - safe.bottom - stick - 8));
+      next.skillsInsetX = clampNum(next.skillsInsetX, 0, Math.max(0, Math.min(viewW * 0.52 - safe.right - skillsW, viewW - safe.left - safe.right - skillsW - 8)));
+      next.skillsInsetY = clampNum(next.skillsInsetY, 0, Math.max(0, viewH - safe.top - safe.bottom - skillsH - 8));
+    }
+    return next;
+  }
+  function mapGeometry(space) {
+    const safe = safeInsets();
+    const rect = space.rect.width ? space.rect : { left: 0, top: 0, width: space.w, height: space.h };
+    const sx = rect.width ? space.w / rect.width : 1, sy = rect.height ? space.h / rect.height : 1;
+    const scale = hudView.mapScale;
+    const anchorX = space.w - MAP_EDGE - hudView.mapInsetX - safe.right * sx;
+    const anchorY = MAP_EDGE + hudView.mapInsetY + safe.top * sy;
+    const width = MAP_W * scale, height = MAP_H * scale;
+    return { scale, anchorX, anchorY, width, height, left: anchorX - width, top: anchorY, rect };
+  }
+  function mapPaintOptions() {
+    if (!handheldMapActive()) return {};
+    const geo = mapGeometry(mapSpace());
+    return { mapScale: geo.scale, mapAnchorX: geo.anchorX, mapAnchorY: geo.anchorY };
+  }
+  function placeMapEditor() {
+    const el = $('map-editor');
+    if (!el || !hudEditing) return;
+    const space = mapSpace(), geo = mapGeometry(space);
+    el.style.left = (geo.rect.left + geo.left / space.w * geo.rect.width) + 'px';
+    el.style.top = (geo.rect.top + geo.top / space.h * geo.rect.height) + 'px';
+    el.style.width = Math.max(64, geo.width / space.w * geo.rect.width) + 'px';
+    el.style.height = Math.max(52, geo.height / space.h * geo.rect.height) + 'px';
+  }
+  function applyHudLayout() {
+    hudView = clampLayout(hudLayout);
+    const wrap = $('game-wrap');
+    const setVar = (name, value) => wrap.style.setProperty(name, value);
+    setVar('--stick-x', hudView.stickInsetX.toFixed(1) + 'px');
+    setVar('--stick-y', hudView.stickInsetY.toFixed(1) + 'px');
+    setVar('--stick-scale', String(Math.round(hudView.stickScale * 1000) / 1000));
+    setVar('--skills-x', hudView.skillsInsetX.toFixed(1) + 'px');
+    setVar('--skills-y', hudView.skillsInsetY.toFixed(1) + 'px');
+    setVar('--skills-scale', String(Math.round(hudView.skillsScale * 1000) / 1000));
+    if (handheldMapActive()) {
+      const space = mapSpace(), geo = mapGeometry(space);
+      const mapLeft = geo.rect.left + geo.left / space.w * geo.rect.width;
+      setVar('--hud-right', Math.max(12, Math.round(window.innerWidth - mapLeft + 14)) + 'px');
+      const touchOn = wrap.getAttribute('data-touch-controls') === 'true' && !$('touch-controls').hidden;
+      if (touchOn) {
+        const safe = safeInsets();
+        const stickClear = safe.bottom + hudView.stickInsetY + 118 * hudView.stickScale;
+        const skillsClear = safe.bottom + hudView.skillsInsetY + 198 * hudView.skillsScale;
+        setVar('--hint-bottom', Math.round(Math.max(stickClear, skillsClear) + 12) + 'px');
+      } else wrap.style.removeProperty('--hint-bottom');
+    } else {
+      wrap.style.removeProperty('--hud-right');
+      wrap.style.removeProperty('--hint-bottom');
+    }
+    if (hudEditing) placeMapEditor();
+  }
+  function commitHudLayout() {
+    const round = (value, places) => { const factor = 10 ** places; return Math.round(value * factor) / factor; };
+    hudLayout = {
+      mapScale: round(hudView.mapScale, 2), mapInsetX: Math.round(hudView.mapInsetX), mapInsetY: Math.round(hudView.mapInsetY),
+      stickScale: round(hudView.stickScale, 2), stickInsetX: Math.round(hudView.stickInsetX), stickInsetY: Math.round(hudView.stickInsetY),
+      skillsScale: round(hudView.skillsScale, 2), skillsInsetX: Math.round(hudView.skillsInsetX), skillsInsetY: Math.round(hudView.skillsInsetY)
+    };
+    saveHudLayout();
+    applyHudLayout();
+    syncHudSliders();
+  }
+  function syncHudSliders() {
+    const set = (id, value) => { const el = $(id); if (el) el.value = String(Math.round(value)); };
+    set('hud-map-scale', hudView.mapScale * 100);
+    set('hud-map-inset', hudView.mapInsetX);
+    set('hud-stick-scale', hudView.stickScale * 100);
+    set('hud-stick-inset', hudView.stickInsetX);
+    set('hud-skills-scale', hudView.skillsScale * 100);
+    set('hud-skills-inset', hudView.skillsInsetX);
+  }
+  function canDragHud() {
+    return isHandheldViewport() && !isPortraitViewport() && !!state && $('start-screen').hidden && $('end-screen').hidden && !chapterEndingActive() && !rotateHold;
+  }
+  function updateHudSettingsLabel() {
+    const drag = canDragHud();
+    const button = $('settings-hud');
+    if (!button) return;
+    button.lastElementChild.textContent = drag ? '拖动调整' : '滑条';
+    button.setAttribute('aria-expanded', String(!drag && !$('hud-sliders').hidden));
+    button.setAttribute('aria-label', drag ? '界面布局：拖动调整小地图、摇杆和技能键' : '界面布局：用滑条调整小地图、摇杆和技能键');
+  }
+  function openHudEditor() {
+    if (!canDragHud()) {
+      const dialogOpen = $('settings-dialog').open;
+      $('hud-sliders').hidden = dialogOpen ? !$('hud-sliders').hidden : false;
+      if (!$('hud-sliders').hidden) syncHudSliders();
+      updateHudSettingsLabel();
+      if (!dialogOpen) openDialog('settings-dialog');
+      return;
+    }
+    $('hud-sliders').hidden = true;
+    dialogPaused = false;
+    hudEditing = true;
+    $('game-wrap').setAttribute('data-hud-edit', 'true');
+    if ($('settings-dialog').open) $('settings-dialog').close();
+    if (playing() && !paused) pause(true, false);
+    clearInput();
+    $('pause-screen').hidden = true;
+    $('hud-editor').hidden = false;
+    updateTouchControls();
+    applyHudLayout();
+    $('hud-editor-done').focus();
+  }
+  function closeHudEditor(options) {
+    if (!hudEditing) return;
+    hudEditing = false;
+    hudDrag = null;
+    $('game-wrap').setAttribute('data-hud-edit', 'false');
+    $('hud-editor').hidden = true;
+    applyHudLayout();
+    commitHudLayout();
+    updateTouchControls();
+    if (options && options.silent) return;
+    if (playing()) displayPause();
+    if (paused && playing() && !$('resume-game').disabled) $('resume-game').focus();
+  }
+  function resetHudLayout() {
+    hudLayout = defaultHudLayout();
+    applyHudLayout();
+    commitHudLayout();
+  }
+  function screenAnchor(kind) {
+    if (kind === 'map') {
+      const space = mapSpace(), geo = mapGeometry(space);
+      return { x: geo.rect.left + geo.anchorX / space.w * geo.rect.width, y: geo.rect.top + geo.anchorY / space.h * geo.rect.height };
+    }
+    const el = kind === 'stick' ? $('joystick') : document.querySelector('.touch-actions');
+    const bounds = el.getBoundingClientRect();
+    return kind === 'stick' ? { x: bounds.left, y: bounds.bottom } : { x: bounds.right, y: bounds.bottom };
+  }
+  function startHudDrag(event, kind, mode) {
+    if (!hudEditing || (event.button !== 0 && event.pointerType !== 'touch')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const anchor = screenAnchor(kind);
+    const dist = Math.hypot(event.clientX - anchor.x, event.clientY - anchor.y);
+    hudDrag = {
+      pointerId: event.pointerId, kind, mode, anchor,
+      startX: event.clientX, startY: event.clientY, dist: Math.max(28, dist),
+      mapInsetX: hudLayout.mapInsetX, mapInsetY: hudLayout.mapInsetY, mapScale: hudLayout.mapScale,
+      stickInsetX: hudLayout.stickInsetX, stickInsetY: hudLayout.stickInsetY, stickScale: hudLayout.stickScale,
+      skillsInsetX: hudLayout.skillsInsetX, skillsInsetY: hudLayout.skillsInsetY, skillsScale: hudLayout.skillsScale
+    };
+    try { if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId); }
+    catch (_) { /* A real press captures; a few browsers reject capture without an active pointer. */ }
+  }
+  function moveHudDrag(event) {
+    if (!hudDrag || event.pointerId !== hudDrag.pointerId) return;
+    if (hudDrag.mode === 'scale') {
+      const dist = Math.hypot(event.clientX - hudDrag.anchor.x, event.clientY - hudDrag.anchor.y);
+      const next = (hudDrag.kind === 'map' ? hudDrag.mapScale : hudDrag.kind === 'stick' ? hudDrag.stickScale : hudDrag.skillsScale) * dist / hudDrag.dist;
+      if (hudDrag.kind === 'map') hudLayout.mapScale = next;
+      else if (hudDrag.kind === 'stick') hudLayout.stickScale = next;
+      else hudLayout.skillsScale = next;
+    } else if (hudDrag.kind === 'map') {
+      const space = mapSpace();
+      const dx = (event.clientX - hudDrag.startX) * space.w / Math.max(1, space.rect.width);
+      const dy = (event.clientY - hudDrag.startY) * space.h / Math.max(1, space.rect.height);
+      hudLayout.mapInsetX = hudDrag.mapInsetX - dx;
+      hudLayout.mapInsetY = hudDrag.mapInsetY + dy;
+    } else if (hudDrag.kind === 'stick') {
+      hudLayout.stickInsetX = hudDrag.stickInsetX + (event.clientX - hudDrag.startX);
+      hudLayout.stickInsetY = hudDrag.stickInsetY - (event.clientY - hudDrag.startY);
+    } else {
+      hudLayout.skillsInsetX = hudDrag.skillsInsetX - (event.clientX - hudDrag.startX);
+      hudLayout.skillsInsetY = hudDrag.skillsInsetY - (event.clientY - hudDrag.startY);
+    }
+    applyHudLayout();
+  }
+  function endHudDrag(event) {
+    if (!hudDrag || event.pointerId !== hudDrag.pointerId) return;
+    hudDrag = null;
+    applyHudLayout();
+    commitHudLayout();
   }
   function supportsTouch() {
     if (touchSeen || Number(navigator.maxTouchPoints) > 0) return true;
@@ -271,15 +522,16 @@
     return Math.min(1.1, Math.max(1, 10 / (9 * shown)));
   }
   function touchGameActive() {
-    return playing() && !paused && !rotateHold && !hasDialog() && !remoteTutorialPending && !((state.practice || relayTutorial || huntTutorial) && tutorialPending);
+    return !hudEditing && playing() && !paused && !rotateHold && !hasDialog() && !remoteTutorialPending && !((state.practice || relayTutorial || huntTutorial) && tutorialPending);
   }
   function updateTouchControls() {
     const enabled = touchPreference === 'show' || touchPreference === 'auto' && (supportsTouch() || isHandheldViewport());
-    $('game-wrap').setAttribute('data-touch-controls', String(enabled));
-    $('touch-controls').hidden = !enabled || !touchGameActive();
+    $('game-wrap').setAttribute('data-touch-controls', String(enabled || hudEditing));
+    $('touch-controls').hidden = !(hudEditing || (enabled && touchGameActive()));
     const label = { auto: '自动', show: '显示', hide: '隐藏' }[touchPreference];
     $('settings-touch').textContent = '触屏按钮 · ' + label;
     $('settings-touch').setAttribute('aria-label', `触屏按钮：${label}；点击切换显示方式`);
+    updateHudSettingsLabel();
   }
   function toast(message, duration = 3800) {
     $('toast').textContent = message; $('toast').hidden = false;
@@ -748,7 +1000,7 @@
     dialogIds.forEach(id => { if ($(id).open) $(id).close(); });
   }
   function displayPause() {
-    $('pause-screen').hidden = !paused || !playing();
+    $('pause-screen').hidden = hudEditing || !paused || !playing();
     $('pause-title').textContent = disconnected ? '搭档的灯火暂时熄了' : '在灯火边歇一会儿';
     $('pause-copy').textContent = disconnected ? '房主已离线。返回营地后，可以独自重新出发。' : '遗迹会等你。准备好后，继续向前。';
     $('resume-game').disabled = disconnected;
@@ -791,6 +1043,7 @@
     updateLobbyMenu();
   }
   function home() {
+    closeHudEditor({ silent: true });
     leaveLandscapePlay();
     companionUpdates();
     clearChapterEnding();
@@ -807,6 +1060,7 @@
     return (Date.now() ^ Math.floor(Math.random() * 0x100000000)) >>> 0;
   }
   function begin(isCoop) {
+    closeHudEditor({ silent: true });
     if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
     if (isCoop && (!net || !net.connected || net.role !== 'host')) return;
     if (isCoop && !remoteCampReady) { toast('正在接收搭档的出发整备，请稍候。'); return; }
@@ -829,6 +1083,7 @@
     startTutorial(); primeChapterNarration(); enableAudio(); canvas.focus(); hud();
   }
   function beginPractice() {
+    closeHudEditor({ silent: true });
     if (account && (account.busy || account.needsChoice)) { toast('请先完成账号存档的读取或选择，再出发。'); return; }
     enterLandscapePlay();
     clearChapterEnding(); shutdownNet(); mode = 'solo';
@@ -1358,6 +1613,7 @@
   $('fullscreen-game').onclick = () => togglePlayFullscreen();
   $('rotate-fullscreen').onclick = () => enterLandscapePlay();
   $('pause-settings').onclick = () => openDialog('settings-dialog');
+  $('pause-hud').onclick = () => openHudEditor();
   $('close-settings').onclick = () => $('settings-dialog').close();
   $('settings-sound').onclick = () => $('mute-game').click();
   $('settings-touch').onclick = () => {
@@ -1366,6 +1622,23 @@
     try { localStorage.setItem(TOUCH_STORE, touchPreference); } catch (_) { /* Keep the choice for this page. */ }
     clearInput(); updateTouchControls();
   };
+  $('settings-hud').onclick = () => openHudEditor();
+  $('hud-editor-done').onclick = () => closeHudEditor();
+  $('hud-editor-reset').onclick = () => resetHudLayout();
+  $('hud-sliders-reset').onclick = () => resetHudLayout();
+  $('hud-sliders').addEventListener('input', event => {
+    if (event.target.tagName !== 'INPUT') return;
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) return;
+    if (event.target.id === 'hud-map-scale') hudLayout.mapScale = value / 100;
+    else if (event.target.id === 'hud-map-inset') { hudLayout.mapInsetX = value; hudLayout.mapInsetY = Math.round(value * .65); }
+    else if (event.target.id === 'hud-stick-scale') hudLayout.stickScale = value / 100;
+    else if (event.target.id === 'hud-stick-inset') { hudLayout.stickInsetX = value; hudLayout.stickInsetY = Math.round(value * .67); }
+    else if (event.target.id === 'hud-skills-scale') hudLayout.skillsScale = value / 100;
+    else if (event.target.id === 'hud-skills-inset') { hudLayout.skillsInsetX = value; hudLayout.skillsInsetY = Math.round(value * .72); }
+    applyHudLayout();
+    commitHudLayout();
+  });
   $('settings-help').onclick = () => openDialog('help-dialog');
   $('settings-account').onclick = () => $('open-account').click();
   $('home-account').onclick = () => {
@@ -1398,7 +1671,7 @@
     challenges: ['mode-hunt', 'mode-relay', 'mode-legacy', 'menu-challenges-back'],
     loadout: ['solo-start', 'loadout-coop', 'open-coop', 'menu-loadout-back']
   };
-  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'home-account', 'resume-game', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-help', 'settings-account', 'close-settings'])];
+  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'home-account', 'resume-game', 'pause-hud', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-hud', 'settings-help', 'settings-account', 'close-settings', 'hud-editor-done', 'hud-editor-reset', 'hud-sliders-reset'])];
   feedbackButtons.forEach(id => {
     $(id).addEventListener('click', () => menuSound('select'));
     $(id).addEventListener('pointerenter', () => menuSound('hover'));
@@ -1430,6 +1703,11 @@
   }
   const controlKeys = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyE','KeyJ','KeyK','KeyQ']);
   window.addEventListener('keydown', event => {
+    if (hudEditing && event.code === 'Escape') {
+      event.preventDefault();
+      if (!event.repeat) closeHudEditor();
+      return;
+    }
     if (chapterEndingActive() && !hasDialog() && ['Enter', 'Escape'].includes(event.code)) {
       event.preventDefault();
       if (!event.repeat) finishChapterEnding();
@@ -1453,7 +1731,7 @@
       }
       return;
     }
-    if (playing() && !paused && !hasDialog() && controlKeys.has(event.code)) {
+    if (!hudEditing && playing() && !paused && !hasDialog() && controlKeys.has(event.code)) {
       event.preventDefault(); keys.add(event.code);
       if (!event.repeat && event.code === 'Space') dashPulse = true;
       if (!event.repeat && event.code === 'KeyE') interactPulse = true;
@@ -1465,7 +1743,7 @@
   window.addEventListener('pointerdown', event => {
     if (event.pointerType === 'touch' && !touchSeen) { touchSeen = true; updateTouchControls(); }
   }, true);
-  window.addEventListener('resize', () => { clearInput(); updateTouchControls(); updatePlayChrome(); });
+  window.addEventListener('resize', () => { hudDrag = null; clearInput(); updateTouchControls(); updatePlayChrome(); applyHudLayout(); });
   window.addEventListener('orientationchange', () => updatePlayChrome());
   document.addEventListener('fullscreenchange', () => updatePlayChrome());
   document.addEventListener('webkitfullscreenchange', () => updatePlayChrome());
@@ -1507,12 +1785,27 @@
   document.addEventListener('visibilitychange', () => { if (chapterEnding) chapterEnding.last = 0; if (document.hidden) { clearInput(); stopSounds(); if (playing() && !paused) pause(true); } });
   const joystick = $('joystick');
   function moveStick(event) {
-    const bounds = joystick.getBoundingClientRect(), radius = bounds.width * .32;
+    const bounds = joystick.getBoundingClientRect(), layout = joystick.offsetWidth || bounds.width || 1;
+    const visualScale = bounds.width / layout || 1, radius = bounds.width * .32;
     const x = event.clientX - bounds.left - bounds.width / 2, y = event.clientY - bounds.top - bounds.height / 2;
     const length = Math.hypot(x, y), factor = Math.min(1, radius / (length || 1));
     touch.mx = x * factor / radius; touch.my = y * factor / radius;
-    $('joystick-stick').style.transform = `translate(${x * factor}px,${y * factor}px)`;
+    $('joystick-stick').style.transform = `translate(${x * factor / visualScale}px,${y * factor / visualScale}px)`;
   }
+  function bindHudTarget(el, kind) {
+    if (!el) return;
+    el.addEventListener('pointerdown', event => {
+      if (!hudEditing) return;
+      const handle = event.target.closest && event.target.closest('.hud-scale-handle');
+      startHudDrag(event, kind, handle ? 'scale' : 'move');
+    });
+    el.addEventListener('pointermove', moveHudDrag);
+    el.addEventListener('pointerup', endHudDrag);
+    el.addEventListener('pointercancel', endHudDrag);
+  }
+  bindHudTarget(joystick, 'stick');
+  bindHudTarget(document.querySelector('.touch-actions'), 'skills');
+  bindHudTarget($('map-editor'), 'map');
   joystick.addEventListener('pointerdown', event => { if (!touchGameActive() || touchPreference === 'hide' || joystickId !== null) return; event.preventDefault(); mouse.active = false; joystickId = event.pointerId; joystick.setPointerCapture(event.pointerId); moveStick(event); });
   joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickId && touchGameActive()) moveStick(event); });
   function releaseStick(event) { if (event.pointerId === joystickId) { joystickId = null; touch.mx = touch.my = 0; $('joystick-stick').style.transform = 'translate(0px,0px)'; } }
@@ -1590,10 +1883,11 @@
       const note = E.CHAPTER_NOTES[id];
       return `<article><strong>${escapeHTML(note.title)}</strong><p>${escapeHTML(note.text)}</p></article>`;
     }).join('') : '<p>尚未发现记录。路标与旧工单可以按 E 查看。</p>';
+    applyHudLayout();
   }
   function frame(now) {
     const delta = last ? Math.min((now - last) / 1000, .1) : 0; last = now;
-    if (playing() && !paused && !rotateHold && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
+    if (!hudEditing && playing() && !paused && !rotateHold && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
       if (mode === 'guest') {
         if (net && net.connected && now - lastSend >= 30) {
           if (net.send({ type: 'input', input: input(), seq: ++seq })) { dashPulse = guardPulse = interactPulse = switchPulse = false; lastSend = now; }
@@ -1618,14 +1912,16 @@
     settle();
     advanceChapterEnding(now);
     syncPlayCanvas();
-    try { if (state) R.draw(ctx, state, { localId: localId(), now, view: playView, uiScale: playUiScale(), paused: paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }, mapPaintOptions())); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
+    if (hudEditing) placeMapEditor();
     if (now - lastHud > 100) { hud(); lastHud = now; }
     requestAnimationFrame(frame);
   }
   window.addEventListener('storage', event => {
     if (!account && event.key === STORE) { camp = readCamp(); updateCamp(); }
     if (event.key === TOUCH_STORE) { touchPreference = readTouchPreference(); clearInput(); updateTouchControls(); }
+    if (event.key === HUD_STORE && !hudDrag) { hudLayout = readHudLayout(); applyHudLayout(); }
   });
   if (window.AdventureAccount && window.AdventureCloud) {
     const config = window.AdventureCloudConfig || {};
@@ -1648,5 +1944,6 @@
     $('open-account').onclick = () => { $('account-message').textContent = '账号服务未加载，请刷新后再试。'; openDialog('account-dialog'); };
     $('close-account').onclick = () => $('account-dialog').close();
   }
+  applyHudLayout();
   updateCamp(); showMenu('title'); hud(); requestAnimationFrame(frame);
 })();

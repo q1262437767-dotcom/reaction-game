@@ -581,7 +581,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{ou
 .pause-card h2{font-size:27px;letter-spacing:3px;margin:0 0 8px}
 .pause-card p{color:#9daa94;font-size:12px;line-height:1.8}
 .pause-card .pause-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:24px}
-.pause-actions #resume-game,.pause-actions #restart-game,.pause-actions #back-camp{grid-column:1/-1}
+.pause-actions #resume-game,.pause-actions #pause-hud,.pause-actions #restart-game,.pause-actions #back-camp{grid-column:1/-1}
 .pause-actions .button{width:100%;gap:14px;font-size:12px;letter-spacing:.8px}
 .pause-actions #back-camp{justify-self:center;margin-top:3px;padding-inline:20px;font-size:11px}
 
@@ -925,7 +925,7 @@ html,body{overscroll-behavior:none}
   body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) .hud{
     top:max(8px,env(safe-area-inset-top,0px));
     left:max(104px,calc(env(safe-area-inset-left,0px) + 104px));
-    right:30%;
+    right:var(--hud-right,22%);
     max-width:none;
     gap:4px;
   }
@@ -943,14 +943,16 @@ html,body{overscroll-behavior:none}
   body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) .game-toolbar .icon-button{width:44px;height:44px;min-height:44px}
   body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) #interaction-hint{
     font-size:14px;line-height:1.5;max-width:42%;padding:8px 12px;
-    bottom:calc(168px + env(safe-area-inset-bottom,0px));
+    bottom:var(--hint-bottom,calc(168px + env(safe-area-inset-bottom,0px)));
   }
   body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .joystick{
     position:fixed;
-    left:max(16px,env(safe-area-inset-left,0px));
-    bottom:max(16px,env(safe-area-inset-bottom,0px));
-    top:auto;right:auto;transform:none;
+    left:calc(env(safe-area-inset-left,0px) + var(--stick-x,36px));
+    bottom:calc(env(safe-area-inset-bottom,0px) + var(--stick-y,24px));
+    top:auto;right:auto;
     width:118px;height:118px;
+    transform:scale(var(--stick-scale,1));
+    transform-origin:left bottom;
     background:#152c295c;
     z-index:7;margin:0;
   }
@@ -961,10 +963,12 @@ html,body{overscroll-behavior:none}
   body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .joystick:after{height:1px;width:62px;top:58px;left:28px}
   body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-actions{
     position:fixed;
-    right:max(10px,env(safe-area-inset-right,0px));
-    bottom:max(10px,env(safe-area-inset-bottom,0px));
-    left:auto;top:auto;transform:none;
+    right:calc(env(safe-area-inset-right,0px) + var(--skills-x,22px));
+    bottom:calc(env(safe-area-inset-bottom,0px) + var(--skills-y,16px));
+    left:auto;top:auto;
     width:200px;height:198px;
+    transform:scale(var(--skills-scale,1));
+    transform-origin:right bottom;
     z-index:7;
   }
   body[data-handheld="true"] #game-wrap[data-touch-controls="true"]:has(#start-screen[hidden]) .touch-button{
@@ -987,3 +991,31 @@ html,body{overscroll-behavior:none}
     width:44px;height:44px;right:64px;bottom:136px;left:auto;top:auto;font-size:16px;background:#263d3bb8;
   }
 }
+
+/* Safe-area probe and the handheld layout editor. Values stay on this device. */
+#safe-probe{position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;visibility:hidden;pointer-events:none;border:0 solid transparent;border-width:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+.hud-sliders{display:grid;gap:8px;padding:10px 4px 12px;border-bottom:1px solid #92a17833}
+.hud-sliders[hidden]{display:none!important}
+.hud-sliders p{margin:0 0 2px;font-size:12px;line-height:1.5;color:#9aab92}
+.hud-sliders label{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;color:#d4dbc1;font-size:13px}
+.hud-sliders input[type=range]{width:46%;min-width:120px;accent-color:#d9b176}
+.hud-sliders .text-button{justify-self:start;padding-left:0}
+.hud-scale-handle{display:none}
+#game-wrap[data-hud-edit="true"] #touch-controls{display:block!important;visibility:visible!important}
+#game-wrap[data-hud-edit="true"] #pause-screen{visibility:hidden;pointer-events:none}
+.hud-editor{position:fixed;inset:0;z-index:12;pointer-events:none}
+.hud-editor[hidden]{display:none!important}
+.hud-editor-bar{position:absolute;left:50%;bottom:max(8px,env(safe-area-inset-bottom,0px));z-index:6;transform:translateX(-50%);width:min(280px,42vw);display:flex;flex-direction:column;gap:8px;padding:8px 10px;pointer-events:auto;color:#e7ecdf;background:#12211cf2;border:1px solid #c6a56aaa;box-shadow:0 16px 48px #000a}
+.hud-editor-bar p{margin:0;font-size:13px;line-height:1.45}
+.hud-editor-actions{display:flex;gap:8px}
+.hud-editor-actions .button{flex:1;height:40px;min-height:40px;padding-inline:10px}
+.map-editor{position:absolute;z-index:4;display:flex;align-items:flex-start;justify-content:flex-end;padding:8px 10px;color:#e7d3a4;font-size:13px;letter-spacing:1px;background:#10252399;border:1px solid #e6c98aaa;touch-action:none;pointer-events:auto}
+#game-wrap[data-hud-edit="true"] .game-toolbar{visibility:hidden;pointer-events:none}
+#game-wrap[data-hud-edit="true"] .joystick,
+#game-wrap[data-hud-edit="true"] .touch-actions,
+#game-wrap[data-hud-edit="true"] .map-editor{outline:2px dashed #f0d7a2;outline-offset:4px;touch-action:none}
+#game-wrap[data-hud-edit="true"] .hud-scale-handle{display:block;position:absolute;width:44px;height:44px;padding:0;border:2px solid #f3e0b4;border-radius:50%;background:#c49a55ee;box-shadow:0 2px 8px #0006;z-index:3;touch-action:none}
+#game-wrap[data-hud-edit="true"] .hud-scale-handle:active{transform:none}
+#game-wrap[data-hud-edit="true"] .joystick .hud-scale-handle{top:-10px;right:-10px}
+#game-wrap[data-hud-edit="true"] .touch-actions .hud-scale-handle{top:-10px;left:-10px}
+#game-wrap[data-hud-edit="true"] .map-editor .hud-scale-handle{left:-12px;bottom:-12px}
