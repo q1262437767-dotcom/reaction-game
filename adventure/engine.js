@@ -3261,19 +3261,121 @@
     }
     return s;
   }
-  function snapshot(s, compact) {
-    var result = clone(s);
-    if (compact) {
-      result.roomData = {};
-      result.particles = result.particles.slice(-24);
-      result.events = result.events.slice(-12);
-      // Cached navigation is host-only; guests only draw current positions.
-      result.enemies.forEach(function (e) { delete e.navX; delete e.navY; delete e.navTime; });
+  // Navigation and hit lists stay on the host. A guest only draws the result.
+  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1 };
+  var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
+  var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
+  var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
+
+  function quantizeNumber(n) {
+    if (!Number.isFinite(n)) return 0;
+    if (Object.is(n, -0)) return 0;
+    if (Number.isInteger(n)) return n;
+    return Math.round(n * 100) / 100;
+  }
+  function copySyncValue(value) {
+    if (typeof value === 'number') return quantizeNumber(value);
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) {
+      var arr = new Array(value.length);
+      for (var i = 0; i < value.length; i += 1) arr[i] = copySyncValue(value[i]);
+      return arr;
     }
+    var out = {};
+    for (var key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key) || SYNC_OMIT[key] || value[key] === undefined) continue;
+      out[key] = copySyncValue(value[key]);
+    }
+    return out;
+  }
+  function copyParticles(list) {
+    var source = list || [];
+    var start = source.length > 24 ? source.length - 24 : 0;
+    var out = [];
+    for (var i = start; i < source.length; i += 1) {
+      var particle = source[i], item = {};
+      for (var k = 0; k < PARTICLE_KEYS.length; k += 1) {
+        var key = PARTICLE_KEYS[k];
+        if (particle[key] !== undefined) item[key] = copySyncValue(particle[key]);
+      }
+      out.push(item);
+    }
+    return out;
+  }
+  function copyEnemy(enemy) {
+    var out = {};
+    for (var key in enemy) {
+      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime') continue;
+      out[key] = enemy[key];
+    }
+    return out;
+  }
+  // Rooms and other cold fields stay out of the frequent packet. The stamp is
+  // exact, so a moved cart, opened door, or searched chest always rides the
+  // next incremental packet instead of waiting for a hash collision.
+  function linkageStamp(s) {
+    var groups = ['walls', 'doors', 'portals', 'switches', 'fires', 'interactables', 'pickups'];
+    var parts = [];
+    for (var g = 0; g < groups.length; g += 1) {
+      var list = s[groups[g]] || [];
+      parts.push(groups[g], list.length);
+      for (var i = 0; i < list.length; i += 1) {
+        var item = list[i];
+        parts.push(item.id || '', item.x, item.y, item.w || 0, item.h || 0, item.locked ? 1 : 0, item.active === false ? 0 : 1, item.used ? 1 : 0, item.pressed ? 1 : 0, item.secret ? 1 : 0, item.timberCart ? 1 : 0, item.target || 0, item.amount || 0, item.kind || '', item.label || '');
+      }
+    }
+    return parts.join('|');
+  }
+  function networkStamp(s) {
+    var rooms = s.rooms || [];
+    var stamp = (s.status || '') + '|' + (s.room ? s.room.index : -1) + '|' + (s.rewardGranted ? 1 : 0) + '|' + (s.secretOpened ? 1 : 0) + '|' + (s.secretCleared ? 1 : 0) + '|' + rooms.length;
+    for (var i = 0; i < rooms.length; i += 1) {
+      var room = rooms[i];
+      stamp += (room.visited ? 'v' : '.') + (room.cleared ? 'c' : '.') + (room.discovered ? 'd' : '.');
+    }
+    return stamp;
+  }
+  function snapshot(s, compact) {
+    if (!compact) return clone(s);
+    // Assemble the guest copy without cloning room caches that are stripped
+    // immediately afterwards. Nested objects alias the live sim and must be
+    // serialized before the next step.
+    var result = {};
+    for (var key in s) {
+      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData') continue;
+      result[key] = s[key];
+    }
+    result.roomData = {};
+    result.particles = s.particles.length > 24 ? s.particles.slice(-24) : s.particles.slice();
+    result.events = s.events.length > 12 ? s.events.slice(-12) : s.events.slice();
+    var enemies = s.enemies || [];
+    var copied = new Array(enemies.length);
+    for (var i = 0; i < enemies.length; i += 1) copied[i] = copyEnemy(enemies[i]);
+    result.enemies = copied;
     return result;
+  }
+  function syncPatch(s, skipLinkage) {
+    var patch = {};
+    for (var i = 0; i < SYNC_KEYS.length; i += 1) {
+      var key = SYNC_KEYS[i];
+      if (skipLinkage && LINK_KEYS[key]) continue;
+      if (!Object.prototype.hasOwnProperty.call(s, key) || s[key] === undefined) continue;
+      if (key === 'particles') patch.particles = copyParticles(s.particles);
+      else if (key === 'events') patch.events = copySyncValue(s.events.length > 12 ? s.events.slice(-12) : s.events);
+      else patch[key] = copySyncValue(s[key]);
+    }
+    return patch;
+  }
+  function applySync(state, patch) {
+    if (!state || !patch || typeof patch !== 'object') return state;
+    for (var i = 0; i < SYNC_KEYS.length; i += 1) {
+      var key = SYNC_KEYS[i];
+      if (Object.prototype.hasOwnProperty.call(patch, key)) state[key] = patch[key];
+    }
+    return state;
   }
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, getHint: getHint, lanternSource: lanternSource };
+    snapshot: snapshot, syncPatch: syncPatch, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource };
 });
