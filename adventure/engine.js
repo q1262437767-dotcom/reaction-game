@@ -319,7 +319,10 @@
         data.fires.push({ id: 'chapter-cooling-fire', x: 810, y: 300, r: 38, active: true, chapterCooling: true });
         item(data, 'sluice', 480, 355, '打开冷却水闸', { description: '冷却水道干涸，炉心通路被热浪封住。' });
       } else if (room.index === 4) {
-        data.walls.push(rect(300, 145, 66, 70), rect(604, 385, 66, 70));
+        data.walls.push(
+          Object.assign(rect(300, 145, 66, 70), { id: 'core-pillar-west', corePillar: true }),
+          Object.assign(rect(604, 385, 66, 70), { id: 'core-pillar-east', corePillar: true })
+        );
         data.props.push(prop(s, 'barrel', 360, 420), prop(s, 'barrel', 650, 170));
         guard(data, 'boss', 680, 300);
         note(data, 'missing-core', 370, 165);
@@ -1122,7 +1125,7 @@
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     // Do not cache a pending strike and resume it on a later room visit.
-    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); delete e.ai; delete e.pursuit; });
+    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); delete e.ai; delete e.pursuit; clearCoreIntercept(e); });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
@@ -1130,7 +1133,7 @@
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
-    s.enemies.forEach(function (e) { delete e.ai; delete e.pursuit; });
+    s.enemies.forEach(function (e) { delete e.ai; delete e.pursuit; clearCoreIntercept(e); });
     s.roomEvent = data.roomEvent || null; s.decoys = [];
     carried.forEach(function (p) { if (!s.props.some(function (q) { return q.id === p.id; })) s.props.push(p); });
     s.rooms[index].visited = true; s.rooms[index].discovered = true;
@@ -1950,12 +1953,25 @@
     event(s, 'weakpoint-open', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
       weapon: null, source: source, x: e.x, y: e.y });
   }
+  function isChapterCoreGuard(s, e) {
+    return !s.practice && e.kind === 'boss' && !e.timber && s.mode === 'chapter' &&
+      s.chapter && s.chapter.id === 'chapter1';
+  }
+  function isChapterCoreQuake(s, e, rhythm) {
+    return isChapterCoreGuard(s, e) && e.stage === 2 && rhythm &&
+      rhythm.type === 'quake' && rhythm.beats === 2;
+  }
+  function isOverloadRecovery(s, e) {
+    var rhythm = e.rhythm;
+    return (s.mode === 'random' && e.kind === 'boss' && e.stage === 2 || isChapterCoreQuake(s, e, rhythm)) &&
+      rhythm && rhythm.type === 'quake' && rhythm.phase === 'recover' && rhythm.beats === 2;
+  }
   function breakPosture(s, e, owner, weapon) {
-    var overloadRecovery = s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && e.rhythm &&
-      e.rhythm.type === 'quake' && e.rhythm.phase === 'recover' && e.rhythm.beats === 2;
+    var overloadRecovery = isOverloadRecovery(s, e);
     e.posture = 0; e.stagger = overloadRecovery ? 0 : Math.max(e.stagger, 1);
     if (!overloadRecovery) e.rhythm = null;
     e.windup = 0; e.chargeTime = 0;
+    cancelCoreIntercept(e);
     if (!/^(duelist|brute|pyromancer|hookwarden|boss)$/.test(e.kind)) e.stun = Math.max(e.stun, 1);
     e.attackCd = Math.max(e.attackCd, 0.8); e.shieldOpen = Math.max(e.shieldOpen, 1.6);
     event(s, 'posture-break', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
@@ -1986,6 +2002,7 @@
     e.hp -= amount; e.flash = 0.12;
     if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && !e.timber && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
       e.stage = 2; e.rhythm = null; e.chargeTime = 0; e.rushHitIds = []; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0; delete e.pursuit;
+      clearCoreIntercept(e);
       s.walls = s.walls.filter(function (w) {
         var boundary = w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28;
         if (!boundary) burst(s, 'wood', w.x + w.w / 2, w.y + w.h / 2, '#bcaa8d', 6);
@@ -2203,9 +2220,15 @@
       if (!noPracticeHeal) p.hp = Math.min(p.maxHp, p.hp + 1);
     }
     e.posture = Math.min(e.maxPosture, e.posture + (kind === 'mikiri' ? 2 : 1));
-    if (e.posture >= e.maxPosture) {
-      breakPosture(s, e, p.id, p.weapon); e.stagger = Math.max(e.stagger, 1.15);
-    } else if (kind !== 'parry') { e.stagger = 0.65; e.rhythm = null; }
+    var firstShock = kind === 'dodge' && isChapterCoreQuake(s, e, e.rhythm) &&
+      e.rhythm.phase === 'active' && e.rhythm.beat === 1;
+    // A dodge earns the usual counter. Only landing a follow-up can stop the
+    // next shock; one player's dodge never silently cancels the other cue.
+    if (!firstShock) {
+      if (e.posture >= e.maxPosture) {
+        breakPosture(s, e, p.id, p.weapon); e.stagger = Math.max(e.stagger, 1.15);
+      } else if (kind !== 'parry') { e.stagger = 0.65; e.rhythm = null; }
+    }
     openWeakpoint(s, e, p.id, kind);
     var type = kind === 'parry' ? 'perfect-parry' : kind === 'mikiri' ? 'mikiri' : 'perfect-dodge';
     event(s, type, { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
@@ -2294,7 +2317,8 @@
         p.guarding = false; p.guardWindow = 0; p.guardCd = 0.7; p.guardLoad = 0;
         event(s, 'guard-break', { playerId: p.id, enemyId: e.id, x: p.x, y: p.y });
       }
-      damagePlayer(s, p, !s.practice && r.type === 'quake' ? 2 : 1, r.type);
+      var heavyShock = !s.practice && r.type === 'quake' && !(isChapterCoreQuake(s, e, r) && r.beat === 1);
+      damagePlayer(s, p, heavyShock ? 2 : 1, r.type);
     });
     if (!s.practice && s.status === 'playing' && r.type === 'quake') {
       // Resolve every exposure against one pre-impact view of the cover. An
@@ -2321,17 +2345,28 @@
       beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x), targetId: target.id,
       range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'hook' ? 430 : type === 'quake' ? 450 : type === 'rush' || type === 'fireball' ? 560 : 235,
       arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' || type === 'rush' ? 0.34 : type === 'hook' ? 0.18 : type === 'fireball' ? 0.14 : type === 'quake' ? TAU : Math.PI * 1.65 };
+    if (isChapterCoreQuake(s, e, e.rhythm)) e.rhythm.range = beat === 1 ? 210 : 395;
     e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
     event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
   }
   function rushMove(s, e, distance, ordinary) {
     var count = Math.max(1, Math.ceil(distance / 9)), stopped = false;
+    var canBreakPillar = !ordinary && isChapterCoreGuard(s, e) && s.room.index === 4 && e.stage === 1;
     e.rushHitIds = e.rushHitIds || [];
     for (var i = 0; i < count; i += 1) {
       var dx = e.chargeX * distance / count, dy = e.chargeY * distance / count;
       // Only a prop on the actual forward path can be crushed; a nearby box
       // behind a wall or behind the beast cannot be hit by a proximity check.
       var wall = collides(s, e.x + dx, e.y + dy, e.r, e.id, true);
+      if (wall && canBreakPillar) {
+        var next = { x: e.x + dx, y: e.y + dy, r: e.r };
+        var pillar = s.walls.find(function (w) { return w.corePillar && circleRect(next, w); });
+        if (pillar) {
+          s.walls = s.walls.filter(function (w) { return w !== pillar; });
+          burst(s, 'wood', pillar.x + pillar.w / 2, pillar.y + pillar.h / 2, '#d4b484', 16);
+          return 'core-pillar';
+        }
+      }
       var block = !wall && s.props.find(function (q) {
         return solidProp(q) && !q.thrown && len(q.x - e.x - dx, q.y - e.y - dy) < q.r + e.r - 1;
       });
@@ -2361,36 +2396,130 @@
     }
     return stopped;
   }
-  function bossPursuit(s, e, target, dt) {
+  function bossPursuit(s, e, target, dt, coreGuard) {
     if (s.practice || e.kind !== 'boss' || e.timber || (s.mode !== 'chapter' && s.mode !== 'random') || dt <= 0) return null;
     var realTarget = target && s.players[target.id] === target && target.hp > 0 && !target.downed;
     var pressure = e.pursuit, distance = realTarget ? dist(e, target) : 0;
-    var visible = realTarget && foxSight(s, e, target, 3);
-    // Keep initial generation and ordinary close combat untouched. Sustained
-    // separation, rather than a held weapon, is what calls for a pursuit.
-    if (!pressure && realTarget && visible && distance > 280) {
+    var trackDistance = coreGuard ? 205 : 280, readyTime = coreGuard ? 0.6 : 1.6;
+    // The chapter guard keeps pursuing around cover. It still needs a clear
+    // line to commit an actual attack.
+    var canTrack = realTarget && (coreGuard || foxSight(s, e, target, 3));
+    if (!pressure && canTrack && distance > trackDistance) {
       pressure = e.pursuit = { time: 0, cooldown: 0, targetId: target.id };
     }
     if (!pressure) return null;
     pressure.cooldown = Math.max(0, pressure.cooldown - dt);
     if (!realTarget) { pressure.time = 0; pressure.targetId = null; return pressure; }
-    if (pressure.targetId !== target.id || !visible) pressure.time = 0;
+    if (pressure.targetId !== target.id || !canTrack) pressure.time = 0;
     pressure.targetId = target.id;
-    if (!visible) return pressure;
-    if (distance > 280) pressure.time = Math.min(1.6, pressure.time + dt);
-    else if (pressure.time < 1.6) pressure.time = 0;
+    if (!canTrack) return pressure;
+    if (distance > trackDistance) pressure.time = Math.min(readyTime, pressure.time + dt);
+    else if (pressure.time < readyTime) pressure.time = 0;
     return pressure;
   }
+  function clearCoreIntercept(e) {
+    delete e.intercept;
+    delete e.coreInterceptRead;
+  }
+  function cancelCoreIntercept(e) {
+    if (!e.intercept) return;
+    delete e.intercept;
+    if (e.coreInterceptRead) e.coreInterceptRead.time = 0;
+  }
+  function observeCoreRoute(s, e, target, dt) {
+    if (dt <= 0) return null;
+    var read = e.coreInterceptRead;
+    if (read) read.cooldown = Math.max(0, read.cooldown - dt);
+    if (e.intercept) return null;
+
+    // Observe actual movement after collision, rather than keys or aim. A
+    // stopped player, a dash or a brief turn cannot trigger a cutoff.
+    var realTarget = target && s.players[target.id] === target && target.hp > 0 && !target.downed;
+    var speed = realTarget ? len(target.vx, target.vy) : 0;
+    var distance = realTarget ? dist(e, target) : 0;
+    var sideways = speed > 0 && distance > 0 &&
+      Math.abs((target.x - e.x) * target.vx + (target.y - e.y) * target.vy) / (speed * distance) < 0.66;
+    if (e.stagger > 0 || e.weakTime > 0 || !realTarget || speed < 115 || target.dashTime > 0 ||
+        distance < 145 || distance > 430 || !sideways) {
+      if (read) read.time = 0;
+      return null;
+    }
+
+    var dx = target.vx / speed, dy = target.vy / speed;
+    if (!read) read = e.coreInterceptRead = { time: 0, dx: dx, dy: dy, cooldown: 0, targetId: target.id };
+    if (read.targetId !== target.id || read.dx * dx + read.dy * dy < 0.82 || read.time === 0) {
+      read.time = 0; read.dx = dx; read.dy = dy; read.targetId = target.id;
+    }
+    read.time = Math.min(0.65, read.time + dt);
+    return read.time >= 0.48 && read.cooldown <= 0 ? read : null;
+  }
+  function planCoreIntercept(s, e, target, route) {
+    // Look along the lane the player has actually been using, only as far as
+    // they could move without hitting a wall. Take a shorter, inside line.
+    var aim = null;
+    for (var lead = 12; lead <= 204; lead += 12) {
+      var point = { x: target.x + route.dx * lead, y: target.y + route.dy * lead };
+      if (collides(s, point.x, point.y, target.r, target.id, false)) break;
+      if (lead >= 132) aim = point;
+    }
+    if (!aim) return false;
+
+    var side = (W / 2 - aim.x) * -route.dy + (H / 2 - aim.y) * route.dx < 0 ? -1 : 1;
+    var offsets = [90, 115, 145], goal = null;
+    for (var i = 0; i < offsets.length; i += 1) {
+      var x = aim.x - route.dy * side * offsets[i], y = aim.y + route.dx * side * offsets[i];
+      var landing = { x: x, y: y };
+      var distance = dist(e, landing);
+      if (distance < 30 || distance > 235 || collides(s, x, y, e.r + 2, e.id, false) ||
+          !foxSight(s, e, landing, e.r + 2) || !foxSight(s, landing, aim, 3)) continue;
+      if (!goal || distance < dist(e, goal)) goal = landing;
+    }
+    if (!goal) return false;
+
+    e.intercept = { x: goal.x, y: goal.y, aimX: aim.x, aimY: aim.y, remaining: 1.2, targetId: target.id };
+    e.facing = Math.atan2(goal.y - e.y, goal.x - e.x);
+    route.time = 0; route.cooldown = 6;
+    if (e.pursuit) e.pursuit.time = 0;
+    return true;
+  }
+  function advanceCoreIntercept(s, e, dt) {
+    if (dt <= 0) return true;
+    var plan = e.intercept, target = s.players[plan.targetId];
+    plan.remaining = Math.max(0, plan.remaining - dt);
+    if (!target || target.downed || target.hp <= 0 || plan.remaining <= 0 ||
+        collides(s, plan.x, plan.y, e.r, e.id, false)) {
+      delete e.intercept;
+      return false;
+    }
+
+    var gap = dist(e, plan);
+    if (gap <= 3) {
+      delete e.intercept;
+      // Once the guard commits, reversing can bait the complete whiff.
+      rhythmWindup(s, e, 'sweep', 1, 1, { x: plan.aimX, y: plan.aimY, id: plan.targetId });
+      e.rhythm.arc = Math.PI * 1.2;
+      return true;
+    }
+    var step = Math.min(gap, 260 * dt);
+    move(s, e, (plan.x - e.x) * step / gap, (plan.y - e.y) * step / gap, false);
+    if (dist(e, plan) < gap - 0.001) return true;
+    delete e.intercept;
+    return false;
+  }
   function updateRhythm(s, e, target, dt) {
+    var coreGuard = isChapterCoreGuard(s, e);
     // An earned counter can interrupt a charge before this enemy update. Keep
     // a cancelled Boss lane from retaining its movement or its charge pose.
     if (dt > 0 && !s.practice && e.kind === 'boss' && (s.mode === 'chapter' || s.mode === 'random') &&
         e.chargeTime > 0 && (!e.rhythm || e.rhythm.type !== 'rush' || e.rhythm.phase !== 'active')) {
       e.chargeTime = 0; e.rushHitIds = [];
     }
-    var pressure = bossPursuit(s, e, target, dt);
+    var pressure = bossPursuit(s, e, target, dt, coreGuard);
+    if (e.stagger > 0) cancelCoreIntercept(e);
     e.stagger = Math.max(0, e.stagger - dt);
+    var route = coreGuard && s.room.index === 4 ? observeCoreRoute(s, e, target, dt) : null;
     if (e.stagger > 0) return true;
+    if (e.intercept && advanceCoreIntercept(s, e, dt)) return true;
     var r = e.rhythm;
     if (r) {
       if (r.type === 'rush' && r.phase === 'active' && e.chargeTime > 0) {
@@ -2398,6 +2527,14 @@
         e.chargeTime = Math.max(0, e.chargeTime - dt);
         var blocked = rushMove(s, e, speed * dt);
         particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#efaa72' });
+        if (blocked === 'core-pillar') {
+          e.chargeTime = 0; e.rhythm = null; e.stagger = 2; e.posture = 0; e.attackCd = 1;
+          openWeakpoint(s, e, null, 'counter');
+          particle(s, 'shockwave', e.x, e.y, { r: 108, ttl: 0.38, life: 0.38, color: '#f5bd76' });
+          event(s, 'brute-wall-hit', { enemyId: e.id, x: e.x, y: e.y });
+          s.message = '柱子撞塌了！炉芯露出来了。'; s.messageTime = 2;
+          return true;
+        }
         var decoy = s.decoys.find(function (d) { return dist(e, d) < e.r + d.r + 8; });
         if (decoy) { s.decoys = s.decoys.filter(function (d) { return d.id !== decoy.id; }); e.chargeTime = 0; }
         alivePlayers(s).forEach(function (p) {
@@ -2423,7 +2560,9 @@
         resolveRhythm(s, e, r);
         // The last shock has visibly exhausted the core. Even a successful
         // precision dodge must retain this earned, shared opening.
-        if (s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && r.type === 'quake' && r.beat === 2 && r.beats === 2 && e.hp > 0) {
+        var finalShock = r.type === 'quake' && r.beat === 2 && r.beats === 2 && e.hp > 0;
+        var randomOverload = s.mode === 'random' && e.kind === 'boss' && e.stage === 2;
+        if (finalShock && (randomOverload || isChapterCoreQuake(s, e, r) && s.status === 'playing')) {
           e.rhythm = r; e.stagger = 0;
           r.phase = 'recover'; r.duration = 2; r.remaining = 2;
           openWeakpoint(s, e, null, 'counter');
@@ -2442,31 +2581,47 @@
       return true;
     }
     e.attackCd -= dt;
+    if (route && e.attackCd <= 0 && planCoreIntercept(s, e, target, route)) return true;
     var distance = dist(e, target), boss = e.kind === 'boss';
     var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'hookwarden' ? ['hook', 'combo', 'sweep'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
       ['combo', 'thrust', boss && ((s.mode !== 'random' && s.mode !== 'chapter') || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
     var overload = s.mode === 'random' && boss && e.stage === 2;
     if (overload) type = ['combo', 'thrust', 'sweep', 'quake'][e.rhythmCycle % 4];
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
-    var pursuing = pressure && pressure.time >= 1.6 && pressure.cooldown <= 0;
-    if (pursuing && distance > 128 && distance <= 190 && e.attackCd <= 0 && foxSight(s, e, target, 3)) {
-      pressure.time = 0; pressure.cooldown = 7.5;
+    var pursuing = pressure && pressure.time >= (coreGuard ? 0.6 : 1.6) && pressure.cooldown <= 0;
+    var rushRange = 190;
+    if (coreGuard) rushRange = e.stage === 2 ? 350 : 315;
+    if (pursuing && distance > (coreGuard ? 155 : 128) && distance <= rushRange && e.attackCd <= 0 && foxSight(s, e, target, 3)) {
+      pressure.time = 0; pressure.cooldown = coreGuard ? 5.5 : 7.5;
       rhythmWindup(s, e, 'rush', 1, 1, target); return true;
     }
+    // Answer a player hovering just outside the blade instead of dragging the
+    // close-range combo along behind them. The sweep keeps its existing tell.
+    if (coreGuard && type === 'combo' && distance >= 128 && distance < 215) type = 'sweep';
     // A telegraph must start within the strike's reach. Previously a stationary
     // beginner saw slashes at ~168px even though they could only connect at 159px.
     var engageRange = type === 'combo' ? 128 : type === 'hook' ? 430 : type === 'thrust' ? 250 : type === 'rush' || type === 'fireball' ? 560 : type === 'quake' ? 460 : 230;
-    if (e.attackCd <= 0 && distance < engageRange && lineClear(s, e, target, e.r + 2)) {
+    var coreQuake = coreGuard && e.stage === 2 && type === 'quake';
+    if (coreQuake) engageRange = 395;
+    var clearStrike = coreGuard && foxSight(s, e, target, 3);
+    if (e.attackCd <= 0 && distance < engageRange && (coreGuard ? clearStrike : lineClear(s, e, target, e.r + 2))) {
       if (pressure) pressure.time = 0;
-      e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, type === 'combo' ? overload ? 3 : 2 : type === 'quake' && overload ? 2 : 1, target); return true;
+      var beats = type === 'combo' ? overload ? 3 : 2 : type === 'quake' && (overload || coreQuake) ? 2 : 1;
+      e.rhythmCycle += 1; rhythmWindup(s, e, type, 1, beats, target); return true;
     }
     var approachRange = type === 'combo' ? 118 : type === 'hook' ? 320 : type === 'fireball' ? 320 : type === 'rush' ? 360 : boss ? 150 : 118;
-    if (distance > approachRange || !lineClear(s, e, target, e.r + 1)) {
+    if (distance > approachRange || (coreGuard ? !clearStrike : !lineClear(s, e, target, e.r + 1))) {
       e.navTime -= dt;
-      if (e.navTime <= 0) { var wp = waypoint(s, e, target); e.navX = wp.x; e.navY = wp.y; e.navTime = 0.35; }
-      var dx = e.navX - e.x, dy = e.navY - e.y, length = len(dx, dy) || 1;
+      if (e.navTime <= 0) {
+        var wp = coreGuard ? foxWaypoint(s, e, target) : waypoint(s, e, target);
+        e.navX = wp.x; e.navY = wp.y; e.navTime = coreGuard ? 0.22 : 0.35;
+      }
+      var dx = e.navX - e.x, dy = e.navY - e.y, length = len(dx, dy);
+      // Cooldown limits how often the guard rushes, not how fast it closes.
       var approachSpeed = pursuing ? 255 : e.speed;
-      move(s, e, dx / length * approachSpeed * dt, dy / length * approachSpeed * dt, false);
+      if (coreGuard) approachSpeed = distance > 165 || !clearStrike ? 230 : 110;
+      var stepLength = coreGuard ? Math.min(length, approachSpeed * dt) : approachSpeed * dt;
+      move(s, e, dx / (length || 1) * stepLength, dy / (length || 1) * stepLength, false);
       e.facing = Math.atan2(target.y - e.y, target.x - e.x);
     }
     return true;
@@ -2542,7 +2697,7 @@
         else move(s, p, Math.cos(angle) * Math.min(85, gap), Math.sin(angle) * Math.min(85, gap), false);
         if (dist(p, foe) <= (spear ? 250 : 112) + foe.r && meleeLineClear(s, p, foe, 7)) {
           p.facing = angle; p.meleeTime = 0.24; p.fireCd = 0.34; p.guarding = false; p.guardWindow = 0; p.guardAttackLock = 0.28;
-          var overloadRecovery = s.mode === 'random' && foe.kind === 'boss' && foe.stage === 2 && foe.rhythm && foe.rhythm.type === 'quake' && foe.rhythm.phase === 'recover' && foe.rhythm.beats === 2;
+          var overloadRecovery = isOverloadRecovery(s, foe);
           foe.stagger = overloadRecovery ? 0 : foe.kind === 'boss' ? 1.05 : 0.7;
           if (!overloadRecovery) foe.rhythm = null;
           foe.attackCd = 0.8;
@@ -2754,6 +2909,7 @@
     if (!s.practice && dt > 0) s.enemies.forEach(function (e) { readyAt[e.id] = e.attackCd - dt; });
     s.enemies.forEach(function (e) {
       if (e.hp <= 0) return;
+      if (e.stun > 0) cancelCoreIntercept(e);
       e.flash = Math.max(0, e.flash - dt); e.stun = Math.max(0, e.stun - dt);
       e.weakTime = Math.max(0, (e.weakTime || 0) - dt);
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
@@ -3285,7 +3441,7 @@
     return s;
   }
   // Navigation and hit lists stay on the host. A guest only draws the result.
-  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1 };
+  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1 };
   var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
   var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
   var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
@@ -3328,7 +3484,7 @@
   function copyEnemy(enemy) {
     var out = {};
     for (var key in enemy) {
-      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime') continue;
+      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead') continue;
       out[key] = enemy[key];
     }
     return out;

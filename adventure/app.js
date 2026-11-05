@@ -1262,6 +1262,18 @@
     if (bosses.length > 1 || bosses.length && (!c.workerFreed || c.bossDefeated)) return false;
     return true;
   }
+  function furnaceArena(s) {
+    return s?.mode === 'chapter' && s.mission?.id === 'chapter1' && s.room?.index === 4;
+  }
+  function validIntercept(enemy, furnaceRoom) {
+    if (enemy.intercept === undefined) return true;
+    const plan = enemy.intercept;
+    if (!furnaceRoom || enemy.kind !== 'boss' || enemy.timber || enemy.rhythm != null ||
+        !plan || typeof plan !== 'object' || Array.isArray(plan) || Object.keys(plan).length !== 6) return false;
+    const within = (value, max) => Number.isFinite(value) && value >= 0 && value <= max;
+    return within(plan.x, 960) && within(plan.y, 600) && within(plan.aimX, 960) && within(plan.aimY, 600) &&
+      within(plan.remaining, 1.5) && ['p1', 'p2'].includes(plan.targetId);
+  }
   function validState(s) {
     if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.weaponVersion !== 1 || s.tacticsVersion !== 1 || s.practice !== false || !['chapter', 'random', 'story', 'relay', 'hunt'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (!s.players || !s.players.p1 || !s.players.p2 || Object.keys(s.players).length !== 2) return false;
@@ -1270,6 +1282,7 @@
     for (const [key, cap] of Object.entries(limits)) if (!Array.isArray(s[key]) || s[key].length > cap || s[key].some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
     const bounded = (n, max) => Number.isFinite(n) && n >= 0 && n <= max;
     const shortId = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
+    const furnaceRoom = furnaceArena(s);
     const volleyIds = value => Array.isArray(value) && value.length <= 8 && new Set(value).size === value.length && value.every(shortId);
     if (new Set(s.companions.map(fox => fox.ownerId)).size !== s.companions.length) return false;
     for (const fox of s.companions) {
@@ -1291,6 +1304,7 @@
       if (p.relayBoost != null && !bounded(p.relayBoost, 3)) return false;
     }
     for (const enemy of s.enemies) {
+      if (!validIntercept(enemy, furnaceRoom)) return false;
       if (!enemy || !bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
       if (enemy.pursuit !== undefined) {
         const pursuit = enemy.pursuit;
@@ -1323,7 +1337,7 @@
       if (event.type === 'refuge-chosen' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !['rest', 'relic'].includes(event.choice) || !Number.isInteger(event.room) || event.room < 1 || event.room >= s.rooms.length || s.rooms[event.room].kind !== 'refuge' || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'style-formed' && (s.mode !== 'random' || event.playerId !== null || !E.activeStyles(s).includes(event.style) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'style-trigger' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !E.activeStyles(s).includes(event.style) || event.enemyId !== null && !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
-      if (event.type === 'boss-overload-open' && (s.mode !== 'random' || !shortId(event.enemyId) || event.duration !== 2 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'boss-overload-open' && (!(s.mode === 'random' || furnaceRoom) || !shortId(event.enemyId) || event.duration !== 2 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-rescued' && (s.mode !== 'random' || !s.foxRescue || !s.foxRescue.rescued || !['p1', 'p2'].includes(event.playerId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !['bite', 'counter'].includes(event.assistKind) || !Number.isInteger(event.amount) || !bounded(event.amount, event.assistKind === 'counter' ? 3 : 1) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'spear-thrust' && (!['p1', 'p2'].includes(event.playerId) || event.enemyId !== null && !shortId(event.enemyId) || event.weapon !== 'spear' || typeof event.perfect !== 'boolean' || !Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4 || !bounded(event.range, 250))) return false;
@@ -1357,6 +1371,8 @@
       }
     }
     for (const wall of s.walls) {
+      if (wall.corePillar !== undefined && (!furnaceRoom || wall.corePillar !== true || wall.w !== 66 || wall.h !== 70 ||
+        !(wall.x === 300 && wall.y === 145 || wall.x === 604 && wall.y === 385))) return false;
       if (wall.timberCart !== undefined && (s.mode !== 'chapter' || s.mission.id !== 'chapter1_2' || s.room.index !== 5)) return false;
       if (wall.breachWall != null && typeof wall.breachWall !== 'boolean' || wall.breachFrame != null && typeof wall.breachFrame !== 'boolean') return false;
       if ((wall.breachWall || wall.breachFrame) && (s.mode !== 'random' || s.roomEvent?.kind !== 'breach' || !bounded(wall.x, 960) || !bounded(wall.y, 600) || !bounded(wall.w, 960) || wall.w === 0 || !bounded(wall.h, 600) || wall.h === 0 || wall.x + wall.w > 960 || wall.y + wall.h > 600 || wall.breachWall && (!shortId(wall.id) || wall.id !== s.roomEvent.wallId))) return false;
@@ -1444,7 +1460,7 @@
     }
     return true;
   }
-  function validSync(patch) {
+  function validSync(patch, current) {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
     const caps = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, interactables: 30, decoys: 8, companions: 2 };
     for (const key of Object.keys(caps)) {
@@ -1452,6 +1468,7 @@
       if (value === undefined) continue;
       if (!Array.isArray(value) || value.length > caps[key] || value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
     }
+    if (patch.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)))) return false;
     const players = patch.players;
     if (!players || typeof players !== 'object' || Array.isArray(players) || !players.p1 || !players.p2) return false;
     for (const id of ['p1', 'p2']) {
@@ -1548,7 +1565,7 @@
     } else if (msg.type === 'state' && msg.runId === runId && Number.isInteger(msg.rev) && msg.rev >= netRev && validState(msg.state)) {
       if (state && state.mode === 'chapter' && finished === runId && state.status !== msg.state.status) return;
       netRev = msg.rev; state = msg.state; settle();
-    } else if (msg.type === 'sync' && msg.runId === runId && state && msg.rev === netRev && msg.room === state.room.index && finished !== runId && validSync(msg.state)) {
+    } else if (msg.type === 'sync' && msg.runId === runId && state && msg.rev === netRev && msg.room === state.room.index && finished !== runId && validSync(msg.state, state)) {
       E.applySync(state, msg.state); settle();
     }
     if (msg.type === 'pause' && msg.reason === 'tutorial') {

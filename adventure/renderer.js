@@ -172,6 +172,32 @@
       rect(c, bx, y + 1, 8, Math.min(17, height - 2), '#3c4d4d'); rect(c, bx + 1, y + 1, 6, 3, '#a18b61');
       rect(c, bx + 2, y + 7, 2, 2, '#c1ac7a'); rect(c, bx + 2, y + 13, 2, 2, '#78817a');
     }
+    if (w.corePillar === true) corePillarFace(c, x, y, width, height);
+  }
+
+  function corePillarFace(c, x, y, width, height) {
+    const center = x + width / 2, base = y + height - 14;
+    for (const brace of [y + 10, base]) {
+      rect(c, x + 3, brace, width - 6, 7, '#685141');
+      rect(c, x + 4, brace, width - 8, 2, '#c3a077');
+      for (const rivet of [x + 9, x + width - 12]) rect(c, rivet, brace + 3, 3, 2, '#e0c28a');
+    }
+    const split = [[center - 7, y + 16], [center + 4, y + 28], [center - 6, y + 36], [center + 3, y + 44], [center - 1, base]];
+    path(c, split.map(([px, py]) => [px + 2, py]), '#b08c62', 2);
+    path(c, split, '#1b2e32', 4);
+    path(c, [[center + 3, y + 27], [center + 15, y + 25], [center + 19, y + 20]], '#25383b', 2);
+    path(c, [[center - 6, y + 36], [center - 15, y + 41], [center - 20, y + 39]], '#25383b', 2);
+  }
+
+  function chapterCoreRoom(state) {
+    return state && state.mode === 'chapter' && state.chapter?.id === 'chapter1' && state.room?.index === 4;
+  }
+
+  function furnaceReadout(y, viewTop) {
+    // Handheld landscape can crop the north wall out of view.
+    return y - viewTop < 166
+      ? { name: y + 41, health: y + 53, posture: y + 60, cue: y + 85, stagger: y + 85, below: true }
+      : { name: y - 100, health: y - 88, posture: y - 81, cue: y - 136, stagger: y - 119, below: false };
   }
 
   function lantern(c, x, y, time, scale = 1) {
@@ -1174,6 +1200,69 @@
       rect(c, x - 5, hand + 3, 10, 2, '#524c42'); rect(c, x - 4, hand + 3, 2, 1, '#b2a47c');
     }
   }
+  function furnaceCylinder(c, from, to, width, finish) {
+    const dx = to[0] - from[0], dy = to[1] - from[1];
+    const length = Math.hypot(dx, dy);
+    c.save(); c.translate(from[0], from[1]); c.rotate(Math.atan2(dy, dx));
+    rect(c, -2, -width / 2, length + 4, width, '#24353e');
+    rect(c, 0, -width / 2 + 2, length, width - 4, finish);
+    rect(c, 1, -width / 2 + 2, Math.max(1, length - 2), 2, '#c6ac7d');
+    c.restore();
+  }
+  function furnaceActuator(c, shoulder, elbow, wrist, wide, extend) {
+    const tip = Math.atan2(wrist[1] - elbow[1], wrist[0] - elbow[0]);
+    furnaceCylinder(c, shoulder, elbow, 15, '#637b7f');
+    furnaceCylinder(c, elbow, wrist, extend ? 11 : 14, extend ? '#aab6ae' : '#7b8b85');
+    c.save(); c.translate(elbow[0], elbow[1]); c.rotate(tip);
+    // A broad sleeve stays on the elbow as the brighter rod slides through it.
+    rivetPlate(c, -6, -8, extend ? 20 : 13, 16, '#7c715c', '#d0b283');
+    c.restore();
+    c.save(); c.translate(wrist[0], wrist[1]); c.rotate(tip);
+    const cap = wide ? 22 : extend ? 13 : 17;
+    rivetPlate(c, -8, -cap / 2, 17, cap, '#927757', '#e3bf82');
+    rect(c, 5, -cap / 2 + 2, 4, cap - 4, '#b6a786');
+    for (let notch = -cap / 2 + 5; notch < cap / 2 - 3; notch += 5) rect(c, 5, notch, 3, 2, '#574e42');
+    c.restore();
+  }
+  function furnaceArms(c, pose) {
+    const { type, facing, phase, side } = pose;
+    const progress = motionEase(pose.progress), winding = phase === 'windup';
+    const reach = phase === 'active' ? 1 : phase === 'recover' ? 1 - progress : 0;
+    const forwardX = Math.cos(facing), forwardY = Math.sin(facing);
+    const leadSide = forwardX < 0 ? -1 : 1;
+    const attackSide = type === 'combo' ? side : leadSide;
+    const bracing = type === 'rush' ? pose.brace : 0;
+    // Rear arm first, to keep the visible leading shoulder and its joint on top.
+    for (const hand of [-leadSide, leadSide]) {
+      const leading = hand === leadSide, striking = hand === attackSide && type !== 'rush';
+      const shoulder = [hand * 25 + forwardX * bracing * (leading ? 7 : 3), -19 + forwardY * bracing * 3];
+      const elbow = [shoulder[0] + hand * 3, shoulder[1] + 9];
+      const wrist = [elbow[0], -3];
+      if (striking && winding) {
+        wrist[0] += (hand * 6 - forwardX * 10) * progress;
+        wrist[1] -= (9 + forwardY * 3) * progress;
+        elbow[0] += hand * 4 * progress;
+        elbow[1] -= 4 * progress;
+      } else if (striking && reach > 0) {
+        const angle = type === 'sweep' ? pose.weaponAngle : facing;
+        const length = type === 'thrust' ? 66 : type === 'sweep' ? 57 : 49;
+        const hitX = Math.cos(angle) * length + hand * 5;
+        const hitY = -9 + Math.sin(angle) * length * .72;
+        wrist[0] += (hitX - wrist[0]) * reach;
+        wrist[1] += (hitY - wrist[1]) * reach;
+        elbow[0] += (shoulder[0] + (wrist[0] - shoulder[0]) * .42 - elbow[0]) * reach;
+        elbow[1] += (shoulder[1] + (wrist[1] - shoulder[1]) * .42 + 3 - elbow[1]) * reach;
+      } else if (bracing > 0) {
+        wrist[0] += (forwardX * 6 - hand * 5) * bracing;
+        wrist[1] -= 10 * bracing;
+      }
+      furnaceActuator(c, shoulder, elbow, wrist, striking && type === 'sweep', striking && type === 'thrust');
+      const width = leading ? 16 + 7 * bracing : 16;
+      rivetPlate(c, shoulder[0] - width / 2, shoulder[1] - 7, width, 14, leading ? '#a1815c' : '#896d50', '#dec18a');
+      rect(c, shoulder[0] - 2, shoulder[1] - 1, 4, 4, '#3b525a');
+      rect(c, shoulder[0] - 1, shoulder[1] - 1, 2, 2, '#ddc59e');
+    }
+  }
   function chapterConstruct(c, e, time, step, pose) {
     const kind = e.kind, attack = e.rhythm || {}, facing = pose.facing;
     const large = kind === 'brute', low = kind === 'charger', width = large ? 44 : low ? 38 : kind === 'shield' ? 28 : 24;
@@ -1270,16 +1359,19 @@
       rect(c, handX - 14, handY - 45, 28, 4, brightCopper); lantern(c, handX, handY - 26, time, .8);
     }
   }
-  function enemy(c, e, time, events = [], still = false, chapter = false, random = false, pose = null) {
+  function enemy(c, e, time, events = [], still = false, chapter = false, random = false, pose = null, coreRoom = false, viewTop = 0) {
     if (!e || e.hp <= 0 || e.dead) return;
     const x = num(e.x), y = num(e.y), kind = e.kind || e.type, boss = kind === 'boss', r = num(e.r, boss ? 27 : 15);
     const recovering = boss && e.rhythm && e.rhythm.phase === 'recover' && num(e.stagger) <= 0;
-    const overload = random && recovering && e.stage >= 2 && e.rhythm.type === 'quake' && num(e.rhythm.beats) === 2 && num(e.rhythm.beat) === 2 && num(e.weakTime) > 0;
+    const overload = (random || chapter) && recovering && e.stage >= 2 && e.rhythm.type === 'quake' && num(e.rhythm.beats) === 2 && num(e.rhythm.beat) === 2 && num(e.weakTime) > 0;
     pose = pose || enemyPose(e);
     const step = pose.step, facing = pose.facing;
+    const mechanicalCore = coreRoom && boss && !e.timber;
+    const readout = mechanicalCore ? furnaceReadout(y, viewTop) : null;
+    const drivingArms = mechanicalCore && ['combo', 'thrust', 'sweep', 'rush'].includes(pose.type);
     // Furnace flicker and hanging equipment share the simulation clock passed
     // by draw; pausing or repeating a guest snapshot preserves their position.
-    shadow(c, x, y, r, .43);
+    shadow(c, x, y, mechanicalCore ? r * 1.12 : r, .43);
     if (recovering) {
       // This small mint opening belongs to the body, not an attack footprint.
       // Its arc drains with the authoritative recovery timer on every client.
@@ -1312,6 +1404,10 @@
       const recoil = (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
       c.translate(Math.cos(num(e.facing)) * -recoil, Math.sin(num(e.facing)) * -recoil);
     }
+    if (mechanicalCore) {
+      // Scale the entire pose around the soles, including its attached arms.
+      c.translate(0, 20); c.scale(1.18, 1.28); c.translate(0, -20);
+    }
     if (chapter && !boss) {
       chapterConstruct(c, e, time, step, pose);
     } else if (boss) {
@@ -1334,17 +1430,23 @@
       rect(c,-21,5,16,5,'#a17d55');rect(c,6,5,16,5,'#816446');rect(c,-18,5,10,1,'#e4c68f');rect(c,8,5,10,1,'#c4a573');
       if (pose.type === 'quake') {
         rect(c, -31, -26, 14, 7, '#9f8965'); rect(c, 19, -26, 14, 7, '#8d795d');
+      } else if (drivingArms) {
+        furnaceArms(c, pose);
       } else {
         rect(c,-31,-23+step,14,25,'#6e7c7e');rect(c,-34,-18+step,5,18,'#344851');rect(c,19,-23-step,14,25,'#536974');rect(c,30,-18-step,5,18,'#293f4a');
         rivetPlate(c,-32,-26+step,16,12,'#a1815c','#dec18a');rivetPlate(c,18,-26-step,16,12,'#896d50','#c4aa7c');
         rect(c,-31,-9+step,13,4,'#bfac83');rect(c,20,-9-step,13,4,'#9e8b68');rect(c,-30,-3+step,11,5,'#394b53');rect(c,21,-3-step,11,5,'#2b424e');
       }
+      const shoulderDrop = mechanicalCore && pose.type === 'rush' ? pose.brace : 0;
+      if (shoulderDrop) { c.save(); c.translate(Math.cos(facing) * 5 * shoulderDrop, 5 * shoulderDrop); }
       rect(c, -17, -47, 34, 25, '#192c34'); rect(c, -15, -45, 30, 23, '#778a8d'); rect(c, -13, -45, 8, 20, '#b0b9a7'); rect(c, 7, -45, 8, 20, '#405c68');
       rect(c,-20,-43,40,5,'#876b50');rect(c,-17,-45,34,4,'#aa8a5d');rect(c,-12,-49,24,5,'#d3b985');rect(c,-10,-49,17,1,'#f4dfb0');
       rect(c,-12,-39,24,1,'#d1b783');rect(c,-12,-36,24,7,'#243840');rect(c,-4,-29,8,6,'#738783');rect(c,-3,-29,2,4,'#d8c197');
       rect(c, -10, -35, 7, 4, '#e7b96d'); rect(c, 4, -35, 7, 4, '#e7b96d'); rect(c, -8, -26, 16, 3, '#334b3e');
+      if (shoulderDrop) c.restore();
       c.save(); c.rotate(Math.PI / 4); rect(c, -6, -7, 12, 12, '#c8ab63'); rect(c, -3, -4, 6, 6, '#eee0a0'); c.restore();
-      grass(c, -12, -48, '#9cab6b'); grass(c, 12, -42, '#879f63');
+      const headX = Math.cos(facing) * 5 * shoulderDrop, headY = 5 * shoulderDrop;
+      grass(c, -12 + headX, -48 + headY, '#9cab6b'); grass(c, 12 + headX, -42 + headY, '#879f63');
       if(awakened){
         rect(c,-12,-18,24,22,'#302e25');rect(c,-9,-16,18,19,'#c3713f');rect(c,-5,-14,10,16,'#e8a355');rect(c,-2,-12,4,12,'#ffe3a1');
         for(const side of [-1,1]){path(c,[[side*10,-17],[side*17,-12],[side*15,-3],[side*21,2]],'#f4bb6f',2);rect(c,side*7-3,-36,6,4,'#ffe0a0');}
@@ -1502,7 +1604,7 @@
       rect(c,-5,-29,10,5,'#9e6d4d');rect(c,-3,-29,5,2,'#e1ba7e');rect(c,1,-31,4,3,'#6c5550');
       enemyBlade(c, e, pose);
     }
-    if (boss && e.rhythm && pose.type !== 'quake') {
+    if (boss && !mechanicalCore && e.rhythm && pose.type !== 'quake') {
       if (recovering && pose.type !== 'thrust') blade(c, 1, 8, Math.cos(facing) < 0 ? Math.PI * .75 : Math.PI * .25, false, false, true);
       else enemyBlade(c, e, pose, true);
     }
@@ -1512,7 +1614,7 @@
       // The mark sits on the body, away from its name and health/posture bars.
       // Its remaining arc is simulation state, so repeated snapshots cannot
       // restart the opportunity or make a consumed weak point look available.
-      const radius = boss ? 13 : kind === 'brute' ? 12 : 9, cy = y - (boss ? 10 : 7);
+      const radius = boss ? 13 : kind === 'brute' ? 12 : 9, cy = mechanicalCore ? y + pose.bob - 18 : y - (boss ? 10 : 7);
       const ratio = Math.min(1, num(e.weakTime) / 1.6);
       glow(c,x,cy,radius*2.6,'#e9bd6628');
       for(const side of [-1,1]){
@@ -1522,12 +1624,12 @@
       c.strokeStyle='#edbf73';c.lineWidth=1;c.beginPath();c.arc(x,cy,radius+7,-Math.PI/2,-Math.PI/2+Math.PI*2*ratio);c.stroke();
     }
     if (kind === 'shield') { if(e.shieldOpen>0||e.stun>0)label(c,'破绽',x,y-46,'#eac891',8);else{c.strokeStyle='#d3c38b88';c.lineWidth=2;c.beginPath();c.arc(x,y,num(e.r,18)+10,num(e.facing)-Math.PI/3,num(e.facing)+Math.PI/3);c.stroke();} }
-    if (e.hp < e.maxHp || boss || e.elite) bar(c, x, y - (boss ? 60 : e.elite ? 51 : 36), boss ? 64 : e.elite ? 43 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss || e.elite ? '#e2bb70' : '#d08d6f', boss || e.elite ? 4 : 3);
+    if (e.hp < e.maxHp || boss || e.elite) bar(c, x, readout?.health ?? y - (boss ? 60 : e.elite ? 51 : 36), boss ? 64 : e.elite ? 43 : 25, e.hp / Math.max(1, e.maxHp || e.hp), boss || e.elite ? '#e2bb70' : '#d08d6f', boss || e.elite ? 4 : 3);
     if (e.maxPosture > 0 && (num(e.posture) > 0 || kind === 'duelist' || boss || e.elite && e.rhythm)) {
-      const ratio=num(e.posture)/e.maxPosture, width=boss?64:e.elite?43:25, by=y-(boss?53:e.elite?44:30), nearBreak=ratio>=.75;
+      const ratio=num(e.posture)/e.maxPosture, width=boss?64:e.elite?43:25, by=readout?.posture ?? y-(boss?53:e.elite?44:30), nearBreak=ratio>=.75;
       bar(c, x, by, width, ratio, e.stagger > 0 ? '#fff0b5' : nearBreak ? '#f7d18d' : '#d99c69', 3);
       if(nearBreak)for(const side of [-1,1])path(c,[[x+side*(width/2+7),by-3],[x+side*(width/2+4),by],[x+side*(width/2+7),by+3]],'#f7d18d',1);
-      if (e.stagger > 0) label(c, '失衡', x, y - (boss ? 91 : 87), '#ffe2a4', 10);
+      if (e.stagger > 0) label(c, '失衡', x, readout?.stagger ?? y - (boss ? 91 : 87), '#ffe2a4', 10);
     }
     if (e.elite && !boss) {
       const crownY = y - 64;
@@ -1536,7 +1638,7 @@
     }
     if (chapter && !boss && !e.elite) label(c, chapterEnemyNames[kind] || '炉卫', x, y - (kind === 'charger' ? 40 : 50), '#d6b789', 8);
     if (kind === 'lamplighter') label(c, '提灯侍从', x, y - 48, '#d8c18e', 8);
-    if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
+    if (boss) label(c, e.stage>=2?'炉心守卫 · 炉火觉醒':'炉心守卫', x, readout?.name ?? y - 72, e.stage>=2?'#efbc84':'#ddca97', 9);
   }
   function bullet(c, b, state) {
     const x = num(b.x), y = num(b.y), r = num(b.r, 3), friendly = b.friendly !== false;
@@ -1599,6 +1701,25 @@
     for (const [dx,dy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) { path(c, [[x + dx * 5, y + dy * 9],[x + dx * 9, y + dy * 9],[x + dx * 9, y + dy * 5]], '#d9dfb480'); }
     rect(c, x, y, 1, 1, '#e6ddb4');
   }
+  function interceptLanding(c, { x, y }) {
+    // A small stance mark distinguishes the destination from an attack area.
+    c.save();
+    ellipse(c, x, y, 20, 12, '#879ac022');
+    for (const side of [-1, 1]) {
+      path(c, [[x + side * 22, y - 8], [x + side * 13, y], [x + side * 22, y + 8]], '#9eafd0ba', 3);
+    }
+    rect(c, x - 4, y - 1, 8, 2, '#9eafd08c');
+    c.restore();
+  }
+  function interceptBadge(c, e, viewTop) {
+    const x = Math.round(e.x), y = Math.round(furnaceReadout(e.y, viewTop).cue);
+    c.save();
+    rect(c, x - 13, y - 11, 26, 22, '#17252f');
+    rect(c, x - 13, y - 11, 26, 2, '#a3b8d8');
+    rect(c, x - 13, y + 9, 26, 2, '#a3b8d8');
+    label(c, '截', x, y, '#d1def2', 15);
+    c.restore();
+  }
   function ambient(c, state, time) {
     // A few slow gold specks give still rooms life, without resembling bullets.
     for (let i = 0; i < 13; i++) {
@@ -1608,14 +1729,20 @@
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#091a2600'); vignette.addColorStop(.75, '#091a2610'); vignette.addColorStop(1, '#091a2666'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
   const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475', hook: '#c9d5a0' };
-  function rhythmArea(c, e, state, localId) {
+  function rhythmArea(c, e, state, localId, viewTop = 0) {
     const r = e && e.rhythm;
     if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
     const x = num(e.x), y = num(e.y), radius = Math.max(1, Math.min(1100, num(r.range, 100)));
     const angle = num(r.angle), arc = Math.max(.03, Math.min(Math.PI * 2, num(r.arc, Math.PI / 2)));
     const progress = 1 - Math.max(0, Math.min(1, num(r.remaining) / Math.max(.01, num(r.duration, 1))));
-    const active = r.phase === 'active', color = rhythmColors[r.type];
-    const doubleQuake = state && state.mode === 'random' && e.kind === 'boss' && e.stage >= 2 && r.type === 'quake' && num(r.beats) === 2;
+    const active = r.phase === 'active';
+    const mechanicalCore = e.kind === 'boss' && !e.timber && chapterCoreRoom(state);
+    const readout = mechanicalCore ? furnaceReadout(y, viewTop) : null;
+    const pairedQuake = e.kind === 'boss' && e.stage >= 2 && r.type === 'quake' && num(r.beats) === 2;
+    const chapterQuake = pairedQuake && chapterCoreRoom(state);
+    const doubleQuake = pairedQuake && (state?.mode === 'random' || chapterQuake);
+    const secondShock = chapterQuake && num(r.beat) === 2;
+    const color = secondShock ? '#ef9d82' : rhythmColors[r.type];
     // Reach the target at the start of the usable parry window, so players do
     // not wait for the impact flash before pressing. The cue is slightly inside
     // the simulation's 0.38s window to leave room for input/frame timing.
@@ -1642,7 +1769,7 @@
     } else {
       shape(); c.fillStyle = color + (active ? '38' : '13'); c.fill();
       c.strokeStyle = color + (active ? 'ee' : '88'); c.lineWidth = active ? 4 : 2;
-      if (!active) c.setLineDash([7, 6]); shape(); c.stroke(); c.setLineDash([]);
+      if (!active) c.setLineDash(secondShock ? [13, 5] : [7, 6]); shape(); c.stroke(); c.setLineDash([]);
     }
     if (r.type === 'thrust' || r.type === 'rush') {
       // Directional spearheads also identify a thrust when color is hard to see.
@@ -1685,13 +1812,14 @@
     }
     c.restore();
     if (!active) {
-      const glyph = { combo: '刃', thrust: '突', sweep: '扫', quake: '震', rush: '冲', fireball: '炎', hook: '钩' }[r.type];
-      const gy = y - (e.kind === 'boss' ? 108 : 103);
+      const glyph = r.type === 'combo' && mechanicalCore
+        ? '拳' : { combo: '刃', thrust: '突', sweep: '扫', quake: '震', rush: '冲', fireball: '炎', hook: '钩' }[r.type];
+      const gy = readout?.cue ?? y - (e.kind === 'boss' ? 108 : 103);
       c.save(); c.translate(x, gy); c.rotate(Math.PI / 4); rect(c,-10,-10,20,20,'#142c2be8'); c.strokeStyle=color;c.lineWidth=2;c.strokeRect(-10,-10,20,20);c.restore();
       label(c, glyph, x, gy, color, 13);
       const beats = Math.max(1, Math.min(4, Math.floor(num(r.beats, 1)))), beat = Math.max(1, Math.floor(num(r.beat, 1)));
       if (beats > 1) for (let i = 0; i < beats; i++) rect(c,x-(beats*9-3)/2+i*9,gy+22,6,3,i<beat?color:'#566e62');
-      if (doubleQuake) label(c, `${Math.max(1, Math.min(2, beat))} / 2`, x, gy - 24, '#ead7ae', 10);
+      if (doubleQuake) label(c, `${Math.max(1, Math.min(2, beat))} / 2`, readout?.below ? x + 34 : x, readout?.below ? gy : gy - 24, chapterQuake ? color : '#ead7ae', chapterQuake ? 13 : 10);
       const p = state && state.players && state.players[localId];
       if (state && state.practice && parryReady && p && !p.downed && !p.carry && num(p.guardAttackLock) <= 0 && num(p.dashTime) <= 0 && num(p.invuln) <= .3) {
         const direction = Math.atan2(num(p.y)-y,num(p.x)-x);
@@ -1701,7 +1829,7 @@
         }
       }
     }
-    if (active && doubleQuake) label(c, `${Math.max(1, Math.min(2, Math.floor(num(r.beat, 1))))} / 2`, x, y - 108, '#ead7ae', 10);
+    if (active && doubleQuake) label(c, `${Math.max(1, Math.min(2, Math.floor(num(r.beat, 1))))} / 2`, x, readout?.cue ?? y - 108, chapterQuake ? color : '#ead7ae', chapterQuake ? 13 : 10);
   }
   function combatEvents(state) {
     const source = Array.isArray(state.combatEvents) ? state.combatEvents : values(state.events);
@@ -1754,7 +1882,9 @@
       }
       if(opening){
         for(const side of [-1,1])path(c,[[x+side*(12+motion*9),y-17],[x+side*(7+motion*9),y-17],[x+side*(7+motion*9),y-3],[x+side*(12+motion*9),y-3]],color,2);
-        impactLabel(c,'破绽',x,y+26+motion*5,color,10);return;
+        const pillarOpening = e.playerId === null && e.source === 'counter' && chapterCoreRoom(state) &&
+          values(state.enemies).some(enemy => enemy.id === e.enemyId && enemy.kind === 'boss' && enemy.stage === 1);
+        impactLabel(c,pillarOpening ? '柱碎 · 炉芯外露' : '破绽',x,y+26+motion*5,color,pillarOpening ? 12 : 10);return;
       }
       if(scatter){
         const owner=state.players&&state.players[e.playerId],angle=num(e.angle,owner?Math.atan2(y-num(owner.y),x-num(owner.x)):0);
@@ -1832,8 +1962,9 @@
         continue;
       }
       if (e.type === 'refuge-chosen' || e.type === 'boss-overload-open') {
-        if (state.mode !== 'random') continue;
-        const overload = e.type === 'boss-overload-open', life = overload ? .8 : .7; if (age > life) continue;
+        const overload = e.type === 'boss-overload-open';
+        if (state.mode !== 'random' && !(overload && chapterCoreRoom(state))) continue;
+        const life = overload ? .8 : .7; if (age > life) continue;
         const ratio = age / life, motion = still ? .2 : ratio, x = num(e.x), y = num(e.y), color = overload ? '#bfe8ca' : e.choice === 'rest' ? '#d9e4b7' : '#dfccec';
         alpha(c, (1 - ratio) * .82, () => {
           c.strokeStyle = color; c.lineWidth = 1.5; c.beginPath(); c.ellipse(x, y + 9, 18 + motion * 31, 8 + motion * 12, 0, 0, Math.PI * 2); c.stroke();
@@ -2607,6 +2738,12 @@
     const ending = chapterEndingScene(state, options);
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
+    const enemies = values(state.enemies);
+    const coreRoom = chapterCoreRoom(state);
+    const viewTop = num(options.view?.y);
+    const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
+      e.kind === 'boss' && !e.timber && e.hp > 0 && !e.dead && !e.rhythm && !e.stagger && e.intercept?.remaining > 0 &&
+      Number.isFinite(e.intercept.x) && Number.isFinite(e.intercept.y));
     openWorld(c, options.view);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
@@ -2630,13 +2767,14 @@
     // Small friendly bodies stay below both danger footprints and all actors.
     // Their position belongs to the engine; the renderer adds only a tiny hop.
     values(state.companions).forEach(fox=>foxCompanion(c,fox,time,state,localId,still));
-    values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
+    if (intercepting) interceptLanding(c, intercepting.intercept);
+    enemies.forEach(e => rhythmArea(c, e, state, localId, viewTop));
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
-      ...values(state.enemies).map(e => ({ y: e.y, draw: () => enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id)) })),
+      ...enemies.map(e => ({ y: e.y, draw: () => enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop) })),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
       ...(ending ? [
         { y: ending.lead.y, draw: () => chapterEndingCivilian(c, ending.lead.x, ending.lead.y, 'lead', ending.gait, ending.looking) },
@@ -2645,6 +2783,7 @@
       ] : [])
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
+    if (intercepting) interceptBadge(c, intercepting, viewTop);
     values(state.bullets).forEach(b => bullet(c, b, state));
     if (ending) { if (ending.t < .8) alpha(c, 1 - ending.t / .8, () => values(state.particles).forEach(p => particle(c, p, time))); }
     else values(state.particles).forEach(p => particle(c, p, time));
