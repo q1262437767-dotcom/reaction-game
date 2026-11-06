@@ -320,11 +320,12 @@
         item(data, 'sluice', 480, 355, '打开冷却水闸', { description: '冷却水道干涸，炉心通路被热浪封住。' });
       } else if (room.index === 4) {
         data.walls.push(
-          Object.assign(rect(300, 145, 66, 70), { id: 'core-pillar-west', corePillar: true }),
+          Object.assign(rect(120, 265, 66, 70), { id: 'core-pillar-west', corePillar: true }),
           Object.assign(rect(604, 385, 66, 70), { id: 'core-pillar-east', corePillar: true })
         );
         data.props.push(prop(s, 'barrel', 360, 420), prop(s, 'barrel', 650, 170));
-        guard(data, 'boss', 680, 300);
+        var furnace = guard(data, 'boss', 620, 300);
+        furnace.coreOpeningPending = true; furnace.attackCd = 3.2;
         note(data, 'missing-core', 370, 165);
         item(data, 'fire', 680, 300, '借取备用火种', { active: false,
           description: '先稳定暴走的炉心守卫，再取出可携带的备用火种。' });
@@ -1125,7 +1126,12 @@
     }
     var carried = s.props.filter(function (p) { return p.carriedBy && !p.destroyed; });
     // Do not cache a pending strike and resume it on a later room visit.
-    s.enemies.forEach(function (e) { e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0; e.attackCd = Math.max(e.attackCd, 0.8); delete e.ai; delete e.pursuit; clearCoreIntercept(e); });
+    s.enemies.forEach(function (e) {
+      e.rhythm = null; e.windup = 0; e.chargeTime = 0; e.stagger = 0; e.weakTime = 0;
+      e.attackCd = Math.max(e.attackCd, 0.8);
+      delete e.ai; delete e.pursuit; delete e.coreOpeningPending; delete e.coreExposed;
+      clearCoreIntercept(e);
+    });
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
@@ -1149,6 +1155,7 @@
         var dy = previous ? s.rooms[index].gy - previous.gy : 0;
         p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
         p.y = dy ? dy > 0 ? 132 : H - 132 : H / 2 + (i ? 28 : -24);
+        if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && previous && previous.index === 3) p.x = 220;
         if (s.mode === 'relay' && initial) { p.x = 170; p.y = 276 + i * 48; }
         if (s.mode === 'chapter' && initial) { p.x = 180; p.y = 276 + i * 48; }
       }
@@ -1947,9 +1954,9 @@
     } else event(s, 'enemy-hit', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
       weapon: weapon || null, amount: amount, x: e.x, y: e.y });
   }
-  function openWeakpoint(s, e, owner, source) {
+  function openWeakpoint(s, e, owner, source, duration) {
     if (e.hp <= 0) return;
-    e.weakTime = 1.6;
+    e.weakTime = duration || 1.6;
     event(s, 'weakpoint-open', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
       weapon: null, source: source, x: e.x, y: e.y });
   }
@@ -1998,10 +2005,19 @@
       } else event(s, 'lantern-guard', { enemyId: e.id, sourceId: source.id, playerId: s.players[owner] ? owner : null,
         weapon: weapon || null, amount: amount, reduced: original - amount, x: e.x, y: e.y });
     }
-    if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
+    var furnaceHit = e.coreExposed && e.weakTime > 0 && s.players[owner] && /^(blade|spear|pistol|scatter)$/.test(weapon);
+    if (furnaceHit) {
+      delete e.coreExposed;
+      e.weakTime = 0;
+      amount = Math.min(e.hp, amount + Math.round(e.maxHp * 0.2));
+      event(s, 'weakpoint-hit', { enemyId: e.id, playerId: owner, weapon: weapon, amount: amount,
+        source: 'furnace-core', x: e.x, y: e.y });
+    } else if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
     e.hp -= amount; e.flash = 0.12;
     if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && !e.timber && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
       e.stage = 2; e.rhythm = null; e.chargeTime = 0; e.rushHitIds = []; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0; delete e.pursuit;
+      delete e.coreOpeningPending;
+      if (e.coreExposed) { delete e.coreExposed; e.weakTime = 0; }
       clearCoreIntercept(e);
       s.walls = s.walls.filter(function (w) {
         var boundary = w.x <= 28 || w.y <= 28 || w.x + w.w >= W - 28 || w.y + w.h >= H - 28;
@@ -2224,7 +2240,8 @@
       e.rhythm.phase === 'active' && e.rhythm.beat === 1;
     // A dodge earns the usual counter. Only landing a follow-up can stop the
     // next shock; one player's dodge never silently cancels the other cue.
-    if (!firstShock) {
+    var openingRush = kind === 'dodge' && e.rhythm && e.rhythm.opening === true;
+    if (!firstShock && !openingRush) {
       if (e.posture >= e.maxPosture) {
         breakPosture(s, e, p.id, p.weapon); e.stagger = Math.max(e.stagger, 1.15);
       } else if (kind !== 'parry') { e.stagger = 0.65; e.rhythm = null; }
@@ -2282,7 +2299,7 @@
       ball.fireball = true; ball.kind = 'fireball'; ball.reflectable = true; ball.color = '#ffd189'; ball.damage = 1;
       return;
     }
-    particle(s, r.type === 'quake' ? 'shockwave' : 'slash', e.x, e.y,
+    if (!r.opening) particle(s, r.type === 'quake' ? 'shockwave' : 'slash', e.x, e.y,
       { r: r.range, angle: r.angle, arc: r.arc, ttl: 0.24, life: 0.24, color: '#ffd28f' });
     if (r.type === 'rush') {
       e.chargeX = Math.cos(r.angle); e.chargeY = Math.sin(r.angle); e.chargeTime = 0.85; e.rushHitIds = [];
@@ -2337,15 +2354,17 @@
     // the wall cannot be hurt by the same quake that reveals the new opening.
     if (r.type === 'quake') breachFromQuake(s, e);
   }
-  function rhythmWindup(s, e, type, beat, beats, target) {
-    var duration = type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' || type === 'hook' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
+  function rhythmWindup(s, e, type, beat, beats, target, opening) {
+    var duration = opening ? 1.9 : type === 'combo' ? beat === 1 ? 0.88 : 0.5 : type === 'thrust' || type === 'hook' ? 1.05 : type === 'quake' ? 1.3 : 1.1;
     if (e.timber && type === 'hook') duration = 1.15;
+    if (type === 'quake' && beat === 2 && isChapterCoreGuard(s, e)) duration = 1.55;
     if (s.mode === 'random' && e.kind === 'boss' && e.stage === 2 && type === 'quake' && beat === 2) duration = 1.05;
     e.rhythm = { type: type, phase: 'windup', remaining: duration, duration: duration,
       beat: beat, beats: beats, angle: Math.atan2(target.y - e.y, target.x - e.x), targetId: target.id,
       range: type === 'combo' ? 145 : type === 'thrust' ? 245 : type === 'hook' ? 430 : type === 'quake' ? 450 : type === 'rush' || type === 'fireball' ? 560 : 235,
       arc: type === 'combo' ? Math.PI * 0.85 : type === 'thrust' || type === 'rush' ? 0.34 : type === 'hook' ? 0.18 : type === 'fireball' ? 0.14 : type === 'quake' ? TAU : Math.PI * 1.65 };
     if (isChapterCoreQuake(s, e, e.rhythm)) e.rhythm.range = beat === 1 ? 210 : 395;
+    if (opening) { e.rhythm.opening = true; e.rhythm.range = dist(e, target); }
     e.facing = e.rhythm.angle; e.attack = type; e.windup = 0;
     event(s, 'rhythm-windup', { attack: type, beat: beat, beats: beats, duration: duration, enemyId: e.id, x: e.x, y: e.y });
   }
@@ -2364,7 +2383,7 @@
         if (pillar) {
           s.walls = s.walls.filter(function (w) { return w !== pillar; });
           burst(s, 'wood', pillar.x + pillar.w / 2, pillar.y + pillar.h / 2, '#d4b484', 16);
-          return 'core-pillar';
+          return pillar.id;
         }
       }
       var block = !wall && s.props.find(function (q) {
@@ -2508,6 +2527,17 @@
   }
   function updateRhythm(s, e, target, dt) {
     var coreGuard = isChapterCoreGuard(s, e);
+    if (e.coreOpeningPending) {
+      if (dt <= 0) return true;
+      e.attackCd = Math.max(0, e.attackCd - dt);
+      if (e.attackCd > 0) return true;
+      delete e.coreOpeningPending;
+      var pillar = s.walls.find(function (w) { return w.id === 'core-pillar-west'; });
+      if (pillar) {
+        rhythmWindup(s, e, 'rush', 1, 1, { x: pillar.x + pillar.w, y: pillar.y + pillar.h / 2, id: target.id }, true);
+        return true;
+      }
+    }
     // An earned counter can interrupt a charge before this enemy update. Keep
     // a cancelled Boss lane from retaining its movement or its charge pose.
     if (dt > 0 && !s.practice && e.kind === 'boss' && (s.mode === 'chapter' || s.mode === 'random') &&
@@ -2527,20 +2557,28 @@
         e.chargeTime = Math.max(0, e.chargeTime - dt);
         var blocked = rushMove(s, e, speed * dt);
         particle(s, 'trail', e.x, e.y, { r: e.r, ttl: 0.18, life: 0.18, color: '#efaa72' });
-        if (blocked === 'core-pillar') {
-          e.chargeTime = 0; e.rhythm = null; e.stagger = 2; e.posture = 0; e.attackCd = 1;
-          openWeakpoint(s, e, null, 'counter');
+        if (blocked === 'core-pillar-west' || blocked === 'core-pillar-east') {
+          var coreExposed = blocked === 'core-pillar-west';
+          e.chargeTime = 0; e.rhythm = null; e.stagger = coreExposed ? 3.5 : 2; e.posture = 0; e.attackCd = 1;
+          if (coreExposed) e.coreExposed = true;
+          openWeakpoint(s, e, null, coreExposed ? 'furnace-core' : 'counter', coreExposed ? 3.5 : 1.6);
           particle(s, 'shockwave', e.x, e.y, { r: 108, ttl: 0.38, life: 0.38, color: '#f5bd76' });
           event(s, 'brute-wall-hit', { enemyId: e.id, x: e.x, y: e.y });
           s.message = '柱子撞塌了！炉芯露出来了。'; s.messageTime = 2;
           return true;
         }
         var decoy = s.decoys.find(function (d) { return dist(e, d) < e.r + d.r + 8; });
-        if (decoy) { s.decoys = s.decoys.filter(function (d) { return d.id !== decoy.id; }); e.chargeTime = 0; }
+        if (decoy) {
+          s.decoys = s.decoys.filter(function (d) { return d.id !== decoy.id; });
+          if (!r.opening) e.chargeTime = 0;
+        }
         alivePlayers(s).forEach(function (p) {
           if (dist(e, p) >= e.r + p.r + 20) return;
+          if (r.opening && e.rushHitIds.indexOf(p.id) >= 0) return;
           if (p.dashWindow > 0 && p.invuln <= 0.3) {
-            grantCounter(s, p, e, 'dodge'); e.chargeTime = 0;
+            grantCounter(s, p, e, 'dodge');
+            if (r.opening) e.rushHitIds.push(p.id);
+            else e.chargeTime = 0;
           } else if (dist(e, p) < e.r + p.r + 3 && damagePlayer(s, p, 1, 'rush')) e.chargeTime = 0;
         });
         if (blocked || e.chargeTime <= 0) {
@@ -2564,9 +2602,9 @@
         var randomOverload = s.mode === 'random' && e.kind === 'boss' && e.stage === 2;
         if (finalShock && (randomOverload || isChapterCoreQuake(s, e, r) && s.status === 'playing')) {
           e.rhythm = r; e.stagger = 0;
-          r.phase = 'recover'; r.duration = 2; r.remaining = 2;
+          r.phase = 'recover'; r.duration = randomOverload ? 2 : 2.6; r.remaining = r.duration;
           openWeakpoint(s, e, null, 'counter');
-          event(s, 'boss-overload-open', { enemyId: e.id, x: e.x, y: e.y, duration: 2 });
+          event(s, 'boss-overload-open', { enemyId: e.id, x: e.x, y: e.y, duration: r.duration });
         }
       } else if (r.phase === 'active') {
         if (r.beat < r.beats) rhythmWindup(s, e, r.type, r.beat + 1, r.beats, target);
@@ -2581,17 +2619,19 @@
       return true;
     }
     e.attackCd -= dt;
-    if (route && e.attackCd <= 0 && planCoreIntercept(s, e, target, route)) return true;
+    var firstCoreQuake = coreGuard && e.stage === 2 && e.rhythmCycle === 0;
+    if (!firstCoreQuake && route && e.attackCd <= 0 && planCoreIntercept(s, e, target, route)) return true;
     var distance = dist(e, target), boss = e.kind === 'boss';
     var type = e.huntTarget ? ['combo', 'rush', 'quake'][e.rhythmCycle % 3] : e.kind === 'hookwarden' ? ['hook', 'combo', 'sweep'][e.rhythmCycle % 3] : e.kind === 'brute' ? ['rush', 'quake'][e.rhythmCycle % 2] : e.kind === 'pyromancer' ? 'fireball' :
       ['combo', 'thrust', boss && ((s.mode !== 'random' && s.mode !== 'chapter') || e.stage === 2) ? 'quake' : 'sweep'][e.rhythmCycle % 3];
     var overload = s.mode === 'random' && boss && e.stage === 2;
     if (overload) type = ['combo', 'thrust', 'sweep', 'quake'][e.rhythmCycle % 4];
+    if (firstCoreQuake) type = 'quake';
     if (s.practice && (s.practiceParries || 0) < 4) type = 'combo';
     var pursuing = pressure && pressure.time >= (coreGuard ? 0.6 : 1.6) && pressure.cooldown <= 0;
     var rushRange = 190;
     if (coreGuard) rushRange = e.stage === 2 ? 350 : 315;
-    if (pursuing && distance > (coreGuard ? 155 : 128) && distance <= rushRange && e.attackCd <= 0 && foxSight(s, e, target, 3)) {
+    if (!firstCoreQuake && pursuing && distance > (coreGuard ? 155 : 128) && distance <= rushRange && e.attackCd <= 0 && foxSight(s, e, target, 3)) {
       pressure.time = 0; pressure.cooldown = coreGuard ? 5.5 : 7.5;
       rhythmWindup(s, e, 'rush', 1, 1, target); return true;
     }
@@ -2912,6 +2952,7 @@
       if (e.stun > 0) cancelCoreIntercept(e);
       e.flash = Math.max(0, e.flash - dt); e.stun = Math.max(0, e.stun - dt);
       e.weakTime = Math.max(0, (e.weakTime || 0) - dt);
+      if (e.coreExposed && e.weakTime <= 0) delete e.coreExposed;
       e.shieldOpen = Math.max(0, e.shieldOpen - dt);
       if (!s.practice && dt > 0 && e.ai && e.ai.mode === 'windup' && e.windup <= 0) {
         e.ai.mode = e.kind === 'shield' ? 'guard' : 'approach'; e.ai.time = 0;
@@ -3108,7 +3149,7 @@
               Math.cos(Math.atan2(b.y - foe.y, b.x - foe.x) - foe.facing) > 0.5;
             if (front) { b.dead = true; burst(s, 'spark', b.x, b.y, '#a9d7ff', 3); }
             else {
-              var weakShot = b.weapon === 'pistol' && foe.weakTime > 0, amount = b.damage + (weakShot ? 2 : 0);
+              var weakShot = b.weapon === 'pistol' && foe.weakTime > 0 && !foe.coreExposed, amount = b.damage + (weakShot ? 2 : 0);
               var actual = damageEnemy(s, foe, amount, b.owner, b.weapon || null, weakShot);
               if (weakShot) {
                 foe.weakTime = 0;
@@ -3441,7 +3482,7 @@
     return s;
   }
   // Navigation and hit lists stay on the host. A guest only draws the result.
-  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1 };
+  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1 };
   var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
   var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
   var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
@@ -3484,7 +3525,7 @@
   function copyEnemy(enemy) {
     var out = {};
     for (var key in enemy) {
-      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead') continue;
+      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead' || key === 'coreOpeningPending') continue;
       out[key] = enemy[key];
     }
     return out;

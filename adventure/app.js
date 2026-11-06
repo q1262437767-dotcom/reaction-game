@@ -775,11 +775,18 @@
       } else if (event.type === 'melee-block') {
         if (soundReady('block', event.time, .12)) tone(780, .075, .024, 'triangle', 0, 510);
       } else if (event.type === 'weakpoint-open') {
-        if (soundReady('opening', event.time, .18)) tone(570, .085, .015, 'sine', 0, 760);
+        if (soundReady('opening', event.time, .18)) {
+          if (event.source === 'furnace-core') {
+            tone(110, .24, .038, 'triangle', 0, 45); tone(640, .11, .018, 'sine', .08, 830);
+          } else tone(570, .085, .015, 'sine', 0, 760);
+        }
       } else if (event.type === 'weakpoint-hit') {
         // Routine hits may already have sounded this frame. A separate bounded
         // accent keeps that tick from swallowing a teammate's weakpoint hit.
-        if (soundReady('weakpoint', event.time, .10)) { tone(1080, .085, .032, 'triangle', 0, 680); tone(310, .10, .022, 'triangle'); }
+        if (soundReady('weakpoint', event.time, .10)) {
+          if (event.source === 'furnace-core') tone(92, .22, .039, 'triangle', 0, 42);
+          tone(1080, .085, .032, 'triangle', 0, 680); tone(310, .10, .022, 'triangle');
+        }
       } else if (event.type === 'posture-break') {
         if (soundReady('posture', event.time, .16)) tone(390, .14, .028, 'triangle', 0, 95);
       } else if (event.type === 'scatter-push') {
@@ -1304,8 +1311,10 @@
       if (p.relayBoost != null && !bounded(p.relayBoost, 3)) return false;
     }
     for (const enemy of s.enemies) {
-      if (!validIntercept(enemy, furnaceRoom)) return false;
-      if (!enemy || !bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
+      if (!enemy || !validIntercept(enemy, furnaceRoom)) return false;
+      const furnaceBoss = furnaceRoom && enemy.kind === 'boss' && enemy.timber === undefined && enemy.stage === 1;
+      if (enemy.coreExposed !== undefined && (!furnaceBoss || enemy.coreExposed !== true || enemy.rhythm != null)) return false;
+      if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, enemy.coreExposed ? 3.5 : 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
       if (enemy.pursuit !== undefined) {
         const pursuit = enemy.pursuit;
         if (s.practice || enemy.timber !== undefined || !['chapter', 'random'].includes(s.mode) || enemy.kind !== 'boss' || !pursuit || typeof pursuit !== 'object' || Array.isArray(pursuit) || Object.keys(pursuit).length !== 3 || !['time', 'cooldown', 'targetId'].every(key => Object.prototype.hasOwnProperty.call(pursuit, key)) || !bounded(pursuit.time, 1.6) || !bounded(pursuit.cooldown, 7.5) || ![null, 'p1', 'p2'].includes(pursuit.targetId) || pursuit.time > 0 && pursuit.targetId === null) return false;
@@ -1323,6 +1332,8 @@
       if (enemy.rhythm != null) {
         const attack = enemy.rhythm;
         if (!['combo', 'thrust', 'sweep', 'quake', 'rush', 'fireball', 'hook'].includes(attack.type) || !['windup', 'active', 'recover'].includes(attack.phase) || !bounded(attack.remaining, 10) || !bounded(attack.duration, 10) || !Number.isInteger(attack.beat) || !Number.isInteger(attack.beats) || attack.beat < 0 || attack.beat > attack.beats || attack.beats < 1 || attack.beats > 8 || !Number.isFinite(attack.angle) || Math.abs(attack.angle) > Math.PI * 4 || !bounded(attack.range, 1600) || !bounded(attack.arc, Math.PI * 2) || attack.type === 'hook' && enemy.kind !== 'hookwarden' && !enemy.timber) return false;
+        if (attack.opening !== undefined && (!furnaceBoss || attack.opening !== true || attack.type !== 'rush' ||
+            attack.phase === 'recover' || attack.beat !== 1 || attack.beats !== 1 || attack.duration > 1.9)) return false;
       }
     }
     for (const bullet of s.bullets) {
@@ -1337,7 +1348,7 @@
       if (event.type === 'refuge-chosen' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !['rest', 'relic'].includes(event.choice) || !Number.isInteger(event.room) || event.room < 1 || event.room >= s.rooms.length || s.rooms[event.room].kind !== 'refuge' || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'style-formed' && (s.mode !== 'random' || event.playerId !== null || !E.activeStyles(s).includes(event.style) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'style-trigger' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !E.activeStyles(s).includes(event.style) || event.enemyId !== null && !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
-      if (event.type === 'boss-overload-open' && (!(s.mode === 'random' || furnaceRoom) || !shortId(event.enemyId) || event.duration !== 2 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (event.type === 'boss-overload-open' && (!(s.mode === 'random' || furnaceRoom) || !shortId(event.enemyId) || event.duration !== (furnaceRoom ? 2.6 : 2) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-rescued' && (s.mode !== 'random' || !s.foxRescue || !s.foxRescue.rescued || !['p1', 'p2'].includes(event.playerId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !['bite', 'counter'].includes(event.assistKind) || !Number.isInteger(event.amount) || !bounded(event.amount, event.assistKind === 'counter' ? 3 : 1) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'spear-thrust' && (!['p1', 'p2'].includes(event.playerId) || event.enemyId !== null && !shortId(event.enemyId) || event.weapon !== 'spear' || typeof event.perfect !== 'boolean' || !Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4 || !bounded(event.range, 250))) return false;
@@ -1354,7 +1365,14 @@
       if (event.type === 'player-hit' && (!['p1', 'p2'].includes(event.playerId) || !bounded(event.damage, 100) || !bounded(event.hp, 100) || !['combo', 'thrust', 'sweep', 'quake', 'rush', 'charge', 'melee', 'bullet', 'fire', 'fireball', 'hook'].includes(event.source))) return false;
       if (['enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit'].includes(event.type)) {
         if (event.enemyId !== null && !shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, 'blade', 'spear', 'pistol', 'scatter'].includes(event.weapon)) return false;
-        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', 'blade', 'spear', 'pistol', 'scatter'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
+        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', 'blade', 'spear', 'pistol', 'scatter', 'furnace-core'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
+        if (event.source === 'furnace-core') {
+          if (!furnaceRoom || !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600)) return false;
+          if (event.type === 'weakpoint-open') {
+            if (event.playerId !== null || event.weapon !== null || event.amount !== undefined) return false;
+          } else if (event.type !== 'weakpoint-hit' || event.playerId === null || event.weapon === null ||
+              !Number.isInteger(event.amount) || event.amount <= 0) return false;
+        }
         if (event.type === 'environment-hit' && (!['rush', 'fireball', 'quake', 'explosion'].includes(event.source) || !['prop', 'enemy'].includes(event.target))) return false;
         if (event.source === 'quake' && (event.type !== 'environment-hit' || event.target !== 'enemy' || !shortId(event.enemyId) || event.playerId !== null || event.weapon !== null || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount <= 0 || event.propId !== undefined)) return false;
       }
@@ -1372,7 +1390,8 @@
     }
     for (const wall of s.walls) {
       if (wall.corePillar !== undefined && (!furnaceRoom || wall.corePillar !== true || wall.w !== 66 || wall.h !== 70 ||
-        !(wall.x === 300 && wall.y === 145 || wall.x === 604 && wall.y === 385))) return false;
+        !(wall.id === 'core-pillar-west' && wall.x === 120 && wall.y === 265 ||
+          wall.id === 'core-pillar-east' && wall.x === 604 && wall.y === 385))) return false;
       if (wall.timberCart !== undefined && (s.mode !== 'chapter' || s.mission.id !== 'chapter1_2' || s.room.index !== 5)) return false;
       if (wall.breachWall != null && typeof wall.breachWall !== 'boolean' || wall.breachFrame != null && typeof wall.breachFrame !== 'boolean') return false;
       if ((wall.breachWall || wall.breachFrame) && (s.mode !== 'random' || s.roomEvent?.kind !== 'breach' || !bounded(wall.x, 960) || !bounded(wall.y, 600) || !bounded(wall.w, 960) || wall.w === 0 || !bounded(wall.h, 600) || wall.h === 0 || wall.x + wall.w > 960 || wall.y + wall.h > 600 || wall.breachWall && (!shortId(wall.id) || wall.id !== s.roomEvent.wallId))) return false;

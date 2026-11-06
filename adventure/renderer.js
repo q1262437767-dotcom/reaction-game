@@ -140,7 +140,7 @@
       }
     }
   }
-  function wall(c, w) {
+  function wall(c, w, openingPillar = false) {
     const x = num(w.x), y = num(w.y), width = num(w.w ?? w.width, 32), height = num(w.h ?? w.height, 32);
     // Beveled cap, recessed masonry and contact shade share the exact existing
     // ground footprint. Surface wear never invents a new piece of cover.
@@ -172,10 +172,10 @@
       rect(c, bx, y + 1, 8, Math.min(17, height - 2), '#3c4d4d'); rect(c, bx + 1, y + 1, 6, 3, '#a18b61');
       rect(c, bx + 2, y + 7, 2, 2, '#c1ac7a'); rect(c, bx + 2, y + 13, 2, 2, '#78817a');
     }
-    if (w.corePillar === true) corePillarFace(c, x, y, width, height);
+    if (w.corePillar === true) corePillarFace(c, x, y, width, height, openingPillar);
   }
 
-  function corePillarFace(c, x, y, width, height) {
+  function corePillarFace(c, x, y, width, height, openingPillar) {
     const center = x + width / 2, base = y + height - 14;
     for (const brace of [y + 10, base]) {
       rect(c, x + 3, brace, width - 6, 7, '#685141');
@@ -187,6 +187,18 @@
     path(c, split, '#1b2e32', 4);
     path(c, [[center + 3, y + 27], [center + 15, y + 25], [center + 19, y + 20]], '#25383b', 2);
     path(c, [[center - 6, y + 36], [center - 15, y + 41], [center - 20, y + 39]], '#25383b', 2);
+    if (openingPillar) {
+      const fracture = [[center - 15, y + 8], [center - 6, y + 19], [center + 4, y + 28], [center - 6, y + 36], [center + 6, y + 46], [center + 1, y + height - 8]];
+      path(c, fracture.map(([px, py]) => [px + 3, py]), '#d4a477', 3);
+      path(c, fracture, '#1b2b2e', 7);
+      path(c, [[center + 3, y + 28], [center + 15, y + 25], [x + width - 9, y + 14]], '#203137', 4);
+      path(c, [[center - 6, y + 36], [center - 16, y + 44], [x + 6, y + 44]], '#203137', 4);
+      for (const side of [-1, 1]) {
+        const chipX = center + side * (width / 2 + 7);
+        rect(c, chipX - 5, y + height - 9, 9, 5, '#25393d');
+        rect(c, chipX - 4, y + height - 10, 7, 3, '#9c8e6f');
+      }
+    }
   }
 
   function chapterCoreRoom(state) {
@@ -1224,6 +1236,40 @@
     for (let notch = -cap / 2 + 5; notch < cap / 2 - 3; notch += 5) rect(c, 5, notch, 3, 2, '#574e42');
     c.restore();
   }
+  function furnaceKneel(c, facing) {
+    const side = Math.cos(facing) < 0 ? -1 : 1;
+    c.save(); c.scale(side, 1);
+    path(c, [[-11, 7], [-17, 15], [-28, 17]], '#24343c', 13);
+    path(c, [[12, 9], [19, 17], [31, 18]], '#24343c', 13);
+    rivetPlate(c, -27, 10, 17, 12, '#6e746c', '#aca893');
+    rivetPlate(c, 12, 12, 16, 12, '#858071', '#c7b48f');
+    rect(c, -33, 19, 13, 4, '#4c5551');
+    rect(c, 25, 20, 13, 4, '#545752');
+    c.restore();
+  }
+  function furnaceBracedArms(c, facing, drop, bothArms) {
+    const lead = Math.cos(facing) < 0 ? -1 : 1;
+    for (const side of [-1, 1]) {
+      const planted = bothArms || side === lead;
+      const shoulder = [side * 21, -20];
+      const elbow = [side * 34, planted ? -9 : -5];
+      const wrist = [side * (planted ? 42 : 28), planted ? 16 - drop : 4 - drop * .4];
+      furnaceActuator(c, shoulder, elbow, wrist, planted, false);
+      rivetPlate(c, shoulder[0] - 10, shoulder[1] - 7, 20, 12, '#987e5f', '#dec18a');
+    }
+  }
+  function furnaceOpenChest(c) {
+    glow(c, 0, -8, 46, '#fbd37b75');
+    rect(c, -15, -20, 30, 25, '#293234');
+    for (const side of [-1, 1]) {
+      c.save(); c.translate(side * 16, -8); c.rotate(side * -.24);
+      rivetPlate(c, -6, -10, 12, 22, '#886b4d', '#e1bf85');
+      c.restore();
+    }
+    rect(c, -9, -17, 18, 19, '#a75f35');
+    crystal(c, 0, -8, 1.4, '#f3c16d');
+    rect(c, -2, -15, 4, 11, '#fff2c6');
+  }
   function furnaceArms(c, pose) {
     const { type, facing, phase, side } = pose;
     const progress = motionEase(pose.progress), winding = phase === 'windup';
@@ -1368,6 +1414,11 @@
     const step = pose.step, facing = pose.facing;
     const mechanicalCore = coreRoom && boss && !e.timber;
     const readout = mechanicalCore ? furnaceReadout(y, viewTop) : null;
+    const openingRush = mechanicalCore && e.rhythm?.type === 'rush' && e.rhythm.opening === true;
+    const openingCore = mechanicalCore && e.coreExposed === true && num(e.weakTime) > 0;
+    const quakeBrace = mechanicalCore && recovering && e.stage >= 2 && e.rhythm.type === 'quake' && e.rhythm.beats === 2 && e.rhythm.beat === 2;
+    const coreImpact = mechanicalCore && events.find(({ event, age }) => event.enemyId === e.id && age <= .20 && furnaceCoreHit(event));
+    const bodyDrop = openingCore || coreImpact ? 13 : quakeBrace ? 11 : 0;
     const drivingArms = mechanicalCore && ['combo', 'thrust', 'sweep', 'rush'].includes(pose.type);
     // Furnace flicker and hanging equipment share the simulation clock passed
     // by draw; pausing or repeating a guest snapshot preserves their position.
@@ -1397,11 +1448,11 @@
       }
     }
     if ((kind === 'charger' || kind==='brute') && (e.chargeTime > 0 || e.rhythm && e.rhythm.type==='rush' && e.rhythm.phase==='active')) { const a = e.rhythm ? num(e.rhythm.angle) : Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', kind==='brute'?28:18); }
-    const impact = events.find(({ event, age }) => event.enemyId === e.id && age <= .13 && ['enemy-hit','weakpoint-hit','environment-hit'].includes(event.type));
+    const impact = coreImpact || events.find(({ event, age }) => event.enemyId === e.id && age <= .13 && ['enemy-hit','weakpoint-hit','environment-hit'].includes(event.type));
     c.save(); c.translate(Math.round(x), Math.round(y));
     c.translate(0, pose.bob); c.rotate(pose.tilt); c.transform(1, 0, pose.turn, 1, 0, 0);
     if (impact && !still) {
-      const recoil = (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
+      const recoil = coreImpact ? (1 - impact.age / .20) * 6 : (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
       c.translate(Math.cos(num(e.facing)) * -recoil, Math.sin(num(e.facing)) * -recoil);
     }
     if (mechanicalCore) {
@@ -1413,9 +1464,14 @@
     } else if (boss) {
       const awakened = e.stage >= 2;
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
-      rect(c, -21, 5 + step, 15, 16, '#182a32'); rect(c, 8, 5 - step, 15, 16, '#182a32');
-      rivetPlate(c,-21,5+step,15,13,'#7f7970','#bec2ac');rivetPlate(c,8,5-step,15,13,'#626b6b','#a2a995');
-      rect(c,-22,18+step,17,3,'#3e4549');rect(c,7,18-step,17,3,'#303d45');
+      if (bodyDrop) {
+        furnaceKneel(c, facing);
+        c.save(); c.translate(0, bodyDrop);
+      } else {
+        rect(c, -21, 5 + step, 15, 16, '#182a32'); rect(c, 8, 5 - step, 15, 16, '#182a32');
+        rivetPlate(c,-21,5+step,15,13,'#7f7970','#bec2ac');rivetPlate(c,8,5-step,15,13,'#626b6b','#a2a995');
+        rect(c,-22,18+step,17,3,'#3e4549');rect(c,7,18-step,17,3,'#303d45');
+      }
       rect(c, -25, -24, 50, 34, '#182a32'); rect(c,-22,-23,44,30,'#465b64');
       // Separate sloped chest, rib plates and bronze hip segments, with a
       // charcoal gap around the furnace; this is no longer one green slab.
@@ -1428,7 +1484,9 @@
       }
       rect(c,-9,-16,18,21,'#273841');rect(c,-8,-15,16,2,'#9d7b54');
       rect(c,-21,5,16,5,'#a17d55');rect(c,6,5,16,5,'#816446');rect(c,-18,5,10,1,'#e4c68f');rect(c,8,5,10,1,'#c4a573');
-      if (pose.type === 'quake') {
+      if (bodyDrop) {
+        furnaceBracedArms(c, facing, bodyDrop, quakeBrace);
+      } else if (pose.type === 'quake') {
         rect(c, -31, -26, 14, 7, '#9f8965'); rect(c, 19, -26, 14, 7, '#8d795d');
       } else if (drivingArms) {
         furnaceArms(c, pose);
@@ -1437,7 +1495,7 @@
         rivetPlate(c,-32,-26+step,16,12,'#a1815c','#dec18a');rivetPlate(c,18,-26-step,16,12,'#896d50','#c4aa7c');
         rect(c,-31,-9+step,13,4,'#bfac83');rect(c,20,-9-step,13,4,'#9e8b68');rect(c,-30,-3+step,11,5,'#394b53');rect(c,21,-3-step,11,5,'#2b424e');
       }
-      const shoulderDrop = mechanicalCore && pose.type === 'rush' ? pose.brace : 0;
+      const shoulderDrop = mechanicalCore && pose.type === 'rush' ? pose.brace * (openingRush ? 1.3 : 1) : 0;
       if (shoulderDrop) { c.save(); c.translate(Math.cos(facing) * 5 * shoulderDrop, 5 * shoulderDrop); }
       rect(c, -17, -47, 34, 25, '#192c34'); rect(c, -15, -45, 30, 23, '#778a8d'); rect(c, -13, -45, 8, 20, '#b0b9a7'); rect(c, 7, -45, 8, 20, '#405c68');
       rect(c,-20,-43,40,5,'#876b50');rect(c,-17,-45,34,4,'#aa8a5d');rect(c,-12,-49,24,5,'#d3b985');rect(c,-10,-49,17,1,'#f4dfb0');
@@ -1460,7 +1518,9 @@
         for (const side of [-1, 1]) path(c, [[side * 12, -19], [side * 18, -14], [side * 18, 3], [side * 12, 8]], '#b4e3c7', 2);
       }
       if (recovering) { glow(c, 0, -9, 33, '#b4e5c527'); rect(c, -5, -13, 10, 14, '#b9dcb4'); rect(c, -2, -11, 4, 10, '#f0f3cf'); }
-      if (pose.type === 'quake') quakeArms(c, pose, false, true);
+      if (openingCore || coreImpact) furnaceOpenChest(c);
+      if (pose.type === 'quake' && !quakeBrace) quakeArms(c, pose, false, true);
+      if (bodyDrop) c.restore();
     } else if (kind === 'lamplighter') {
       const active = lanternActive(e), side = Math.cos(facing) < 0 ? -1 : 1;
       if (!active) c.rotate(-.13);
@@ -1614,8 +1674,8 @@
       // The mark sits on the body, away from its name and health/posture bars.
       // Its remaining arc is simulation state, so repeated snapshots cannot
       // restart the opportunity or make a consumed weak point look available.
-      const radius = boss ? 13 : kind === 'brute' ? 12 : 9, cy = mechanicalCore ? y + pose.bob - 18 : y - (boss ? 10 : 7);
-      const ratio = Math.min(1, num(e.weakTime) / 1.6);
+      const radius = boss ? 13 : kind === 'brute' ? 12 : 9, cy = mechanicalCore ? y + pose.bob - 18 + bodyDrop * 1.28 : y - (boss ? 10 : 7);
+      const ratio = Math.min(1, num(e.weakTime) / (openingCore ? 3.5 : 1.6));
       glow(c,x,cy,radius*2.6,'#e9bd6628');
       for(const side of [-1,1]){
         path(c,[[x+side*(radius+4),cy-5],[x+side*radius,cy-5],[x+side*radius,cy+5],[x+side*(radius+4),cy+5]],'#f9d68e',2);
@@ -1629,7 +1689,7 @@
       const ratio=num(e.posture)/e.maxPosture, width=boss?64:e.elite?43:25, by=readout?.posture ?? y-(boss?53:e.elite?44:30), nearBreak=ratio>=.75;
       bar(c, x, by, width, ratio, e.stagger > 0 ? '#fff0b5' : nearBreak ? '#f7d18d' : '#d99c69', 3);
       if(nearBreak)for(const side of [-1,1])path(c,[[x+side*(width/2+7),by-3],[x+side*(width/2+4),by],[x+side*(width/2+7),by+3]],'#f7d18d',1);
-      if (e.stagger > 0) label(c, '失衡', x, readout?.stagger ?? y - (boss ? 91 : 87), '#ffe2a4', 10);
+      if (e.stagger > 0) label(c, openingCore ? '炉芯外露' : '失衡', x, readout?.stagger ?? y - (boss ? 91 : 87), '#ffe2a4', openingCore ? 13 : 10);
     }
     if (e.elite && !boss) {
       const crownY = y - 64;
@@ -1729,6 +1789,18 @@
     const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#091a2600'); vignette.addColorStop(.75, '#091a2610'); vignette.addColorStop(1, '#091a2666'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
   }
   const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475', hook: '#c9d5a0' };
+  function furnaceRushLane(c, radius, halfWidth, progress, color) {
+    rect(c, 0, -halfWidth, radius, halfWidth * 2, color + '1a');
+    c.setLineDash(progress > .68 ? [] : [10, 7]);
+    for (const side of [-1, 1]) path(c, [[0, side * halfWidth], [radius, side * halfWidth]], color + 'bc', progress > .68 ? 3 : 2);
+    c.setLineDash([]);
+    path(c, [[radius, -halfWidth], [radius, halfWidth]], color + 'df', 3);
+    path(c, [[12, 0], [radius, 0]], color + '46', 2);
+    for (const distance of [.18, .38, .58, .78, .94]) {
+      const x = radius * distance;
+      path(c, [[x - 12, -8], [x, 0], [x - 12, 8]], color + 'd9', 3);
+    }
+  }
   function rhythmArea(c, e, state, localId, viewTop = 0) {
     const r = e && e.rhythm;
     if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
@@ -1737,12 +1809,16 @@
     const progress = 1 - Math.max(0, Math.min(1, num(r.remaining) / Math.max(.01, num(r.duration, 1))));
     const active = r.phase === 'active';
     const mechanicalCore = e.kind === 'boss' && !e.timber && chapterCoreRoom(state);
+    const openingRush = mechanicalCore && r.type === 'rush' && r.opening === true;
+    // The pinned warning ends at the pillar. Once the shoulder is moving,
+    // painting it from the current position would incorrectly slide the lane.
+    if (openingRush && active) return;
     const readout = mechanicalCore ? furnaceReadout(y, viewTop) : null;
     const pairedQuake = e.kind === 'boss' && e.stage >= 2 && r.type === 'quake' && num(r.beats) === 2;
     const chapterQuake = pairedQuake && chapterCoreRoom(state);
     const doubleQuake = pairedQuake && (state?.mode === 'random' || chapterQuake);
     const secondShock = chapterQuake && num(r.beat) === 2;
-    const color = secondShock ? '#ef9d82' : rhythmColors[r.type];
+    const color = openingRush || secondShock ? '#ef9d82' : rhythmColors[r.type];
     // Reach the target at the start of the usable parry window, so players do
     // not wait for the impact flash before pressing. The cue is slightly inside
     // the simulation's 0.38s window to leave room for input/frame timing.
@@ -1750,7 +1826,10 @@
     const circle = r.type === 'quake' || arc >= Math.PI * 2 - .01;
     c.save(); c.translate(x, y); c.rotate(angle);
     const shape = () => { c.beginPath(); if (!circle) c.moveTo(0, 0); c.arc(0, 0, radius, circle ? 0 : -arc / 2, circle ? Math.PI * 2 : arc / 2); c.closePath(); };
-    if (r.type === 'hook') {
+    if (openingRush) {
+      const halfWidth = num(e.r, 34) + num(state.players?.[localId]?.r, 14) + 3;
+      furnaceRushLane(c, radius, halfWidth, progress, color);
+    } else if (r.type === 'hook') {
       // A narrow locked lane plus hooked arrowheads identifies a travelling
       // chain. Its edge uses the engine's exact 430px range and .18rad arc.
       shape();c.fillStyle=color+(active?'27':'0d');c.fill();
@@ -1771,7 +1850,7 @@
       c.strokeStyle = color + (active ? 'ee' : '88'); c.lineWidth = active ? 4 : 2;
       if (!active) c.setLineDash(secondShock ? [13, 5] : [7, 6]); shape(); c.stroke(); c.setLineDash([]);
     }
-    if (r.type === 'thrust' || r.type === 'rush') {
+    if (!openingRush && (r.type === 'thrust' || r.type === 'rush')) {
       // Directional spearheads also identify a thrust when color is hard to see.
       for (let i = 1; i <= 3; i++) { const dx = radius * (.26 + i * .17); path(c, [[dx-9,-8],[dx,0],[dx-9,8]], color + (active ? 'ed' : '99'), active ? 3 : 2); }
       if (e.kind === 'boss' && r.type === 'thrust') {
@@ -1798,7 +1877,7 @@
         path(c, [[tx - Math.cos(a - .5) * 11, ty - Math.sin(a - .5) * 11], [tx, ty], [tx - Math.cos(a + .5) * 11, ty - Math.sin(a + .5) * 11]], color + (active ? 'db' : '82'), 2);
       }
     }
-    if (!active) {
+    if (!active && !openingRush) {
       const target = num(e.r, 20) + 12;
       const arrival = r.type === 'combo' ? Math.max(0, num(r.remaining) - .32) / Math.max(.01, num(r.duration, 1) - .32) : 1 - progress;
       const contracting = target + Math.min(1, arrival) * 48;
@@ -1838,17 +1917,21 @@
     return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
       .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open'].includes(event.type));
   }
-  function combatMotion(events, disabled) {
+  function furnaceCoreHit(e) {
+    return e.type === 'weakpoint-hit' && e.source === 'furnace-core';
+  }
+  function combatMotion(events, disabled, coreRoom = false) {
     if (disabled) return { x:0, y:0, flash:0 };
     let x = 0, y = 0, flash = 0;
     for (const {event:e, age} of events) {
       const success = ['perfect-parry','mikiri','counterattack','fireball-reflected'].includes(e.type), beat = e.type === 'rhythm-beat', phase = e.type === 'boss-phase';
-      if (!success && !beat && !phase) continue;
-      const duration = phase ? .24 : beat ? .16 : .13;
+      const coreHit = coreRoom && furnaceCoreHit(e);
+      if (!success && !beat && !phase && !coreHit) continue;
+      const duration = coreHit ? .20 : phase ? .24 : beat ? .16 : .13;
       if (age > duration) continue;
-      const amplitude = (phase ? 1.5 : beat ? 1.8 : 2.5) * (1 - age / duration), oscillation = (hash(e.id || e.type) % 17) + age * 175;
+      const amplitude = (coreHit ? 3.7 : phase ? 1.5 : beat ? 1.8 : 2.5) * (1 - age / duration), oscillation = (hash(e.id || e.type) % 17) + age * 175;
       x += Math.sin(oscillation) * amplitude; y += Math.cos(oscillation * 1.3) * amplitude * .7;
-      if (success || beat) flash = Math.max(flash, (success ? .07 : .035) * Math.max(0, 1 - age / .09));
+      if (success || beat || coreHit) flash = Math.max(flash, (coreHit ? .048 : success ? .07 : .035) * Math.max(0, 1 - age / .09));
     }
     return { x:Math.max(-3, Math.min(3, x)), y:Math.max(-2, Math.min(2, y)), flash:Math.min(.07,flash) };
   }
@@ -1858,9 +1941,29 @@
     // are painted after these effects and remain completely stationary.
     label(c,text,Math.max(62,Math.min(W-62,x)),Math.max(112,Math.min(H-24,y)),color,size);
   }
+  function furnaceCoreBurst(c, e, age, still) {
+    const life = .59, ratio = age / life;
+    if (ratio > 1) return;
+    const x = num(e.x), y = num(e.y) - 3, travel = still ? .35 : motionEase(ratio);
+    alpha(c, 1 - ratio, () => {
+      glow(c, x, y, 53, '#f6cc715b');
+      const rand = seedRandom(hash(e.id));
+      for (let i = 0; i < 10; i++) {
+        const angle = i * Math.PI / 5 + rand() * .42, reach = 12 + travel * (20 + rand() * 34);
+        c.save(); c.translate(x + Math.cos(angle) * reach, y + Math.sin(angle) * reach * .68); c.rotate(angle + travel * 2);
+        rect(c, -4, -2, 8, 4, i % 3 ? '#d6a36b' : '#fbdc88');
+        rect(c, -4, -2, 6, 1, '#fff0bc');
+        c.restore();
+      }
+      impactLabel(c, '炉芯击破  ' + damageText(e.amount), x + 49, y - 31 - travel * 11, '#fff0b5', 15);
+    });
+  }
   function tacticsEffect(c, e, age, events, state, still) {
     if(!['melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit'].includes(e.type))return false;
     const weak=e.type==='weakpoint-hit',ordinary=e.type==='enemy-hit',opening=e.type==='weakpoint-open',posture=e.type==='posture-break',environment=e.type==='environment-hit',scatter=e.type==='scatter-push',blocked=e.type==='melee-block',hurt=e.type==='player-hit';
+    const coreRoom = chapterCoreRoom(state);
+    if (coreRoom && furnaceCoreHit(e)) { furnaceCoreBurst(c, e, age, still); return true; }
+    if (coreRoom && ordinary && events.some(other => other.event.enemyId === e.enemyId && Math.abs(other.age - age) < .09 && furnaceCoreHit(other.event))) return true;
     const life=opening||posture?.58:weak?.6:blocked?.38:.48;
     if(age>life)return true;
     // A single physical hit can produce several semantic events. Keep its
@@ -1882,9 +1985,10 @@
       }
       if(opening){
         for(const side of [-1,1])path(c,[[x+side*(12+motion*9),y-17],[x+side*(7+motion*9),y-17],[x+side*(7+motion*9),y-3],[x+side*(12+motion*9),y-3]],color,2);
-        const pillarOpening = e.playerId === null && e.source === 'counter' && chapterCoreRoom(state) &&
+        const pillarOpening = e.playerId === null && e.source === 'counter' && coreRoom &&
           values(state.enemies).some(enemy => enemy.id === e.enemyId && enemy.kind === 'boss' && enemy.stage === 1);
-        impactLabel(c,pillarOpening ? '柱碎 · 炉芯外露' : '破绽',x,y+26+motion*5,color,pillarOpening ? 12 : 10);return;
+        const openingPillar = coreRoom && e.source === 'furnace-core';
+        impactLabel(c,openingPillar ? '柱碎' : pillarOpening ? '柱碎 · 炉芯外露' : '破绽',x,y+26+motion*5,color,openingPillar || pillarOpening ? 12 : 10);return;
       }
       if(scatter){
         const owner=state.players&&state.players[e.playerId],angle=num(e.angle,owner?Math.atan2(y-num(owner.y),x-num(owner.x)):0);
@@ -2736,10 +2840,10 @@
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const ending = chapterEndingScene(state, options);
-    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still);
+    const coreRoom = chapterCoreRoom(state);
+    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     const enemies = values(state.enemies);
-    const coreRoom = chapterCoreRoom(state);
     const viewTop = num(options.view?.y);
     const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
       e.kind === 'boss' && !e.timber && e.hp > 0 && !e.dead && !e.rhythm && !e.stagger && e.intercept?.remaining > 0 &&
@@ -2750,7 +2854,7 @@
     chapterFloor(c, state, time);
     expeditionFloor(c, state, time, still);
     lanternAuras(c, state);
-    values(state.walls).forEach(w => wall(c, w));
+    values(state.walls).forEach(w => wall(c, w, coreRoom && w.id === 'core-pillar-west'));
     if (ending) chapterEndingLight(c, ending);
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
