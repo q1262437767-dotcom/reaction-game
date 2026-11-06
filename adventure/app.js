@@ -625,7 +625,10 @@
     chapter.clues.forEach(clue => chapterNotesSeen.add(clue));
     Object.keys(activeChapterMoments(chapter.id)).forEach(flag => { if (chapter[flag]) chapterMomentsSeen.add(chapter.id + ':' + flag); });
     if (state.status !== 'playing' || state.elapsed >= 1) return;
-    if (chapter.id === 'chapter1_3') toast('阿禾：“车辙还新。沿西线找，车上那些人说不定还等着呢。”', 6000);
+    if (chapter.id === 'chapter1_3') {
+      const line = state.railAlly ? '阿禾：“我跟你走。你看路，我掩护。”' : '阿禾：“车辙还新。沿西线找，车上那些人说不定还等着呢。”';
+      toast(line, 6000);
+    }
     else if (chapter.id === 'chapter1_2') toast('阿禾：灯还在闪。进去看看，留神那些还在干活的机器。', 6000);
     else if (chapter.phase === 'depart') toast('老岑：灯灭了，采集队到现在还没回来。你去苔火工坊借点火，我在这儿等他们。', 7000);
   }
@@ -1707,7 +1710,7 @@
     if (!state) { shutdownNet(); $('room-message').textContent = '伙伴已离开，可以重新创建或加入房间。'; return; }
     if (mode === 'host') {
       E.removePlayer(state, 'p2'); shutdownNet(); mode = 'solo';
-      toast('搭档已断线，你可以继续独自探险。');
+      toast(state.railAlly ? '搭档已断线，阿禾接手掩护。' : '搭档已断线，你可以继续独自探险。');
     } else if (mode === 'guest') {
       // An already settled run has no simulation to pause. Its local return
       // scene and result actions must remain available when the host leaves.

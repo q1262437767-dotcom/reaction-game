@@ -182,6 +182,7 @@
     if (anchor) { p.x = anchor.x; p.y = clamp(anchor.y + 40, 50, H - 50); }
     s.players[key] = p;
     s.playerCount = Object.keys(s.players).length;
+    if (s.playerCount > 1) clearRailAlly(s);
     event(s, 'player-joined', { playerId: key });
     addCompanion(s, p, companionOption);
     return p;
@@ -193,6 +194,8 @@
     delete s.players[key];
     s.companions = s.companions.filter(function (fox) { return fox.ownerId !== key; });
     s.playerCount = Object.keys(s.players).length;
+    if (key === 'p1') clearRailAlly(s);
+    else if (key === 'p2' && s.status === 'playing') placeRailAlly(s);
     event(s, 'player-left', { playerId: key });
     if (s.status === 'playing' && !alivePlayers(s).length) finish(s, 'lost');
     return true;
@@ -1329,6 +1332,7 @@
       if (collides(s, p.x, p.y, p.r, p.id, false)) placeEnemyInRoom(s, p, alivePlayers(s).filter(function (other) { return other !== p; }));
     });
     resetCompanions(s);
+    placeRailAlly(s);
     if (s.mode === 'relay' && s.props.some(function (q) { return q.id === s.relay.coreId; })) s.relay.coreRoom = index;
     if (s.mode === 'hunt') {
       if (s.hunt.targetRoom === index) {
@@ -1366,6 +1370,108 @@
   function resetCompanions(s) {
     s.companions = s.companions.filter(function (fox) { return !!s.players[fox.ownerId]; });
     s.companions.forEach(function (fox) { placeCompanion(s, fox); });
+  }
+  function clearRailAlly(s) {
+    if (!s.railAlly) return;
+    delete s.railAlly;
+    s.bullets = s.bullets.filter(function (bullet) { return !bullet.railAlly; });
+  }
+  function placeRailAlly(s) {
+    var owner = s.players.p1;
+    if (!isRailChapter(s) || !owner || owner.downed || s.playerCount !== 1) return;
+    var ally = { id: 'rail-ally', name: '阿禾', x: owner.x, y: owner.y, r: 14,
+      facing: owner.facing, travelFacing: owner.facing, moving: false, mode: 'follow',
+      attackTime: 0, evadeTime: 0, fireCd: 0.35, evadeX: 0, evadeY: 0,
+      navX: owner.x, navY: owner.y, navTime: 0 };
+    for (var i = 0; i < 12; i += 1) {
+      var angle = owner.facing + 2.45 + i * TAU / 12;
+      var point = { x: owner.x + Math.cos(angle) * 68, y: owner.y + Math.sin(angle) * 68 };
+      if (foxSight(s, owner, point, ally.r)) { ally.x = point.x; ally.y = point.y; break; }
+    }
+    s.railAlly = ally;
+  }
+  function railAllyRushLane(ally, guard, point) {
+    var r = guard.rhythm, dx = Math.cos(r.angle), dy = Math.sin(r.angle);
+    var x = point.x - guard.x, y = point.y - guard.y;
+    var along = x * dx + y * dy, side = y * dx - x * dy;
+    var reach = r.phase === 'windup' ? r.range : guard.chargeTime * 620;
+    return along >= -guard.r && along <= reach + guard.r && Math.abs(side) < guard.r + ally.r + 12;
+  }
+  function evadeRailAlly(s, ally, guard) {
+    var angle = guard.rhythm.angle, dx = -Math.sin(angle), dy = Math.cos(angle);
+    var offset = (ally.x - guard.x) * dx + (ally.y - guard.y) * dy;
+    var side = offset < 0 ? -1 : 1;
+    for (var attempt = 0; attempt < 2; attempt += 1, side *= -1) {
+      var distance = Math.min(128, guard.r + ally.r + 22 - side * offset);
+      var point = { x: ally.x + dx * side * distance, y: ally.y + dy * side * distance };
+      if (foxSight(s, ally, point, ally.r)) {
+        ally.evadeX = dx * side * distance / 0.24; ally.evadeY = dy * side * distance / 0.24;
+        ally.evadeTime = 0.24; ally.attackTime = 0; ally.navTime = 0;
+        return;
+      }
+    }
+  }
+  function shootRailAlly(s, ally, target) {
+    var angle = Math.atan2(target.y - ally.y, target.x - ally.x), dx = Math.cos(angle), dy = Math.sin(angle);
+    ally.facing = angle; ally.fireCd = target.railGuard ? 1.1 : 0.55; ally.attackTime = 0.18;
+    s.bullets.push({ id: id(s, 'bullet-'), x: ally.x + dx * 21, y: ally.y + dy * 21, r: 4,
+      vx: dx * 650, vy: dy * 650, friendly: true, owner: ally.id, damage: target.railGuard ? 3 : 2,
+      ttl: 0.52, weapon: null, volleyId: null, originX: ally.x, originY: ally.y,
+      color: '#ffe0a2', railAlly: true, hitsLeft: 1, hitIds: [], dead: false });
+    event(s, 'shoot', { playerId: null, allyId: ally.id, weapon: 'pistol', x: ally.x, y: ally.y });
+  }
+  function updateRailAlly(s, dt) {
+    var ally = s.railAlly, owner = s.players.p1;
+    if (!ally || dt <= 0 || s.status !== 'playing' || !owner || owner.downed) return;
+    ally.fireCd = Math.max(0, ally.fireCd - dt);
+    ally.attackTime = Math.max(0, ally.attackTime - dt);
+    var rush = s.enemies.find(function (e) {
+      return e.hp > 0 && e.railGuard && e.rhythm && e.rhythm.type === 'rush' &&
+        (e.rhythm.phase === 'windup' || e.chargeTime > 0);
+    });
+    if (rush && ally.evadeTime <= 0 && railAllyRushLane(ally, rush, ally) && foxSight(s, rush, ally, 3)) evadeRailAlly(s, ally, rush);
+    if (ally.evadeTime > 0) {
+      var duration = Math.min(dt, ally.evadeTime);
+      ally.moving = move(s, ally, ally.evadeX * duration, ally.evadeY * duration, false);
+      ally.facing = Math.atan2(ally.evadeY, ally.evadeX); ally.mode = 'evade';
+      ally.evadeTime = Math.max(0, ally.evadeTime - dt);
+      return;
+    }
+    var ownerDistance = dist(ally, owner);
+    if (ally.fireCd <= 0 && ownerDistance < 172) {
+      var best = 310, target = null;
+      s.enemies.forEach(function (e) {
+        if (e.hp <= 0 || e.railGuard && (e.weakTime <= 0 || e.hp <= 1) || dist(e, owner) > 325) return;
+        var distance = dist(ally, e);
+        if (distance >= best || distance <= e.r + 23 || !foxSight(s, ally, e, 4)) return;
+        best = distance; target = e;
+      });
+      if (target) shootRailAlly(s, ally, target);
+    }
+    if (ally.attackTime > 0 && ownerDistance < 125) {
+      ally.moving = false; ally.mode = 'attack'; return;
+    }
+    if (len(owner.vx, owner.vy) > 16) ally.travelFacing = Math.atan2(owner.vy, owner.vx);
+    var dx = Math.cos(ally.travelFacing), dy = Math.sin(ally.travelFacing);
+    var goal = { x: owner.x - dx * 50 - dy * 40, y: owner.y - dy * 50 + dx * 40 };
+    if (collides(s, goal.x, goal.y, ally.r, ally.id, false)) goal = owner;
+    ally.moving = false;
+    ally.mode = ally.attackTime > 0 ? 'attack' : 'follow';
+    if (dist(ally, goal) <= 13 || rush && railAllyRushLane(ally, rush, goal)) return;
+    ally.navTime = Math.max(0, ally.navTime - dt);
+    var next = goal;
+    if (!foxSight(s, ally, goal, ally.r + 1)) {
+      if (ally.navTime <= 0 || dist(ally, { x: ally.navX, y: ally.navY }) < 5) {
+        var waypoint = foxWaypoint(s, ally, goal);
+        ally.navX = waypoint.x; ally.navY = waypoint.y; ally.navTime = 0.18;
+      }
+      next = { x: ally.navX, y: ally.navY };
+    }
+    var stepX = next.x - ally.x, stepY = next.y - ally.y, gap = len(stepX, stepY);
+    if (gap <= 0.01) return;
+    var step = Math.min(gap, clamp(ownerDistance * 2.2, 185, 322) * dt);
+    ally.moving = move(s, ally, stepX * step / gap, stepY * step / gap, false);
+    if (ally.moving && ally.attackTime <= 0) ally.facing = Math.atan2(stepY, stepX);
   }
   function foxSight(s, a, b, radius) {
     // Fine sampling keeps thin walls and closed doors honest. Portable solid
@@ -3331,6 +3437,7 @@
           dist(p, b) < p.r + b.r; });
         if (hitProp) {
           b.dead = true;
+          if (b.railAlly) { burst(s, 'spark', b.x, b.y, '#d6b783', 2); break; }
           if (b.hook) {
             if (!hitProp.carriedBy && !hitProp.thrown && !hitProp.eventSeal) hookPull(s, hitProp, hookCaster, 175, hookCaster, null, 'prop');
             break;
@@ -3351,6 +3458,11 @@
             var front = foe.kind === 'shield' && foe.stun <= 0 && foe.shieldOpen <= 0 &&
               Math.cos(Math.atan2(b.y - foe.y, b.x - foe.x) - foe.facing) > 0.5;
             if (front) { b.dead = true; burst(s, 'spark', b.x, b.y, '#a9d7ff', 3); }
+            else if (b.railAlly) {
+              var assist = foe.railGuard ? Math.min(b.damage, foe.hp - 1) : Math.min(b.damage, foe.hp);
+              if (assist > 0) damageEnemy(s, foe, assist, null, 'pistol');
+              b.dead = true;
+            }
             else {
               var weakShot = b.weapon === 'pistol' && foe.weakTime > 0 && !foe.coreExposed, amount = b.damage + (weakShot ? 2 : 0);
               var actual = damageEnemy(s, foe, amount, b.owner, b.weapon || null, weakShot);
@@ -3667,7 +3779,7 @@
     });
     if (s.room.index !== roomBefore) return s;
     updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateTimber(s, dt); updateRailChapter(s, dt);
-    updateEnemies(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
+    updateEnemies(s, dt); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     alivePlayers(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');
@@ -3766,7 +3878,7 @@
     // serialized before the next step.
     var result = {};
     for (var key in s) {
-      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData') continue;
+      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData' || key === 'railAlly') continue;
       result[key] = s[key];
     }
     result.roomData = {};

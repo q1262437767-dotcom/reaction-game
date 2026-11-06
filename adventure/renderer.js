@@ -1143,6 +1143,76 @@
     }
   }
 
+  function railAlly(c, ally, time, still, viewTop) {
+    const x = num(ally.x), y = num(ally.y), facing = num(ally.facing);
+    const side = Math.cos(facing) < 0 ? -1 : 1;
+    const evade = ally.mode === 'evade' && num(ally.evadeTime) > 0;
+    const attackTime = num(ally.attackTime), aiming = !evade && (ally.mode === 'attack' || attackTime > 0);
+    const stride = still || !ally.moving ? 0 : Math.sin(time * .020) * 2;
+    shadow(c, x, y, num(ally.r, 14), .34);
+    path(c, [[x - 7, y + 15], [x - 3, y + 18], [x, y + 15]], '#a4d6da85', 1);
+    path(c, [[x, y + 15], [x + 3, y + 18], [x + 7, y + 15]], '#a4d6da85', 1);
+    if (evade && !still) {
+      const dx = Math.cos(facing), dy = Math.sin(facing);
+      const fade = Math.min(1, num(ally.evadeTime) / .24);
+      for (const offset of [-5, 5]) {
+        const tailX = x - dx * 20 - dy * offset, tailY = y - dy * 20 + dx * offset + 8;
+        alpha(c, fade * .7, () => path(c, [[tailX, tailY], [tailX - dx * 14, tailY - dy * 14]], '#91b8bf', 1.5));
+      }
+    }
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    if (evade) {
+      c.translate(0, 3);
+      if (!still) c.rotate(side * .17);
+    }
+    for (const [bx, foot] of [[-8, 1], [3, -1]]) {
+      const by = 5 + (evade ? foot * 2 : stride * foot);
+      rect(c, bx, by, 6, 9, '#182c36');
+      rect(c, bx + 1, by, 4, 5, '#685d51');
+      rect(c, bx, by + 7, 8, 2, '#111f29');
+      rect(c, bx + 1, by + 6, 4, 1, '#aa9677');
+    }
+    rect(c, -11, -16, 22, 23, '#192d3a');
+    rect(c, -9, -15, 18, 18, '#344b62');
+    rect(c, -8, -14, 13, 16, '#547184');
+    rect(c, -8, -13, 4, 11, '#7d9da1');
+    rect(c, 4, -12, 5, 13, '#354f67');
+    rect(c, -9, 0, 18, 3, '#7c634a');
+    rect(c, -2, 0, 5, 3, '#d3ae75');
+    rect(c, -side * 10 - 3, -13, 6, 14, '#263946');
+    rect(c, -side * 10 - 2, -11, 4, 7, '#876f55');
+    rect(c, -8, -18, 16, 5, '#e2b77f');
+    rect(c, -7, -14, 5, 6, '#af805f');
+    rect(c, -8 + side * 2, -30, 16, 14, '#25313a');
+    rect(c, -7 + side * 2, -27, 14, 10, '#d2a98b');
+    rect(c, -6 + side * 2, -26, 10, 5, '#e8c39e');
+    rect(c, -9, -32, 18, 6, '#3e5267');
+    rect(c, -7, -32, 14, 2, '#91a6a6');
+    rect(c, -9 + Math.max(0, side) * 6, -27, 13, 2, '#a4c4bc');
+    rect(c, side * 5, -24, 2, 2, '#2a3740');
+    if (aiming) {
+      const kick = still ? 0 : Math.max(0, attackTime - .09) * 29;
+      c.save(); c.translate(0, -6); c.rotate(facing);
+      path(c, [[6, 0], [12, 0], [17 - kick, 0]], '#354f67', 6);
+      rect(c, 12 - kick, -2, 7, 4, '#d1ac8e');
+      rect(c, 16 - kick, -3, 10, 4, '#26353e');
+      rect(c, 17 - kick, -3, 8, 1, '#a3b3b5');
+      if (!still && attackTime > .115) {
+        path(c, [[25 - kick, -4], [29, 0], [25 - kick, 4]], '#a7d7dc', 2);
+        rect(c, 28, -1, 4, 2, '#e9f5e5');
+      }
+      c.restore();
+    } else {
+      rect(c, side * 10 - 2, -9 + stride, 4, 10, '#4e6c7e');
+      rect(c, side * 10 - 2, -1 + stride, 4, 4, '#c9a182');
+    }
+    c.restore();
+    const nameY = y - 42 < viewTop + 9 ? y + 29 : y - 42;
+    rect(c, x - 16, nameY - 7, 32, 13, '#172936da');
+    rect(c, x - 16, nameY - 7, 2, 13, '#7fa9b0');
+    label(c, ally.name || '阿禾', x + 1, nameY, '#c1e0dc', 10);
+  }
+
   function lanternActive(e) { return e && e.kind === 'lamplighter' && e.hp > 0 && !e.dead && num(e.stun) <= 0 && num(e.stagger) <= 0; }
   function lanternBlocked(state, x, y) {
     if (x < 31 || x > W - 31 || y < 31 || y > H - 31) return true;
@@ -1856,6 +1926,12 @@
       ellipse(c,x,y,r+2,r+2,edge);ellipse(c,x,y,Math.max(1,r-1),Math.max(1,r-1),core);
       if((b.reflectable||b.fireball)&&!friendly){c.strokeStyle='#f5d99d';c.lineWidth=2;c.beginPath();c.arc(x,y,r+6,-Math.PI*.25,Math.PI*.25);c.stroke();c.beginPath();c.arc(x,y,r+6,Math.PI*.75,Math.PI*1.25);c.stroke();}
       if(friendly)path(c,[[x-dx*(r+7)-dy*5,y-dy*(r+7)+dx*5],[x-dx*(r+2),y-dy*(r+2)],[x-dx*(r+7)+dy*5,y-dy*(r+7)-dx*5]],'#d8f5db',2);
+      return;
+    }
+    if (friendly && b.railAlly === true && railChapter(state)) {
+      path(c, [[x - dx * 11, y - dy * 11], [x, y]], '#93c8cc8c', 2);
+      rect(c, x - 2, y - 2, 4, 4, '#8cbac5');
+      rect(c, x - 1, y - 1, 2, 2, '#dcf0e9');
       return;
     }
     const scatter=friendly&&b.weapon==='scatter',trail=friendly?(scatter?7:14):7;
@@ -3118,6 +3194,9 @@
       ...enemies.map(e => ({ y: e.y, draw: () => rail && e.railGuard === true
         ? railGuard(c, e, state, enemyPoses.get(e.id), viewTop, still)
         : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail) })),
+      ...(rail && state.railAlly ? [{
+        y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop)
+      }] : []),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
       ...(ending ? [
         { y: ending.lead.y, draw: () => chapterEndingCivilian(c, ending.lead.x, ending.lead.y, 'lead', ending.gait, ending.looking) },
