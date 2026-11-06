@@ -17,7 +17,7 @@
   var CHAPTERS = Object.freeze([
     Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 }),
     Object.freeze({ id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', description: '旧木场的求援灯还在闪。挪开木车，救出被困的维修工。', goal: '救出维修工，停下吊木守卫，再回信号岗接应撤离', reward: 50 }),
-    Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '救援车沿西边旧线走了。循着车辙，去找维修匠陶铆。', goal: '找到陶铆，穿过转车台，追上载着伤员的救援车', reward: 60 })
+    Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '救援车沿西边旧线走了。循着车辙，去找维修匠陶铆。', goal: '找到陶铆，打通配电廊和拨道场，接应载着伤员的救援车', reward: 60 })
   ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),

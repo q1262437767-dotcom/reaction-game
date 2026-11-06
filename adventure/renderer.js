@@ -87,7 +87,7 @@
       rect(c, 76, y, 808, 5, '#20313a86');
       for (let x = 94; x < 880; x += 48) rect(c, x, y + 1, 19, 2, '#a589633b');
     }
-    if (index === 3) {
+    if (index === 3 || index === 6) {
       const power = num(state.chapter.railPower), energized = power > 0;
       rect(c, 452, 92, 56, 416, energized ? '#70c3cd2e' : '#223840d0');
       for (let y = 96; y < 507; y += 24) {
@@ -108,17 +108,33 @@
         for (let y = 108 + offset; y < 492; y += 45) {
           path(c, [[467, y + 5], [480, y - 4], [478, y + 4], [494, y - 5]], '#b8f0dd', 1.5);
         }
+        // Mark both approaches, including the side players can cross from.
+        for (let y = 116; y < 496; y += 38) for (const x of [446, 511]) {
+          path(c, [[x - 2, y + 4], [x + 4, y - 2]], '#e4b77dd0', 2);
+        }
       }
       for (const y of [92, 508]) {
         rect(c, 449, y - 4, 62, 8, '#2a3d42');
         rect(c, 453, y - 3, 54, 2, '#b09a6a');
         rect(c, 477, y - 3, 6, 6, energized ? '#b7f0de' : '#886b43');
       }
-      path(c, [[356, 401], [356, 427], [452, 427]], '#253a40', 7);
-      path(c, [[356, 401], [356, 427], [452, 427]], energized ? '#8cd4ca' : '#9c7d50', 2);
+      const railSwitch = values(state.interactables).find(item => item.kind === 'rail-switch');
+      if (railSwitch) {
+        const x = num(railSwitch.x), y = num(railSwitch.y);
+        const cable = [[x, y + 4], [x, y + 30], [x < 480 ? 452 : 508, y + 30]];
+        path(c, cable, '#253a40', 7);
+        path(c, cable, energized ? '#8cd4ca' : '#9c7d50', 2);
+      }
+      if (index === 6) {
+        for (const x of [315, 645]) {
+          rect(c, x - 47, 71, 94, 12, '#263c44');
+          rect(c, x - 43, 74, 86, 2, '#8a795c');
+          for (let dx = -32; dx <= 32; dx += 16) rect(c, x + dx, 77, 6, 2, '#6a948e');
+        }
+      }
       return;
     }
-    // These old ties frame the route. Only the copper strip in the arena is live.
+    // These old ties frame the route without marking a live hazard.
     const trackY = index === 4 ? 329 : index === 5 ? 415 : 326;
     const end = index === 4 ? 784 : index === 5 ? 624 : 892;
     for (let x = 76; x < end; x += 22) {
@@ -389,7 +405,9 @@
   function chapterInteractable(c, item, time, state, localId, still = false) {
     time = still ? 0 : time;
     const x = num(item.x), y = num(item.y), run = state.chapter || {}, kind = item.kind;
-    const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
+    const p = state.players && state.players[localId];
+    const nearby = p && !p.downed && !(railChapter(state) && p.railStun > 0) &&
+      Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
     const active = item.active !== false && !item.used;
     shadow(c, x, y, kind === 'chapter-lamp' || kind === 'chapter-fire' ? 29 : 21, .3);
     c.save(); c.translate(Math.round(x), Math.round(y));
@@ -463,7 +481,7 @@
   function railInteractable(c, item, time, state, localId, still) {
     const { x, y, kind } = item, run = state.chapter;
     const active = item.active !== false && !item.used, p = state.players?.[localId];
-    const nearby = p && !p.downed && Math.hypot(p.x - x, p.y - y) < 100;
+    const nearby = p && !p.downed && !(p.railStun > 0) && Math.hypot(p.x - x, p.y - y) < 100;
     if (kind === 'rail-supplies') {
       chapterInteractable(c, { ...item, kind: 'chapter-supplies' }, time,
         { ...state, chapter: { suppliesTaken: !!item.used } }, localId, still);
@@ -497,7 +515,7 @@
       glow(c, x + 12, y - 11, 25, power > 0 ? '#85ead563' : '#e2ad4939');
       rect(c, x + 9, y - 13, 7, 4, lamp);
       if (power > 0 || cooldown > 0) bar(c, x, y - 39, 33, power > 0 ? power / 3 : 1 - cooldown / 5, lamp);
-      if (nearby && power > 0) label(c, '轨道已通电', x, y + 26, '#b5e7d8', 10);
+      if (nearby && power > 0) label(c, '轨道通电 · 当心触电', x, y + 26, '#f1d59c', 10);
       else if (nearby && cooldown > 0) label(c, '开关冷却中', x, y + 26, '#d0b58d', 10);
       else if (nearby && active) label(c, 'E · ' + item.label, x, y + 26, '#eed6a3', 10);
       return;
@@ -1038,7 +1056,8 @@
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
     const second = p.id === 'p2' || p.color === '#f08c69', main = second ? '#ad695b' : '#538d87', light = second ? '#e3ad83' : '#acd0b4', dark = second ? '#654854' : '#2d5359';
     const movement = Math.hypot(num(p.vx), num(p.vy)) > 3 || p.moving;
-    const step = movement ? Math.sin(time * (p.sneaking ? .012 : .02)) * (p.sneaking ? .85 : 2) : Math.sin(time * .0025 + x) * .5;
+    const shocked = railChapter(state) && p.railStun > 0;
+    const step = shocked ? 0 : movement ? Math.sin(time * (p.sneaking ? .012 : .02)) * (p.sneaking ? .85 : 2) : Math.sin(time * .0025 + x) * .5;
     const isDash = p.dashing || p.dashTime > 0 || p.dashTimer > 0;
     shadow(c, x, y, num(p.r, 14));
     if (isDash) {
@@ -1143,13 +1162,58 @@
     }
   }
 
-  function railAlly(c, ally, time, still, viewTop) {
+  function railAllyReadout(c, ally, x, y, downed, viewTop) {
+    const below = y - 45 < viewTop + 11;
+    const nameY = below ? y + 29 : y - 49;
+    const width = downed ? 58 : 38;
+    const hp = num(ally.hp, num(ally.maxHp, 6)) / Math.max(1, num(ally.maxHp, 6));
+    rect(c, x - width / 2, nameY - 7, width, 13, '#172936da');
+    rect(c, x - width / 2, nameY - 7, 2, 13, downed ? '#c99a73' : '#7fa9b0');
+    label(c, (ally.name || '阿禾') + (downed ? ' · 倒地' : ''), x + 1, nameY, downed ? '#eed1a1' : '#c1e0dc', 10);
+    bar(c, x, nameY + 7, width - 2, hp, hp < .35 ? '#dd9c7b' : '#90cabb', 3);
+    return below;
+  }
+
+  function railShockStatus(c, actor, time, still, viewTop, viewBottom) {
+    const remaining = num(actor.railStun);
+    if (remaining <= 0 || actor.downed || actor.dead) return;
+    const x = num(actor.x), y = num(actor.y);
+    const wobble = still ? 0 : Math.sin(time * .015) * 2;
+    const ally = actor.id === 'rail-ally';
+    const below = y + (ally && y - 45 < viewTop + 11 ? 49 : 29);
+    const captionY = below < viewBottom - 8 ? below : Math.max(viewTop + 8, y - (ally ? 67 : 61));
+    for (const side of [-1, 1]) {
+      const at = x + side * 17;
+      path(c, [[at + side * 3, y - 30 + side * wobble], [at - side * 2, y - 22],
+        [at + side * 4, y - 23], [at - side * 2, y - 13 + side * wobble]], '#172832', 3.5);
+      path(c, [[at + side * 3, y - 30 + side * wobble], [at - side * 2, y - 22],
+        [at + side * 4, y - 23], [at - side * 2, y - 13 + side * wobble]], '#ffe2a2', 1.5);
+    }
+    rect(c, x - 32, captionY - 7, 64, 14, '#1b2632ee');
+    label(c, `触电 ${(Math.ceil(remaining * 10) / 10).toFixed(1)}s`, x, captionY, '#f5d99a', 9);
+  }
+
+  function railAlly(c, ally, time, still, viewTop, viewBottom, local) {
     const x = num(ally.x), y = num(ally.y), facing = num(ally.facing);
     const side = Math.cos(facing) < 0 ? -1 : 1;
-    const evade = ally.mode === 'evade' && num(ally.evadeTime) > 0;
-    const attackTime = num(ally.attackTime), aiming = !evade && (ally.mode === 'attack' || attackTime > 0);
-    const stride = still || !ally.moving ? 0 : Math.sin(time * .020) * 2;
+    const shocked = ally.railStun > 0;
+    const evade = !shocked && ally.mode === 'evade' && num(ally.evadeTime) > 0;
+    const attackTime = num(ally.attackTime), aiming = !shocked && !evade && (ally.mode === 'attack' || attackTime > 0);
+    const stride = still || shocked || !ally.moving ? 0 : Math.sin(time * .020) * 2;
     shadow(c, x, y, num(ally.r, 14), .34);
+    if (ally.downed || ally.hp === 0) {
+      c.save(); c.translate(x, y); c.rotate(-.43);
+      rect(c, -15, -5, 29, 13, '#172a34'); rect(c, -12, -4, 17, 10, '#4d6e82');
+      rect(c, -10, -4, 13, 2, '#7898a0'); rect(c, 5, -8, 11, 12, '#d2a98b');
+      rect(c, 4, -9, 13, 4, '#56677a'); c.restore();
+      const below = railAllyReadout(c, ally, x, y, true, viewTop);
+      rect(c, x - 1, y - 26, 3, 9, '#e6c18d'); rect(c, x - 4, y - 23, 9, 3, '#e6c18d');
+      if (local && !local.downed && !(local.railStun > 0) && Math.hypot(local.x - x, local.y - y) < 78) {
+        const captionY = below ? y + 49 : y + 26;
+        label(c, 'E · 扶起', x, captionY < viewBottom - 8 ? captionY : y - 16, '#eed6a3', 9);
+      }
+      return;
+    }
     path(c, [[x - 7, y + 15], [x - 3, y + 18], [x, y + 15]], '#a4d6da85', 1);
     path(c, [[x, y + 15], [x + 3, y + 18], [x + 7, y + 15]], '#a4d6da85', 1);
     if (evade && !still) {
@@ -1164,7 +1228,7 @@
     if (evade) {
       c.translate(0, 3);
       if (!still) c.rotate(side * .17);
-    }
+    } else if (shocked) c.translate(0, 1);
     for (const [bx, foot] of [[-8, 1], [3, -1]]) {
       const by = 5 + (evade ? foot * 2 : stride * foot);
       rect(c, bx, by, 6, 9, '#182c36');
@@ -1207,10 +1271,7 @@
       rect(c, side * 10 - 2, -1 + stride, 4, 4, '#c9a182');
     }
     c.restore();
-    const nameY = y - 42 < viewTop + 9 ? y + 29 : y - 42;
-    rect(c, x - 16, nameY - 7, 32, 13, '#172936da');
-    rect(c, x - 16, nameY - 7, 2, 13, '#7fa9b0');
-    label(c, ally.name || '阿禾', x + 1, nameY, '#c1e0dc', 10);
+    railAllyReadout(c, ally, x, y, false, viewTop);
   }
 
   function lanternActive(e) { return e && e.kind === 'lamplighter' && e.hp > 0 && !e.dead && num(e.stun) <= 0 && num(e.stagger) <= 0; }
@@ -2648,6 +2709,7 @@
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
     const run = state.chapter, rail = railChapter(state), current = state.room && state.room.index;
+    const feeder = rail && rooms.find(room => room.index === 6);
     const visible = rooms.filter(room => room.visited || room.discovered);
     const left = 752, top = 18, width = 190, height = 162;
     const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
@@ -2657,7 +2719,7 @@
       y: top + 79 + (room.gy - (minY + maxY) / 2) * spacing }]));
     c.save(); rect(c, left, top, width, height, '#102523e8'); c.strokeStyle = '#a0845e80'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
     label(c, rail ? '第三节 · 借走的主芯' : '第一节 · 借火归营', left + 12, top + 15, '#e1c08a', 9, 'left');
-    const phases = rail ? { arrive: '启程', track: '沿轨追查', guard: '拨道场', car: '前往救援车', complete: '已会合', failed: '探险中断' } :
+    const phases = rail ? { arrive: '启程', track: '沿轨追查', guard: feeder && !feeder.cleared ? '配电廊' : '拨道场', car: '前往救援车', complete: '已会合', failed: '探险中断' } :
       { depart: '启程', workshop: '探查工坊', core: '前往炉心', return: '带火归营', complete: '归火已成', failed: '探险中断' };
     label(c, phases[run.phase] || (rail ? '第三节' : '第一节'), left + width - 12, top + 15, run.lampLit || run.reachedCar ? '#dce3b0' : '#bda98b', 8, 'right');
     for (const room of visible) {
@@ -2666,7 +2728,8 @@
       for (const nextIndex of values(room.neighbors)) {
         const next = points.get(nextIndex); if (!next) continue;
         const a = Math.min(room.index, nextIndex), b = Math.max(room.index, nextIndex);
-        const blocked = rail && (a === 2 && b === 3 && !run.repairerMet || a === 3 && b === 4 && !run.bossDefeated);
+        const blocked = rail && (a === 2 && b === 6 && !run.repairerMet ||
+          a === 3 && b === 6 && !feeder.cleared || a === 3 && b === 4 && !run.bossDefeated);
         if (blocked) c.setLineDash([3, 4]);
         path(c, [[point.x, point.y], [next.x, next.y]], blocked ? '#b392657a' : run.fireTaken && next.room.visited ? '#c69b6380' : next.room.visited ? '#82937899' : '#63785e66', 2);
         if (blocked) c.setLineDash([]);
@@ -2681,6 +2744,9 @@
       if (rail) {
         if (room.index === 3) path(c, [[point.x + 2, point.y - 5], [point.x - 3, point.y], [point.x + 2, point.y], [point.x - 2, point.y + 5]], run.bossDefeated ? '#bbdbb0' : '#d8b877', 1.5);
         if (room.index === 4) { rect(c, point.x - 4, point.y - 3, 8, 5, run.reachedCar ? '#f7d18a' : '#c0bc92'); rect(c, point.x - 3, point.y + 3, 6, 2, '#a29573'); }
+        if (room.index === 6) {
+          for (const x of [point.x - 3, point.x + 2]) rect(c, x, point.y - 4, 2, 8, room.cleared ? '#b9d3ab' : '#c9a972');
+        }
       } else if (room.index === 0) {
         rect(c, point.x - 2, point.y - 6, 4, 11, run.lampLit ? '#f7ce7c' : '#9ba783');
         rect(c, point.x - 4, point.y - 5, 8, 3, run.lampLit ? '#fff0b5' : '#c5c8a0');
@@ -2692,7 +2758,8 @@
         rect(c, point.x - 2, point.y - 2, 4, 4, (room.index === 5 ? run.suppliesTaken : run.beaconLit) ? '#f0ca83' : '#b0b394');
       }
     }
-    const objective = rail ? run.reachedCar ? '已与救援车会合' : run.bossDefeated ? '前往救援车' : run.repairerMet ? '拨道场守卫挡路' : '循车辙寻找陶铆' :
+    const objective = rail ? run.reachedCar ? '已与救援车会合' : run.bossDefeated ? '前往救援车' :
+      run.repairerMet ? feeder && !feeder.cleared ? '清理配电廊' : '拨道场守卫挡路' : '循车辙寻找陶铆' :
       run.lampLit ? '第一盏归途灯已点亮' : run.fireTaken ? '火种同行 · 返回哨站' : '循着回收队的痕迹';
     label(c, objective, left + 12, top + height - 33, run.lampLit || run.reachedCar ? '#e8d79e' : '#c1b895', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / ${rail ? 2 : 3}`, left + 12, top + height - 13, '#a8b39a', 8, 'left');
@@ -3157,7 +3224,8 @@
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     const enemies = values(state.enemies);
-    const viewTop = num(options.view?.y);
+    const viewTop = num(options.view?.y), viewBottom = viewTop + num(options.view?.h, H);
+    const local = state.players?.[localId];
     const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
       e.kind === 'boss' && !e.timber && e.hp > 0 && !e.dead && !e.rhythm && !e.stagger && e.intercept?.remaining > 0 &&
       Number.isFinite(e.intercept.x) && Number.isFinite(e.intercept.y));
@@ -3195,7 +3263,7 @@
         ? railGuard(c, e, state, enemyPoses.get(e.id), viewTop, still)
         : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail) })),
       ...(rail && state.railAlly ? [{
-        y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop)
+        y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
       ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
       ...(ending ? [
@@ -3205,12 +3273,16 @@
       ] : [])
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
+    if (rail && state.status === 'playing') {
+      values(state.players).forEach(actor => railShockStatus(c, actor, enemyTime, still, viewTop, viewBottom));
+      if (state.railAlly) railShockStatus(c, state.railAlly, enemyTime, still, viewTop, viewBottom);
+    }
     if (intercepting) interceptBadge(c, intercepting, viewTop);
     values(state.bullets).forEach(b => bullet(c, b, state));
     if (ending) { if (ending.t < .8) alpha(c, 1 - ending.t / .8, () => values(state.particles).forEach(p => particle(c, p, time))); }
     else values(state.particles).forEach(p => particle(c, p, time));
     if (!ending) combatEffects(c, events, state, still);
-    if (!ending) aimReticle(c, state.players && state.players[localId], time);
+    if (!ending && !(rail && local?.railStun > 0)) aimReticle(c, local, time);
     ambient(c, state, time);
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));

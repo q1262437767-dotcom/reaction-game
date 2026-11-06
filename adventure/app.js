@@ -743,6 +743,10 @@
         tone(620, .17, .025, 'triangle', 0, 940); tone(1240, .15, .016, 'sine', .12, 780);
       } else if (event.type === 'wall-breached') {
         tone(105, .25, .030, 'triangle', 0, 42); tone(260, .12, .014, 'triangle', .035, 120);
+      } else if (event.type === 'rail-shock') {
+        if (soundReady('rail-shock', event.time, .16)) {
+          tone(460, .15, .023, 'triangle', 0, 135); tone(130, .16, .016, 'square', .04, 75);
+        }
       } else if (event.type === 'guard-break') {
         tone(120, .23, .035, 'sawtooth', 0, 45);
       } else if (event.type === 'boss-phase') {
@@ -900,7 +904,7 @@
       $('tutorial-detail').textContent = timber ? '顺着求援灯讯寻找被困工人。绞盘仍用 E 操作，先把木车拉开；找到人后，从信号岗接应撤离。' : '归途灯熄了，采集队还没回来。进入苔火工坊借回火种，再回营地点灯。路标和记录可按 E 查看，已读内容收在操作手册中。';
       if (state.chapter.id === 'chapter1_3') {
         $('tutorial-title').textContent = '沿车辙去西线';
-        $('tutorial-detail').textContent = '先找维修匠陶铆。转车台的电闸可以用 E 扳动，趁铜轨通电，把守卫引过去。';
+        $('tutorial-detail').textContent = '先找维修匠陶铆。用 E 合上电闸，把守卫引上通电的铜轨。你和搭档碰到通电区也会被电晕。';
       }
     }
     if (weaponTutorial) $('tutorial-detail').textContent += ' 每人固定携带一把短刃和一把枪；短刃打失衡，手枪追击暴露的破绽，散射枪近身击退。用枪格挡只减免 50% 伤害，每次实际挡到攻击有 10% 概率损坏，本局只能改用短刃。搬运时仍可静步，但不能格挡。';
@@ -1312,37 +1316,54 @@
   function railSection(s) {
     return s?.mode === 'chapter' && s.mission?.id === 'chapter1_3';
   }
+  function railArena(s) {
+    return railSection(s) && [3, 6].includes(s.room.index);
+  }
+  function railContact(event) {
+    return event.x >= 452 && event.x <= 508 && event.y >= 92 && event.y <= 508;
+  }
+  function validRailShock(event, s) {
+    return event.type !== 'rail-shock' || railArena(s) && ['p1', 'p2'].includes(event.playerId) &&
+      event.duration === 2.5 && railContact(event);
+  }
+  function validRailStun(player, s) {
+    return player.railStun === undefined ||
+      railSection(s) && Number.isFinite(player.railStun) && player.railStun >= 0 && player.railStun <= 2.5;
+  }
   function validRailBoss(enemy, s) {
     return enemy.railGuard === undefined ||
       railSection(s) && s.room.index === 3 && enemy.railGuard === true && enemy.kind === 'boss' && enemy.timber === undefined;
   }
   function validRailHit(event, s) {
-    return event.source !== 'rail' || railSection(s) && s.room.index === 3 &&
+    return event.source !== 'rail' || railArena(s) &&
       event.type === 'environment-hit' && event.target === 'enemy' &&
       typeof event.enemyId === 'string' && event.enemyId.length > 0 && event.enemyId.length <= 100 &&
       event.playerId === null && event.weapon === null && event.propId === undefined &&
-      Number.isInteger(event.amount) && event.amount > 0 && event.amount <= 57 &&
-      event.x >= 452 && event.x <= 508 && event.y >= 92 && event.y <= 508;
+      Number.isInteger(event.amount) && event.amount > 0 && event.amount <= (s.room.index === 3 ? 57 : 4) &&
+      railContact(event);
   }
   function validRailState(s, bounded) {
     const c = s.chapter, room = s.room.index;
-    if (!s.mission || !C.validRailChapter(c, s.status) || s.difficulty !== 1 || s.rooms.length !== 6 ||
-        room !== 3 && (c.railPower > 0 || c.railCooldown > 0) || c.bossDefeated && (c.railPower > 0 || c.railCooldown > 0) ||
-        room >= 3 && room <= 4 && !c.repairerMet || room === 4 && !c.bossDefeated || c.reachedCar && room !== 4) return false;
-    const layout = [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [1, -1]];
-    const graph = [[1], [0, 2, 5], [1, 3], [2, 4], [3], [1]];
+    if (!s.mission || !C.validRailChapter(c, s.status) || s.difficulty !== 1 || s.rooms.length !== 7) return false;
+    const feederCleared = s.rooms[6]?.cleared;
+    if (typeof feederCleared !== 'boolean' || (!railArena(s) || room === 3 && c.bossDefeated || room === 6 && feederCleared) && (c.railPower > 0 || c.railCooldown > 0) ||
+        [3, 4, 6].includes(room) && !c.repairerMet || [3, 4].includes(room) && !feederCleared ||
+        room === 4 && !c.bossDefeated || c.reachedCar && room !== 4) return false;
+    const layout = [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0], [1, -1], [3, 0]];
+    const graph = [[1], [0, 2, 5], [1, 6], [6, 4], [3], [1], [2, 3]];
     if (s.rooms.some((r, index) => !r || r.index !== index || r.id !== 'chapter1_3-' + index ||
         r.gx !== layout[index][0] || r.gy !== layout[index][1] || !Array.isArray(r.neighbors) ||
         r.neighbors.length !== graph[index].length || graph[index].some(next => !r.neighbors.includes(next)))) return false;
     if ((c.phase === 'arrive' && s.rooms[1].visited) || (c.phase === 'track' && !s.rooms[1].visited) ||
         s.mission.phase !== c.phase || s.mission.progress !== Number(c.reachedCar)) return false;
-    const gateOpen = to => room === 2 && to === 3 ? c.repairerMet : room === 3 && to === 4 ? c.bossDefeated : true;
+    const gateOpen = to => room === 2 && to === 6 ? c.repairerMet :
+      room === 6 && to === 3 ? feederCleared : room === 3 && to === 4 ? c.bossDefeated : true;
     if (s.portals.length !== graph[room].length || new Set(s.portals.map(portal => portal.target)).size !== graph[room].length ||
         s.portals.some(portal => !graph[room].includes(portal.target) || portal.active !== gateOpen(portal.target))) return false;
     const bosses = s.enemies.filter(enemy => enemy.kind === 'boss');
     if (bosses.some(enemy => enemy.railGuard !== true || enemy.maxHp !== 285 && enemy.maxHp !== 200) ||
         bosses.filter(enemy => enemy.hp > 0).length !== (room === 3 && !c.bossDefeated ? 1 : 0)) return false;
-    const itemRooms = { 'rail-repairer': 2, 'rail-switch': 3, 'rail-car': 4, 'rail-supplies': 5 };
+    const itemRooms = { 'rail-repairer': [2], 'rail-switch': [3, 6], 'rail-car': [4], 'rail-supplies': [5] };
     const noteRooms = { 'rail-tracks': 1, 'rail-order': 5 };
     for (const item of s.interactables) {
       if (item.kind === 'chapter-note') {
@@ -1350,13 +1371,13 @@
             typeof item.text !== 'string' || item.text.length > 240 || item.used !== c.clues.includes(item.clueId)) return false;
       } else if (typeof item.kind === 'string' && item.kind.startsWith('chapter-')) return false;
       if (typeof item.kind !== 'string' || !item.kind.startsWith('rail-')) continue;
-      if (itemRooms[item.kind] !== room || item.id !== item.kind || typeof item.active !== 'boolean' ||
+      if (!itemRooms[item.kind]?.includes(room) || item.id !== item.kind || typeof item.active !== 'boolean' ||
           typeof item.used !== 'boolean' || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50)) return false;
       if (item.kind === 'rail-repairer' && (item.used !== c.repairerMet || item.active === item.used) ||
-          item.kind === 'rail-switch' && (item.used || item.active === c.bossDefeated) ||
+          item.kind === 'rail-switch' && (item.used || item.active === (room === 3 ? c.bossDefeated : feederCleared)) ||
           item.kind === 'rail-car' && (item.used !== c.reachedCar || item.active !== (c.bossDefeated && !item.used))) return false;
     }
-    return Object.keys(itemRooms).every(kind => s.interactables.filter(item => item.kind === kind).length === Number(itemRooms[kind] === room));
+    return Object.keys(itemRooms).every(kind => s.interactables.filter(item => item.kind === kind).length === Number(itemRooms[kind].includes(room)));
   }
   function validIntercept(enemy, furnaceRoom) {
     if (enemy.intercept === undefined) return true;
@@ -1390,7 +1411,7 @@
     if (!preparation || typeof preparation !== 'object' || Array.isArray(preparation) || Object.keys(preparation).length !== 3 || !preparation.p1 || !preparation.p2 || !safeCampLoadout(preparation.p1) || !safeCampLoadout(preparation.p2) || ![null, ...C.RELICS].includes(preparation.startingRelic) || preparation.startingRelic !== null && (!preparation.p1.upgrades.includes('relicCase') || !s.runBuffs.includes(preparation.startingRelic))) return false;
     if (!s.runUpgrades || typeof s.runUpgrades !== 'object' || Array.isArray(s.runUpgrades) || Object.keys(s.runUpgrades).length !== 1 || typeof s.runUpgrades.tempered !== 'boolean' || s.runUpgrades.tempered && s.mode !== 'random') return false;
     for (const p of Object.values(s.players)) {
-      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp)) return false;
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp) || !validRailStun(p, s)) return false;
       if (!['blade', 'spear', 'pistol', 'scatter'].includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
       if (!p.weapons || typeof p.weapons !== 'object' || Array.isArray(p.weapons) || Object.keys(p.weapons).length !== 2 || p.weapons.melee !== (p.id === 'p2' ? s.partnerMeleeLoadout : s.meleeLoadout) || !['pistol', 'scatter'].includes(p.weapons.ranged) || !['melee', 'ranged'].includes(p.activeSlot) || typeof p.rangedBroken !== 'boolean' || typeof p.prevSwitch !== 'boolean' || typeof p.sneaking !== 'boolean' || !bounded(p.switchCd, 2) || p.weapon !== p.weapons[p.activeSlot] || p.rangedBroken && p.activeSlot === 'ranged') return false;
       if (p.ward != null && (!Number.isInteger(p.ward) || !bounded(p.ward, 1))) return false;
@@ -1429,8 +1450,9 @@
       if (bullet.hook && (bullet.friendly !== false || bullet.weapon !== null || bullet.volleyId !== null || !shortId(bullet.owner) || !bounded(bullet.ttl, 5) || !Number.isFinite(bullet.vx) || !Number.isFinite(bullet.vy) || Math.abs(bullet.vx) > 2000 || Math.abs(bullet.vy) > 2000 || !s.enemies.some(enemy => enemy.id === bullet.owner && enemy.hp > 0 && (s.mode === 'random' && enemy.kind === 'hookwarden' || s.mode === 'chapter' && s.mission.id === 'chapter1_2' && enemy.kind === 'boss' && !!enemy.timber)))) return false;
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open', 'rail-shock'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
+      if (!validRailShock(event, s)) return false;
       if (event.type === 'refuge-chosen' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !['rest', 'relic'].includes(event.choice) || !Number.isInteger(event.room) || event.room < 1 || event.room >= s.rooms.length || s.rooms[event.room].kind !== 'refuge' || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'style-formed' && (s.mode !== 'random' || event.playerId !== null || !E.activeStyles(s).includes(event.style) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'style-trigger' && (s.mode !== 'random' || !['p1', 'p2'].includes(event.playerId) || !E.activeStyles(s).includes(event.style) || event.enemyId !== null && !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
@@ -1578,7 +1600,7 @@
       if (!Array.isArray(value) || value.length > caps[key] || value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
     }
     if (patch.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)) || !validRailBoss(enemy, current))) return false;
-    if (patch.combatEvents?.some(event => !validRailHit(event, current))) return false;
+    if (patch.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current))) return false;
     if (railSection(current)) {
       const railView = { ...current };
       for (const key of ['chapter', 'mission', 'enemies', 'interactables', 'portals']) {
@@ -1590,7 +1612,8 @@
     if (!players || typeof players !== 'object' || Array.isArray(players) || !players.p1 || !players.p2) return false;
     for (const id of ['p1', 'p2']) {
       const player = players[id];
-      if (!player || typeof player !== 'object' || Array.isArray(player) || !Number.isFinite(player.x) || !Number.isFinite(player.y) || !Number.isFinite(player.hp)) return false;
+      if (!player || typeof player !== 'object' || Array.isArray(player) || !Number.isFinite(player.x) || !Number.isFinite(player.y) ||
+          !Number.isFinite(player.hp) || !validRailStun(player, current)) return false;
     }
     return true;
   }
@@ -2120,9 +2143,10 @@
     $('hud-objective').textContent = remoteTutorialPending && !tutorialPending ? '等待搭档准备好，一起出发' : hunt ? huntObjective : relay ? state.relay.delivered ? '炉芯已送达' : core && core.carriedBy ? core.carriedBy === localId() ? '炉芯在你手中 · 带回入口' : '搭档携带炉芯 · 掩护撤离' : `炉芯位于${state.rooms[state.relay.coreRoom].name}` : state ? state.objective : '独自探险，或邀请一位搭档';
     $('hud-objective').hidden = false;
     $('hud-health').textContent = p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6';
-    $('hud-dash').textContent = p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
+    $('hud-dash').textContent = p && p.railStun > 0 ? `电晕 ${p.railStun.toFixed(1)}s` : p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     $('hud-loot').textContent = `${camp.coins} 星屑`;
-    $('hud-team').textContent = state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ? (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
+    const ally = state?.railAlly;
+    $('hud-team').textContent = ally ? (ally.downed ? '阿禾倒地' : `阿禾 ${ally.hp} / ${ally.maxHp}`) : state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ? (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
     const rangedName = p && p.weapons.ranged === 'scatter' ? '散射枪' : '手枪';
     const meleeName = p && p.weapons.melee === 'spear' ? '长枪' : '短刃';
     $('hud-melee').textContent = meleeName;

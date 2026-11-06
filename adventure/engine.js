@@ -13,7 +13,7 @@
     holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 },
     chapter1: { id: 'chapter1', name: '第一章 · 第一节 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 },
     chapter1_2: { id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', goal: '移开木车，救出工人，停下吊木守卫后返回信号岗接应', total: 1, coins: 50 },
-    chapter1_3: { id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', goal: '沿西边旧线找到陶铆，停下巡轨守卫，接应救援车', total: 1, coins: 60 }
+    chapter1_3: { id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', goal: '找到陶铆，穿过配电廊和拨道场，接应救援车', total: 1, coins: 60 }
   };
   var CHAPTER_NOTES = {
     trail: { title: '采集队的刻痕', text: '新刻下的箭头指向工坊。字迹还很清楚：“灯灭了，我们去找备用火。若有人来，请把归途灯点亮。”' },
@@ -76,7 +76,7 @@
     var e = Object.assign({ id: id(s, 'event-'), type: type, time: s.time }, extra || {});
     s.events.push(e);
     if (s.events.length > 32) s.events.shift();
-    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|spear-thrust|lantern-guard|fox-rescued|fox-assist|refuge-chosen|style-formed|style-trigger|boss-overload-open|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit)$/.test(type)) {
+    if (/^(rhythm-windup|rhythm-beat|perfect-parry|perfect-dodge|mikiri|counterattack|guard-break|fireball-reflected|hook-reflected|hook-pull|weapon-tempered|storehouse-open|wall-breached|boss-phase|event-start|event-complete|supply-collected|decoy|core-throw|core-catch|core-deliver|core-knock|hunt-arrival|hunt-lured|hunt-defeated|spear-thrust|lantern-guard|fox-rescued|fox-assist|refuge-chosen|style-formed|style-trigger|boss-overload-open|weapon-switch|weapon-broken|ranged-block|melee-block|player-hit|enemy-hit|weakpoint-open|weakpoint-hit|posture-break|scatter-push|environment-hit|rail-shock)$/.test(type)) {
       s.combatEvents = s.combatEvents || [];
       s.combatEvents.push(clone(e));
       // A shotgun can land five pellets at once. Routine damage feedback may
@@ -110,6 +110,11 @@
     return Object.keys(s.players).map(function (k) { return s.players[k]; })
       .filter(function (p) { return !p.downed; });
   }
+  function aliveCombatants(s) {
+    var party = alivePlayers(s);
+    if (s.railAlly && !s.railAlly.downed) party.push(s.railAlly);
+    return party;
+  }
   function solidProp(p) { return !p.destroyed && (p.kind === 'crate' || p.kind === 'barrel'); }
   function collides(s, x, y, r, ignoreId, ignoreProps) {
     var c = { x: x, y: y, r: r };
@@ -125,7 +130,7 @@
     if (entity.timber && isTimber(s)) { dx = clamp(entity.x + dx, 260, 760) - entity.x; dy = 0; }
     // Short substeps prevent fast dashes and thrown objects from passing thin walls.
     var n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 9));
-    var moved = false;
+    var moved = false, railActor = railPowered(s) && (s.players[entity.id] === entity || s.railAlly === entity);
     for (var i = 0; i < n; i += 1) {
       if (!collides(s, entity.x + dx / n, entity.y, entity.r, entity.id, ignoreProps)) {
         entity.x += dx / n; moved = true;
@@ -133,6 +138,7 @@
       if (!collides(s, entity.x, entity.y + dy / n, entity.r, entity.id, ignoreProps)) {
         entity.y += dy / n; moved = true;
       }
+      if (railActor && shockRailCombatant(s, entity)) break;
     }
     if (entity.timber && isTimber(s)) { entity.timber.railX = entity.x; entity.y = 150; }
     return moved;
@@ -197,7 +203,7 @@
     if (key === 'p1') clearRailAlly(s);
     else if (key === 'p2' && s.status === 'playing') placeRailAlly(s);
     event(s, 'player-left', { playerId: key });
-    if (s.status === 'playing' && !alivePlayers(s).length) finish(s, 'lost');
+    if (s.status === 'playing' && !aliveCombatants(s).length) finish(s, 'lost');
     return true;
   }
   function create(options) {
@@ -534,15 +540,22 @@
   }
   function isRailChapter(s) { return s.mode === 'chapter' && s.chapter && s.chapter.id === 'chapter1_3'; }
   function railGate(s, from, to) {
-    if (from === 2 && to === 3) return s.chapter.repairerMet;
+    if (from === 2 && to === 6) return s.chapter.repairerMet;
+    if (from === 6 && to === 3) return s.rooms[6].cleared;
     if (from === 3 && to === 4) return s.chapter.bossDefeated;
     return true;
+  }
+  function railGateLabel(room) {
+    if (room === 2) return '先到站台找陶铆';
+    if (room === 6) return '配电廊还有守卫';
+    return '巡轨守卫封锁通道';
   }
   function createRailChapter(s) {
     var rooms = [
       ['西线入口', 'camp', 0, 0, [1]], ['旧轨岔口', 'battle', 1, 0, [0, 2, 5]],
-      ['维修站台', 'rescue', 2, 0, [1, 3]], ['拨道场', 'boss', 3, 0, [2, 4]],
-      ['救援车', 'rescue', 4, 0, [3]], ['废轨工棚', 'battle', 1, -1, [1]]
+      ['维修站台', 'rescue', 2, 0, [1, 6]], ['拨道场', 'boss', 4, 0, [6, 4]],
+      ['救援车', 'rescue', 5, 0, [3]], ['废轨工棚', 'battle', 1, -1, [1]],
+      ['配电廊', 'battle', 3, 0, [2, 3]]
     ];
     s.chapter = { id: 'chapter1_3', version: 1, phase: 'arrive', clues: [], repairerMet: false,
       bossDefeated: false, reachedCar: false, railPower: 0, railCooldown: 0 };
@@ -570,7 +583,7 @@
       var data = { walls: [], doors: [], portals: [], props: [], enemies: [], fires: [],
         switches: [], pickups: [], fountains: [], interactables: [] };
       addChapterRoutes(s, room, data, 'rail-path-', function (to) { return railGate(s, room.index, to); },
-        '西线通道', room.index === 2 ? '先到站台找陶铆' : '巡轨守卫封锁通道');
+        '西线通道', railGateLabel(room.index));
       if (room.index === 0) {
         data.walls.push(rect(400, 125, 108, 60), rect(565, 405, 100, 55));
       } else if (room.index === 1) {
@@ -597,6 +610,15 @@
         item(data, 'rail-car', 645, 305, '上前接应救援车', {
           description: '车上的暖炉还在响。下一段轨道却在前方断开了。'
         });
+      } else if (room.index === 6) {
+        data.walls.push(rect(278, 154, 100, 68), rect(559, 145, 118, 54), rect(632, 455, 114, 52));
+        data.props.push(prop(s, 'crate', 576, 410), prop(s, 'barrel', 735, 340));
+        guard(data, 'charger', 652, 302, '检修冲车');
+        guard(data, 'shield', 676, 245, '配电守卫');
+        guard(data, 'shooter', 783, 420, '巡廊枪兵');
+        item(data, 'rail-switch', 350, 375, '合上配电闸', {
+          description: '这条铜轨通着东边的拨道场。合闸三秒，踩上去的守卫会短路。'
+        });
       } else {
         data.walls.push(rect(325, 163, 89, 66), rect(658, 363, 106, 64));
         data.props.push(prop(s, 'crate', 450, 187), prop(s, 'barrel', 676, 289));
@@ -617,12 +639,12 @@
     s.doors.forEach(function (q) {
       var gate = s.portals.find(function (p) { return 'door-' + p.direction === q.id; });
       q.locked = !!gate && !gate.active;
-      q.label = q.locked ? (s.room.index === 2 ? '先到站台找陶铆' : '巡轨守卫封锁通道') : '西线通道';
+      q.label = q.locked ? railGateLabel(s.room.index) : '西线通道';
     });
     s.interactables.forEach(function (q) {
       if (q.kind === 'chapter-note') q.used = c.clues.indexOf(q.clueId) >= 0;
       if (q.kind === 'rail-repairer') { q.used = c.repairerMet; q.active = !q.used; }
-      if (q.kind === 'rail-switch') q.active = !c.bossDefeated;
+      if (q.kind === 'rail-switch') q.active = s.room.index === 6 ? !s.room.cleared : !c.bossDefeated;
       if (q.kind === 'rail-car') { q.used = c.reachedCar; q.active = c.bossDefeated && !q.used; }
     });
   }
@@ -637,16 +659,17 @@
       s.message = target.text;
     } else if (target.kind === 'rail-repairer') {
       c.repairerMet = true;
-      s.message = '陶铆：主芯是我借的，车上有伤员。那守卫只认主芯，一路追到这儿。东边有电闸，趁它冲过铜轨时合上！';
+      s.message = '陶铆：主芯是我借的，车上有伤员。先穿过配电廊。那儿的铜轨还有电，自己当心。';
     } else if (target.kind === 'rail-switch') {
       if (c.railCooldown > 0) {
         s.message = '电闸还在复位。'; s.messageTime = 1.3; return false;
       }
       c.railPower = 3; c.railCooldown = 5;
+      shockRailCombatants(s);
       s.message = '铜轨通电了！';
     } else if (target.kind === 'rail-supplies') {
       target.used = true; target.active = false;
-      alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
+      aliveCombatants(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
       burst(s, 'heal', target.x, target.y, '#8ce6b0', 14);
       s.message = '急救包还有药，全队恢复 3 点生命。';
     } else if (target.kind === 'rail-car' && c.bossDefeated) {
@@ -660,9 +683,20 @@
     syncRailChapter(s); setHint(s); return true;
   }
   function updateRailChapter(s, dt) {
-    if (!isRailChapter(s) || s.room.index !== 3 || dt <= 0) return;
+    if (!isRailChapter(s) || s.room.index !== 3 && s.room.index !== 6 || dt <= 0) return;
     s.chapter.railPower = Math.max(0, s.chapter.railPower - dt);
     s.chapter.railCooldown = Math.max(0, s.chapter.railCooldown - dt);
+    if (s.room.index !== 6 || s.chapter.railPower <= 0) return;
+    s.enemies.forEach(function (foe) {
+      if (foe.hp <= 0 || foe.stun > 0 || foe.x < 452 || foe.x > 508 || foe.y < 92 || foe.y > 508) return;
+      // Keep the target disabled until the pulse ends so it cannot be hit twice.
+      foe.stun = Math.max(1.7, s.chapter.railPower + 0.15);
+      foe.chargeTime = 0; foe.rhythm = null; foe.windup = 0;
+      var amount = damageEnemy(s, foe, Math.min(foe.hp, 4), null, null, true);
+      event(s, 'environment-hit', { enemyId: foe.id, playerId: null, weapon: null, source: 'rail',
+        target: 'enemy', amount: amount, x: foe.x, y: foe.y });
+      burst(s, 'spark', foe.x, foe.y, '#b6ecfa', 8);
+    });
   }
   function tripRailGuard(s, e) {
     if (s.chapter.railPower <= 0 || e.hp <= 0 || e.x < 452 || e.x > 508 || e.y < 92 || e.y > 508) return false;
@@ -1371,18 +1405,77 @@
     s.companions = s.companions.filter(function (fox) { return !!s.players[fox.ownerId]; });
     s.companions.forEach(function (fox) { placeCompanion(s, fox); });
   }
+  function railPowered(s) {
+    return isRailChapter(s) && s.room && (s.room.index === 3 || s.room.index === 6) && s.chapter.railPower > 0;
+  }
+  function inPoweredRail(point) {
+    return point.x >= 452 && point.x <= 508 && point.y >= 92 && point.y <= 508;
+  }
+  function advanceRailStun(actor, dt) {
+    if (actor.railStun === undefined) return false;
+    actor.railStun -= dt;
+    if (actor.railStun > 0.00001) return true;
+    delete actor.railStun;
+    return false;
+  }
+  function shockRailCombatant(s, actor) {
+    if (!railPowered(s)) { delete actor.railShockLatch; return false; }
+    if (actor.downed || actor.railShockLatch || !inPoweredRail(actor)) return false;
+    actor.railShockLatch = true;
+    actor.railStun = 2.5;
+    // Input edges still get consumed during the stun. Cancel any action
+    // carried over from the preceding tick as soon as the actor touches rail.
+    var heldGuard = actor.prevGuard, heldShoot = actor.prevShoot;
+    resetCombat(actor);
+    actor.prevGuard = heldGuard; actor.prevShoot = heldShoot;
+    actor.vx = 0; actor.vy = 0; actor.moving = false;
+    if (actor === s.railAlly) {
+      actor.mode = 'stunned'; actor.attackTime = 0; actor.evadeTime = 0; actor.navTime = 0;
+    }
+    event(s, 'rail-shock', { playerId: actor.id, x: actor.x, y: actor.y, duration: 2.5 });
+    burst(s, 'spark', actor.x, actor.y, '#9de5ff', 10);
+    return true;
+  }
+  function shockRailCombatants(s) {
+    aliveCombatants(s).forEach(function (actor) { shockRailCombatant(s, actor); });
+  }
+  function crossesPoweredRail(s, from, to) {
+    if (!railPowered(s) || inPoweredRail(from)) return false;
+    var dx = to.x - from.x, dy = to.y - from.y, first = 0, last = 1;
+    if (dx === 0) {
+      if (from.x < 452 || from.x > 508) return false;
+    } else {
+      var left = (452 - from.x) / dx, right = (508 - from.x) / dx;
+      first = Math.max(first, Math.min(left, right));
+      last = Math.min(last, Math.max(left, right));
+    }
+    var y1 = from.y + dy * first, y2 = from.y + dy * last;
+    return first <= last && Math.max(y1, y2) >= 92 && Math.min(y1, y2) <= 508;
+  }
   function clearRailAlly(s) {
     if (!s.railAlly) return;
+    var key = s.railAlly.id;
     delete s.railAlly;
     s.bullets = s.bullets.filter(function (bullet) { return !bullet.railAlly; });
+    function unrelated(e) { return e.playerId !== key && e.by !== key && e.allyId !== key; }
+    s.events = s.events.filter(unrelated); s.combatEvents = s.combatEvents.filter(unrelated);
+    s.enemies.forEach(function (enemy) {
+      if (enemy.targetId === key) delete enemy.targetId;
+      if (enemy.rhythm && enemy.rhythm.targetId === key) enemy.rhythm.targetId = null;
+      if (enemy.rushHitIds) enemy.rushHitIds = enemy.rushHitIds.filter(function (idValue) { return idValue !== key; });
+    });
   }
   function placeRailAlly(s) {
     var owner = s.players.p1;
-    if (!isRailChapter(s) || !owner || owner.downed || s.playerCount !== 1) return;
-    var ally = { id: 'rail-ally', name: '阿禾', x: owner.x, y: owner.y, r: 14,
-      facing: owner.facing, travelFacing: owner.facing, moving: false, mode: 'follow',
+    if (!isRailChapter(s) || !owner || s.playerCount !== 1) return;
+    var ally = s.railAlly || player('rail-ally', 1, 'pistol', 'pistol', 'blade');
+    Object.assign(ally, { name: '阿禾', x: owner.x, y: owner.y,
+      facing: owner.facing, travelFacing: owner.facing, moving: false,
+      mode: ally.downed ? 'downed' : ally.railStun > 0 ? 'stunned' : 'follow',
       attackTime: 0, evadeTime: 0, fireCd: 0.35, evadeX: 0, evadeY: 0,
-      navX: owner.x, navY: owner.y, navTime: 0 };
+      navX: owner.x, navY: owner.y, navTime: 0 });
+    ally.invuln = Math.max(ally.invuln, 0.9);
+    delete ally.railShockLatch;
     for (var i = 0; i < 12; i += 1) {
       var angle = owner.facing + 2.45 + i * TAU / 12;
       var point = { x: owner.x + Math.cos(angle) * 68, y: owner.y + Math.sin(angle) * 68 };
@@ -1404,60 +1497,42 @@
     for (var attempt = 0; attempt < 2; attempt += 1, side *= -1) {
       var distance = Math.min(128, guard.r + ally.r + 22 - side * offset);
       var point = { x: ally.x + dx * side * distance, y: ally.y + dy * side * distance };
-      if (foxSight(s, ally, point, ally.r)) {
+      if (!crossesPoweredRail(s, ally, point) && foxSight(s, ally, point, ally.r)) {
         ally.evadeX = dx * side * distance / 0.24; ally.evadeY = dy * side * distance / 0.24;
-        ally.evadeTime = 0.24; ally.attackTime = 0; ally.navTime = 0;
+        ally.evadeTime = 0.24; ally.attackTime = 0; ally.navTime = 0; ally.dashCd = 0.8;
+        ally.invuln = Math.max(ally.invuln, 0.24);
         return;
       }
     }
   }
   function shootRailAlly(s, ally, target) {
     var angle = Math.atan2(target.y - ally.y, target.x - ally.x), dx = Math.cos(angle), dy = Math.sin(angle);
-    ally.facing = angle; ally.fireCd = target.railGuard ? 1.1 : 0.55; ally.attackTime = 0.18;
+    ally.facing = angle; ally.fireCd = target.railGuard ? 1.1 : 0.65; ally.attackTime = 0.18;
     s.bullets.push({ id: id(s, 'bullet-'), x: ally.x + dx * 21, y: ally.y + dy * 21, r: 4,
-      vx: dx * 650, vy: dy * 650, friendly: true, owner: ally.id, damage: target.railGuard ? 3 : 2,
+      vx: dx * 650, vy: dy * 650, friendly: true, owner: ally.id,
+      damage: target.railGuard ? (target.weakTime > 0 ? 3 : 1) : 2,
       ttl: 0.52, weapon: null, volleyId: null, originX: ally.x, originY: ally.y,
       color: '#ffe0a2', railAlly: true, hitsLeft: 1, hitIds: [], dead: false });
     event(s, 'shoot', { playerId: null, allyId: ally.id, weapon: 'pistol', x: ally.x, y: ally.y });
   }
-  function updateRailAlly(s, dt) {
-    var ally = s.railAlly, owner = s.players.p1;
-    if (!ally || dt <= 0 || s.status !== 'playing' || !owner || owner.downed) return;
-    ally.fireCd = Math.max(0, ally.fireCd - dt);
-    ally.attackTime = Math.max(0, ally.attackTime - dt);
-    var rush = s.enemies.find(function (e) {
-      return e.hp > 0 && e.railGuard && e.rhythm && e.rhythm.type === 'rush' &&
-        (e.rhythm.phase === 'windup' || e.chargeTime > 0);
+  function railAllyTarget(s, ally, owner) {
+    var best = Infinity, target = null;
+    s.enemies.forEach(function (enemy) {
+      if (enemy.hp <= 0 || enemy.railGuard && enemy.hp <= 1 || dist(enemy, owner) > 430) return;
+      var gap = dist(ally, enemy);
+      if (gap > 465) return;
+      var score = gap + (foxSight(s, ally, enemy, 4) ? 0 : 95) - (enemy.weakTime > 0 ? 60 : 0);
+      if (score < best) { best = score; target = enemy; }
     });
-    if (rush && ally.evadeTime <= 0 && railAllyRushLane(ally, rush, ally) && foxSight(s, rush, ally, 3)) evadeRailAlly(s, ally, rush);
-    if (ally.evadeTime > 0) {
-      var duration = Math.min(dt, ally.evadeTime);
-      ally.moving = move(s, ally, ally.evadeX * duration, ally.evadeY * duration, false);
-      ally.facing = Math.atan2(ally.evadeY, ally.evadeX); ally.mode = 'evade';
-      ally.evadeTime = Math.max(0, ally.evadeTime - dt);
-      return;
+    return target;
+  }
+  function moveRailAlly(s, ally, goal, rush, dt, speed) {
+    if (rush && railAllyRushLane(ally, rush, goal)) return;
+    if (crossesPoweredRail(s, ally, goal)) {
+      // Wait on the current bank, or head toward the nearest clear end.
+      goal = { x: ally.x < 480 ? 423 : 537, y: ally.y < 300 ? 68 : 532 };
     }
-    var ownerDistance = dist(ally, owner);
-    if (ally.fireCd <= 0 && ownerDistance < 172) {
-      var best = 310, target = null;
-      s.enemies.forEach(function (e) {
-        if (e.hp <= 0 || e.railGuard && (e.weakTime <= 0 || e.hp <= 1) || dist(e, owner) > 325) return;
-        var distance = dist(ally, e);
-        if (distance >= best || distance <= e.r + 23 || !foxSight(s, ally, e, 4)) return;
-        best = distance; target = e;
-      });
-      if (target) shootRailAlly(s, ally, target);
-    }
-    if (ally.attackTime > 0 && ownerDistance < 125) {
-      ally.moving = false; ally.mode = 'attack'; return;
-    }
-    if (len(owner.vx, owner.vy) > 16) ally.travelFacing = Math.atan2(owner.vy, owner.vx);
-    var dx = Math.cos(ally.travelFacing), dy = Math.sin(ally.travelFacing);
-    var goal = { x: owner.x - dx * 50 - dy * 40, y: owner.y - dy * 50 + dx * 40 };
-    if (collides(s, goal.x, goal.y, ally.r, ally.id, false)) goal = owner;
-    ally.moving = false;
-    ally.mode = ally.attackTime > 0 ? 'attack' : 'follow';
-    if (dist(ally, goal) <= 13 || rush && railAllyRushLane(ally, rush, goal)) return;
+    if (dist(ally, goal) <= 13) return;
     ally.navTime = Math.max(0, ally.navTime - dt);
     var next = goal;
     if (!foxSight(s, ally, goal, ally.r + 1)) {
@@ -1469,9 +1544,77 @@
     }
     var stepX = next.x - ally.x, stepY = next.y - ally.y, gap = len(stepX, stepY);
     if (gap <= 0.01) return;
-    var step = Math.min(gap, clamp(ownerDistance * 2.2, 185, 322) * dt);
-    ally.moving = move(s, ally, stepX * step / gap, stepY * step / gap, false);
+    var step = Math.min(gap, speed * dt);
+    var point = { x: ally.x + stepX * step / gap, y: ally.y + stepY * step / gap };
+    if (crossesPoweredRail(s, ally, point)) return;
+    var oldX = ally.x, oldY = ally.y;
+    ally.moving = move(s, ally, point.x - ally.x, point.y - ally.y, false);
+    if (ally.railStun > 0) { ally.moving = false; return; }
+    ally.vx = (ally.x - oldX) / dt; ally.vy = (ally.y - oldY) / dt;
     if (ally.moving && ally.attackTime <= 0) ally.facing = Math.atan2(stepY, stepX);
+    shockRailCombatant(s, ally);
+  }
+  function updateRailAlly(s, dt) {
+    var ally = s.railAlly, owner = s.players.p1;
+    if (!ally || dt <= 0 || s.status !== 'playing' || !owner) return;
+    ally.invuln = Math.max(0, ally.invuln - dt);
+    ally.dashCd = Math.max(0, ally.dashCd - dt);
+    ally.fireCd = Math.max(0, ally.fireCd - dt);
+    ally.attackTime = Math.max(0, ally.attackTime - dt);
+    ally.moving = false; ally.vx = 0; ally.vy = 0;
+    if (ally.downed || ally.railStun > 0) { ally.mode = ally.downed ? 'downed' : 'stunned'; return; }
+    var rush = s.enemies.find(function (e) {
+      return e.hp > 0 && e.railGuard && e.rhythm && e.rhythm.type === 'rush' &&
+        (e.rhythm.phase === 'windup' || e.chargeTime > 0);
+    });
+    if (rush && ally.dashCd <= 0 && ally.evadeTime <= 0 &&
+        railAllyRushLane(ally, rush, ally) && foxSight(s, rush, ally, 3)) evadeRailAlly(s, ally, rush);
+    if (ally.evadeTime > 0) {
+      var duration = Math.min(dt, ally.evadeTime);
+      ally.moving = move(s, ally, ally.evadeX * duration, ally.evadeY * duration, false);
+      if (ally.railStun > 0) { ally.moving = false; return; }
+      ally.facing = Math.atan2(ally.evadeY, ally.evadeX); ally.mode = 'evade';
+      ally.evadeTime = Math.max(0, ally.evadeTime - dt);
+      shockRailCombatant(s, ally);
+      return;
+    }
+    var ownerDistance = dist(ally, owner);
+    if (owner.downed) {
+      ally.mode = 'revive';
+      if (ownerDistance < 78 && foxSight(s, ally, owner, 3)) reviveCombatant(s, ally, owner);
+      else moveRailAlly(s, ally, owner, rush, dt, 260);
+      return;
+    }
+    var target = ownerDistance < 245 ? railAllyTarget(s, ally, owner) : null;
+    var range = target ? dist(ally, target) : 0;
+    var line = target && foxSight(s, ally, target, 4);
+    if (line && range <= 306 && range > target.r + 23 && ally.fireCd <= 0) shootRailAlly(s, ally, target);
+    ally.mode = ally.attackTime > 0 ? 'attack' : 'follow';
+    if (target && ownerDistance < 210) {
+      if (range < 118) {
+        var retreat = { x: ally.x + (ally.x - target.x) * 100 / (range || 1),
+          y: ally.y + (ally.y - target.y) * 100 / (range || 1) };
+        if (!collides(s, retreat.x, retreat.y, ally.r, ally.id, false)) {
+          moveRailAlly(s, ally, retreat, rush, dt, 215);
+          return;
+        }
+      } else if (line && range <= 280) return;
+      var angle = Math.atan2(ally.y - target.y, ally.x - target.x);
+      var firingLane = { x: target.x + Math.cos(angle) * 218, y: target.y + Math.sin(angle) * 218 };
+      if (!line && dist(ally, firingLane) < 25) {
+        firingLane.x -= Math.sin(angle) * 82;
+        firingLane.y += Math.cos(angle) * 82;
+      }
+      if (!collides(s, firingLane.x, firingLane.y, ally.r, ally.id, false) && dist(firingLane, owner) < 248) {
+        moveRailAlly(s, ally, firingLane, rush, dt, 212);
+        return;
+      }
+    }
+    if (len(owner.vx, owner.vy) > 16) ally.travelFacing = Math.atan2(owner.vy, owner.vx);
+    var dx = Math.cos(ally.travelFacing), dy = Math.sin(ally.travelFacing);
+    var goal = { x: owner.x - dx * 50 - dy * 40, y: owner.y - dy * 50 + dx * 40 };
+    if (collides(s, goal.x, goal.y, ally.r, ally.id, false)) goal = owner;
+    moveRailAlly(s, ally, goal, rush, dt, clamp(ownerDistance * 2.2, 185, 322));
   }
   function foxSight(s, a, b, radius) {
     // Fine sampling keeps thin walls and closed doors honest. Portable solid
@@ -1574,7 +1717,8 @@
       if (isTimber(s)) { s.objective = s.chapter.bossDefeated ? '返回信号岗 · 接应工人回营' : s.chapter.workerFreed ? '让吊木守卫停下来 · 木车能卡住吊钩' : s.chapter.cart.position >= .99 ? '穿过料门 · 救出塌棚工人' : '进入吊装场 · 拉开挡路木车'; s.hint = ''; return; }
       if (isRailChapter(s)) {
         s.objective = s.chapter.bossDefeated ? '穿过拨道场 · 接应救援车' :
-          s.chapter.repairerMet ? '停下巡轨守卫' : '沿西线前往维修站台';
+          !s.chapter.repairerMet ? '沿西线前往维修站台' :
+          !s.rooms[6].cleared ? '清理配电廊的守卫' : '停下巡轨守卫';
         s.hint = ''; return;
       }
       s.objective = s.chapter.fireTaken ? '带火回营 · 点亮归途灯' : s.chapter.bossDefeated ? '取出备用火种' :
@@ -1881,6 +2025,11 @@
         s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
         event(s, 'room-clear', { room: s.room.index });
         if (s.room.index !== (isTimber(s) ? 5 : isRailChapter(s) ? 3 : 4)) s.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 300, r: 14, amount: 2 });
+        if (isRailChapter(s) && s.room.index === 6) {
+          s.chapter.railPower = 0; s.chapter.railCooldown = 0;
+          s.message = '阿禾：这段通了。拨道场就在前面，救援车的暖炉还能撑一会儿。';
+          s.messageTime = 5;
+        }
       }
       s.room.cleared = s.rooms[s.room.index].cleared;
       syncChapter(s); setHint(s); return;
@@ -2025,17 +2174,23 @@
     }
     s.message = '炉芯已启动 · 回程巡逻队正在集结'; s.messageTime = 3;
   }
+  function reviveCombatant(s, helper, downed) {
+    downed.downed = false; downed.hp = 3; downed.invuln = 1.8; resetCombat(downed);
+    if (downed === s.railAlly) { downed.mode = downed.railStun > 0 ? 'stunned' : 'follow'; downed.navTime = 0; }
+    downed.prevInteract = true; s.stats.revives += 1;
+    event(s, 'revive', { playerId: downed.id, by: helper.id });
+    burst(s, 'heal', downed.x, downed.y, '#83f2b5', 12);
+  }
   function interact(s, playerId) {
     if (s.status !== 'playing') return false;
     var p = s.players[playerId];
-    if (!p || p.downed) return false;
+    if (!p || p.downed || p.railStun > 0 || shockRailCombatant(s, p)) return false;
     var downed = Object.keys(s.players).map(function (key) { return s.players[key]; })
       .find(function (q) { return q.downed && q.id !== p.id && dist(p, q) < 78; });
+    var ally = s.railAlly;
+    if (!downed && ally && ally.downed && dist(p, ally) < 78 && foxSight(s, p, ally, 3)) downed = ally;
     if (downed) {
-      downed.downed = false; downed.hp = 3; downed.invuln = 1.8; resetCombat(downed);
-      downed.prevInteract = true; s.stats.revives += 1;
-      event(s, 'revive', { playerId: downed.id, by: p.id });
-      burst(s, 'heal', downed.x, downed.y, '#83f2b5', 12);
+      reviveCombatant(s, p, downed);
       return true;
     }
     if (p.carry) {
@@ -2178,16 +2333,18 @@
       particle(s, 'counter', p.x, p.y, { r: 35, ttl: 0.3, life: 0.3, color: '#9ed8ff' }); return true;
     }
     var oldHp = p.hp;
-    p.hp = Math.max(0, p.hp - amount); p.invuln = 0.85; s.stats.damage += amount;
+    p.hp = Math.max(0, p.hp - amount); p.invuln = 0.85;
+    if (p !== s.railAlly) s.stats.damage += amount;
     if (s.mode === 'relay' && p.carry === s.relay.coreId) releaseCarry(s, p, false, true);
     p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     event(s, 'player-hit', { playerId: p.id, hp: p.hp, source: source, damage: oldHp - p.hp, x: p.x, y: p.y });
     burst(s, 'hit', p.x, p.y, '#ff8d83', 7);
     if (p.hp <= 0) {
       releaseCarry(s, p, false, true); p.downed = true; resetCombat(p);
+      if (p === s.railAlly) { p.moving = false; p.mode = 'downed'; p.attackTime = 0; p.evadeTime = 0; }
       s.companions.forEach(function (fox) { if (fox.ownerId === p.id) clearFoxAction(fox); });
       event(s, 'downed', { playerId: p.id });
-      if (!alivePlayers(s).length) finish(s, 'lost');
+      if (!aliveCombatants(s).length) finish(s, 'lost');
     }
     return true;
   }
@@ -2591,7 +2748,7 @@
       return;
     }
     if (r.targetId) s.decoys = s.decoys.filter(function (d) { return d.id !== r.targetId; });
-    alivePlayers(s).forEach(function (p) {
+    aliveCombatants(s).forEach(function (p) {
       var currentHit = strikeContains(s, e, r, p);
       var origin = { x: p.dashOriginX, y: p.dashOriginY, r: p.r };
       var crossed = p.dashWindow > 0 && strikeContains(s, e, r, origin);
@@ -2859,7 +3016,7 @@
           s.decoys = s.decoys.filter(function (d) { return d.id !== decoy.id; });
           if (!committedRush) e.chargeTime = 0;
         }
-        alivePlayers(s).forEach(function (p) {
+        aliveCombatants(s).forEach(function (p) {
           if (dist(e, p) >= e.r + p.r + 20) return;
           if (committedRush && e.rushHitIds.indexOf(p.id) >= 0) return;
           if (p.dashWindow > 0 && p.invuln <= 0.3) {
@@ -3010,6 +3167,7 @@
     for (var i = 0; i < n; i += 1) {
       if (collides(s, p.x + dx, p.y + dy, p.r, p.id, false)) break;
       p.x += dx; p.y += dy;
+      if (shockRailCombatant(s, p)) break;
     }
   }
   function spearAttack(s, p) {
@@ -3044,6 +3202,7 @@
         if (spear && !spearTargets(s, p, spearLane(s, p, angle, 250)).some(function (hit) { return hit.enemy.id === foe.id; })) return false;
         if (spear) spearStep(s, p, angle, Math.min(70, gap));
         else move(s, p, Math.cos(angle) * Math.min(85, gap), Math.sin(angle) * Math.min(85, gap), false);
+        if (p.railStun > 0) return false;
         if (dist(p, foe) <= (spear ? 250 : 112) + foe.r && meleeLineClear(s, p, foe, 7)) {
           p.facing = angle; p.meleeTime = 0.24; p.fireCd = 0.34; p.guarding = false; p.guardWindow = 0; p.guardAttackLock = 0.28;
           var overloadRecovery = isOverloadRecovery(s, foe);
@@ -3252,7 +3411,7 @@
     }
   }
   function updateEnemies(s, dt) {
-    var targets = alivePlayers(s);
+    var targets = aliveCombatants(s);
     if (!targets.length) return;
     var readyAt = {};
     if (!s.practice && dt > 0) s.enemies.forEach(function (e) { readyAt[e.id] = e.attackCd - dt; });
@@ -3276,6 +3435,9 @@
       var decoyRange = activeStyles(s).indexOf('phantom') >= 0 ? 760 : 600;
       var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < decoyRange && lineClear(s, e, d, 4); });
       var p = (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
+      var human = s.players.p1;
+      if (e.railGuard && p === s.railAlly && human && !human.downed &&
+          (e.rhythmCycle === 0 || dist(e, human) < dist(e, p) + 85)) p = human;
       if (e.kind === 'lamplighter') {
         e.stagger = Math.max(0, e.stagger - dt);
         if (e.stagger > 0) return;
@@ -3486,7 +3648,7 @@
         } else {
           var shadow = s.decoys.find(function (d) { return dist(d, b) < d.r + b.r; });
           if (shadow) { s.decoys = s.decoys.filter(function (d) { return d.id !== shadow.id; }); b.dead = true; }
-          var target = !b.dead && alivePlayers(s).find(function (p) { return dist(p, b) < p.r + b.r + (b.fireball ? 9 : 0); });
+          var target = !b.dead && aliveCombatants(s).find(function (p) { return dist(p, b) < p.r + b.r + (b.fireball ? 9 : 0); });
           if (target) {
             if (b.hook) {
               if (target.guardWindow > 0 && target.guarding && target.invuln <= 0.3 && facingEnemy(target, b)) {
@@ -3710,6 +3872,10 @@
     s.combatEvents = (s.combatEvents || []).filter(function (entry) { return s.time - entry.time <= 2; }).slice(-24);
     s.travelCd = Math.max(0, s.travelCd - dt); s.messageTime = Math.max(0, s.messageTime - dt);
     var roomBefore = s.room.index;
+    if (s.railAlly) {
+      advanceRailStun(s.railAlly, dt);
+      shockRailCombatant(s, s.railAlly);
+    }
     Object.keys(s.players).forEach(function (key) {
       var p = s.players[key], input = inputs[key] || {};
       var dashEdge = !!input.dash && !p.prevDash, interactEdge = !!input.interact && !p.prevInteract;
@@ -3731,7 +3897,8 @@
         p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
       }
       if (!input.guard) p.guardLoad = Math.max(0, p.guardLoad - dt * 0.7);
-      if (p.downed) return;
+      var stunned = advanceRailStun(p, dt);
+      if (p.downed || shockRailCombatant(s, p) || stunned) return;
       var switched = switchEdge && switchWeapon(s, p);
       var aimX = finite(Number(input.aimX), p.x + Math.cos(p.facing) * 100);
       var aimY = finite(Number(input.aimY), p.y + Math.sin(p.facing) * 100);
@@ -3757,6 +3924,7 @@
         p.dashTime = Math.max(0, p.dashTime - dt);
         var dashSpeed = s.mode === 'relay' && p.carry === s.relay.coreId ? 380 : 570;
         move(s, p, p.dashX * dashSpeed * dt, p.dashY * dashSpeed * dt, false);
+        if (p.railStun > 0) return;
         particle(s, 'trail', p.x, p.y, { r: p.r, ttl: 0.2, life: 0.2, color: p.color });
       } else {
         var held = s.props.find(function (q) { return q.id === p.carry; });
@@ -3766,7 +3934,9 @@
         if (p.sneaking) speed *= 0.55;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
+      if (p.railStun > 0) return;
       var usedCounter = shootEdge && p.activeSlot === 'melee' && p.counterTime > 0 && !p.carry && meleeAttack(s, p, true);
+      if (p.railStun > 0) return;
       if (!usedCounter && input.shoot && p.fireCd <= 0 && !p.guarding && !p.carry) {
         if (p.activeSlot === 'melee') meleeAttack(s, p, false); else shoot(s, p);
       }
@@ -3781,7 +3951,7 @@
     updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateTimber(s, dt); updateRailChapter(s, dt);
     updateEnemies(s, dt); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
-    alivePlayers(s).forEach(function (p) {
+    aliveCombatants(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');
     });
     s.decoys = s.decoys.filter(function (d) { d.ttl -= dt; return d.ttl > 0; });
@@ -3791,14 +3961,14 @@
     });
     if (s.status === 'playing' && s.travelCd <= 0) {
       var gate = s.portals.find(function (portal) {
-        return portal.active && alivePlayers(s).some(function (p) { return dist(p, portal) < portal.r + 1; });
+        return portal.active && alivePlayers(s).some(function (p) { return !(p.railStun > 0) && dist(p, portal) < portal.r + 1; });
       });
       if (gate) enterRoom(s, gate.target);
     }
     return s;
   }
   // Navigation and hit lists stay on the host. A guest only draws the result.
-  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1 };
+  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1, railShockLatch: 1 };
   var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
   var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
   var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
@@ -3880,6 +4050,14 @@
     for (var key in s) {
       if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData' || key === 'railAlly') continue;
       result[key] = s[key];
+    }
+    if (Object.keys(s.players).some(function (key) { return s.players[key].railShockLatch; })) {
+      result.players = Object.assign({}, s.players);
+      Object.keys(s.players).forEach(function (key) {
+        if (!s.players[key].railShockLatch) return;
+        result.players[key] = Object.assign({}, s.players[key]);
+        delete result.players[key].railShockLatch;
+      });
     }
     result.roomData = {};
     result.particles = s.particles.length > 24 ? s.particles.slice(-24) : s.particles.slice();
