@@ -1,4 +1,4 @@
--- Cases for ruins_private.save_ruins_profile_impl after upgrade-progress-guard.sql.
+-- Cases for ruins_private.save_ruins_profile_impl after the latest upgrades.
 -- Revision 0 is the first insert and skips the jump check. Later revisions
 -- must accept a normal expedition, reject a regression, and reject a spike.
 begin;
@@ -89,6 +89,7 @@ declare
   v_def text;
   v_base jsonb;
   v_next jsonb;
+  v_third jsonb;
 begin
   v_def := pg_get_functiondef('ruins_private.reject_ruins_progress_jump(jsonb,jsonb)'::regprocedure);
   if position('v_run_delta > 480' in v_def) = 0 or position('progress_rejected' in v_def) = 0 then
@@ -208,6 +209,58 @@ begin
     pg_temp.profile(1, 0, 1, true, '["r1"]'::jsonb,
       pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission()),
     2, 'scatter overspend');
+
+  -- A co-op guest can finish the third section without any prior chapter
+  -- record. Older clients can still save while omitting the new record.
+  perform set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4', true);
+  v_base := pg_temp.profile(
+    0, 0, 0, false, '[]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  perform ruins_private.save_ruins_profile_impl(v_base, 0);
+  v_third := pg_temp.mission(1, 0, 48);
+  v_next := pg_temp.profile(
+    60, 1, 1, false, '["third"]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  v_next := jsonb_set(v_next, '{missions,chapter1_3}', v_third);
+  perform pg_temp.expect_rejected(jsonb_set(v_next, '{coins}', '61'::jsonb), 1, 'third section coin ceiling');
+  perform pg_temp.expect_rejected(
+    jsonb_set(jsonb_set(v_next, '{wins}', '0'::jsonb), '{coins}', '0'::jsonb),
+    1, 'third section clear without a win');
+  begin
+    perform ruins_private.save_ruins_profile_impl(jsonb_set(v_next, '{missions,chapter1_3,hardClears}', '1'::jsonb), 1);
+    raise exception 'third section accepted a hard clear';
+  exception when sqlstate '22023' then
+    if sqlerrm is distinct from 'invalid_profile' then
+      raise exception 'third section hard clear returned %', sqlerrm;
+    end if;
+  end;
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 1);
+  if v_row.revision is distinct from 2
+     or v_row.profile#>'{missions,chapter1_3}' is distinct from v_third
+     or v_row.profile->'missions' ? 'chapter1_2' then
+    raise exception 'third section co-op clear did not persist independently';
+  end if;
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next #- '{missions,chapter1_3}', 2);
+  if v_row.revision is distinct from 3 or v_row.profile#>'{missions,chapter1_3}' is distinct from v_third then
+    raise exception 'legacy save lost the third section record';
+  end if;
+  perform pg_temp.expect_rejected(
+    jsonb_set(v_next, '{missions,chapter1_3}', pg_temp.zero_mission()), 3, 'third section regression');
+  perform pg_temp.expect_rejected(
+    jsonb_set(v_next, '{missions,chapter1_3,bestTime}', '49'::jsonb), 3, 'third section worse time');
+
+  v_next := pg_temp.profile(
+    192, 3, 3, false, '["third","third-again","ember-hard"]'::jsonb,
+    pg_temp.mission(1, 1, 25), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  v_next := jsonb_set(v_next, '{missions,chapter1_3}', pg_temp.mission(2, 0, 45));
+  perform pg_temp.expect_rejected(jsonb_set(v_next, '{coins}', '193'::jsonb), 3, 'mixed chapter and story coin ceiling');
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 3);
+  if v_row.revision is distinct from 4 or v_row.profile is distinct from v_next then
+    raise exception 'mixed third-section and richest story win was rejected';
+  end if;
 end;
 $$;
 

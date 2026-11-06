@@ -99,3 +99,30 @@ test('camp purchases spend the published prices and fox names reject markup', ()
   assert.equal(C.validFoxName('<b>fox</b>'), false);
   assert.deepEqual(C.companionDeparture(C.equipFox(profile, true)), { kind: 'fox', name: '小灰' });
 });
+
+test('the third section unlocks from old saves and settles its own record once', () => {
+  const old = { v: 2, missions: { chapter1_2: { clears: 1, hardClears: 0, bestTime: 68 } } };
+  assert.equal(C.canPlay(null, 'chapter1_3', 1), false);
+  assert.equal(C.canPlay(old, 'chapter1_3', 1), true);
+  assert.equal(C.canPlay(old, 'chapter1_3', 2), false);
+  assert.equal(C.chapterProgress(old).nextChapter, 'chapter1_3');
+  const rail = storyWin({
+    mode: 'chapter', mission: { id: 'chapter1_3' },
+    chapter: {
+      id: 'chapter1_3', version: 1, phase: 'complete', clues: ['rail-tracks'],
+      repairerMet: true, bossDefeated: true, reachedCar: true, railPower: 0, railCooldown: 0
+    }
+  });
+  const clear = C.applyResult(old, rail, 'rail-win');
+  assert.equal(clear.reward, 60);
+  assert.equal(clear.profile.missions.chapter1_2.clears, 1);
+  assert.deepEqual(clear.profile.missions.chapter1_3, { clears: 1, hardClears: 0, bestTime: 12.3 });
+  assert.equal(C.chapterProgress(clear.profile).thirdCompleted, true);
+  assert.equal(C.applyResult(clear.profile, rail, 'rail-win').duplicate, true);
+  assert.equal(C.applyResult(null, rail, 'rail-guest-win').profile.missions.chapter1_3.clears, 1);
+  const invalid = { ...rail, chapter: { ...rail.chapter, reachedCar: false } };
+  assert.equal(C.applyResult(old, invalid, 'rail-no-car').profile.runs, 1);
+  const loss = { ...rail, status: 'lost', chapter: { ...rail.chapter, phase: 'failed', reachedCar: false } };
+  assert.equal(C.applyResult(old, loss, 'rail-loss').profile.runs, 2);
+  assert.equal(C.applyResult(old, loss, 'rail-loss').reward, 0);
+});
