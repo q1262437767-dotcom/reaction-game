@@ -13,6 +13,16 @@
   const font = '"Microsoft YaHei", "Noto Sans SC", sans-serif';
   const num = (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback;
   const values = (v) => Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : [];
+  function playerInRoom(state, id) {
+    return !state.playerRooms || state.playerRooms[id] === state.room?.index;
+  }
+  function roomPlayers(state) {
+    return values(state.players).filter(player => playerInRoom(state, player.id));
+  }
+  function teammateInRoom(state, index) {
+    return !!state.playerRooms && index !== state.room?.index &&
+      Object.entries(state.playerRooms).some(([id, room]) => state.players?.[id] && room === index);
+  }
   const rect = (c, x, y, w, h, color) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   function seedRandom(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function hash(value) { return String(value).split('').reduce((a, v) => (a * 31 + v.charCodeAt(0)) | 0, 227); }
@@ -1018,8 +1028,8 @@
   }
   function foxCompanion(c, fox, time, state, localId, still = false) {
     if(!fox||fox.kind!=='fox')return;
-    const owner=state.players&&state.players[fox.ownerId];if(!owner)return;
-    const x=num(fox.x),y=num(fox.y),crowded=values(state.players).some(p=>!p.downed&&Math.hypot(num(p.x)-x,num(p.y)-y)<33)||values(state.enemies).some(e=>e.hp>0&&!e.dead&&Math.hypot(num(e.x)-x,num(e.y)-y)<num(e.r,16)+21);
+    const owner=state.players&&state.players[fox.ownerId];if(!owner||!playerInRoom(state,fox.ownerId))return;
+    const x=num(fox.x),y=num(fox.y),crowded=roomPlayers(state).some(p=>!p.downed&&Math.hypot(num(p.x)-x,num(p.y)-y)<33)||values(state.enemies).some(e=>e.hp>0&&!e.dead&&Math.hypot(num(e.x)-x,num(e.y)-y)<num(e.r,16)+21);
     shadow(c,x,y,10,.2);
     c.save();c.translate(Math.round(x),Math.round(y));if(crowded)c.globalAlpha*=.48;
     foxBody(c,fox,time,still);c.restore();
@@ -1052,6 +1062,7 @@
     }
   }
   function player(c, p, time, localId, state) {
+    if (!playerInRoom(state, p.id)) return;
     if (!p || p.dead) return;
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
     const second = p.id === 'p2' || p.color === '#f08c69', main = second ? '#ad695b' : '#538d87', light = second ? '#e3ad83' : '#acd0b4', dark = second ? '#654854' : '#2d5359';
@@ -2259,7 +2270,10 @@
     const source = Array.isArray(state.combatEvents) ? state.combatEvents : values(state.events);
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
-    return source.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
+    const local = source.filter(event => !state.players?.[event.playerId] || playerInRoom(state, event.playerId) ||
+      !['perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'weapon-switch',
+        'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'decoy', 'rail-shock'].includes(event.type));
+    return local.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
       .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open'].includes(event.type));
   }
   function furnaceCoreHit(e) {
@@ -2575,11 +2589,29 @@
     bar(c,x+16,64,188,num(e.posture)/Math.max(1,num(e.maxPosture,1)),e.stagger>0?'#ffedb3':'#dfa576',5);
     label(c,`成功招架 ${Math.max(0,Math.floor(num(state.practiceParries)))} 次`,x,88,'#c7dfb0',10);
   }
+  function mapTeammates(c, state, points) {
+    if (!state.playerRooms) return;
+    for (const [id, room] of Object.entries(state.playerRooms)) {
+      const actor = state.players?.[id], point = points.get(room);
+      if (!actor || !point || room === state.room?.index) continue;
+      const color = actor.downed ? '#edaa82' : actor.color || (id === 'p2' ? '#f5b655' : '#72dfc7');
+      const x = num(point.x), y = num(point.y);
+      c.save();
+      path(c, [[x, y - 10], [x + 10, y], [x, y + 10], [x - 10, y], [x, y - 10]], '#142b29', 4);
+      path(c, [[x, y - 10], [x + 10, y], [x, y + 10], [x - 10, y], [x, y - 10]], color, 1.5);
+      if (actor.downed) {
+        rect(c, x - 1, y - 4, 2, 8, color);
+        rect(c, x - 4, y - 1, 8, 2, color);
+      } else rect(c, x - 2, y - 2, 4, 4, color);
+      label(c, actor.downed ? '待救' : '伙伴', x, y < 67 ? y + 19 : y - 19, color, 8);
+      c.restore();
+    }
+  }
   function relayMap(c, state) {
     if (state.practice || !state.relay || !Array.isArray(state.rooms)) return;
     const rooms=state.rooms.filter(room=>Number.isFinite(room.gx)&&Number.isFinite(room.gy));
     if(!rooms.length)return;
-    const run=state.relay,current=state.room&&state.room.index,visible=rooms.filter(room=>room.visited||room.discovered||room.index===run.extractionRoom);
+    const run=state.relay,current=state.room&&state.room.index,visible=rooms.filter(room=>room.visited||room.discovered||room.index===run.extractionRoom||teammateInRoom(state,room.index));
     const left=752,top=18,width=190,height=126,minX=Math.min(...rooms.map(room=>room.gx)),maxX=Math.max(...rooms.map(room=>room.gx)),minY=Math.min(...rooms.map(room=>room.gy)),maxY=Math.max(...rooms.map(room=>room.gy));
     const spacing=Math.min(54,144/Math.max(1,maxX-minX),52/Math.max(1,maxY-minY));
     const points=new Map(rooms.map(room=>[room.index,{x:left+width/2+(room.gx-(minX+maxX)/2)*spacing,y:top+66+(room.gy-(minY+maxY)/2)*spacing,room}]));
@@ -2603,6 +2635,7 @@
         c.fillStyle='#ffc66d';c.beginPath();c.moveTo(point.x,point.y-24);c.lineTo(point.x+5,point.y-17);c.lineTo(point.x,point.y-10);c.lineTo(point.x-5,point.y-17);c.closePath();c.fill();
       }
     }
+    mapTeammates(c, state, points);
     const known=visible.some(room=>room.index===run.coreRoom),carried=values(state.players).some(p=>p.carry===run.coreId),flying=values(state.props).some(p=>p.id===run.coreId&&p.thrown);
     const status=run.delivered?'炉芯已交付':carried?'炉芯搬运中':known?flying?'炉芯飞行中':'炉芯已定位':'寻找炉芯';
     label(c,status,left+12,top+height-12,run.delivered?'#c9dfaf':'#dec695',9,'left');
@@ -2664,7 +2697,7 @@
     if(state.practice||!state.hunt||!Array.isArray(state.rooms))return;
     const rooms=state.rooms.filter(room=>Number.isFinite(room.gx)&&Number.isFinite(room.gy));
     if(!rooms.length)return;
-    const run=state.hunt,current=state.room&&state.room.index,visible=rooms.filter(room=>room.visited||room.discovered),time=num(state.time);
+    const run=state.hunt,current=state.room&&state.room.index,visible=rooms.filter(room=>room.visited||room.discovered||teammateInRoom(state,room.index)),time=num(state.time);
     const left=752,top=18,width=190,height=164,minX=Math.min(...rooms.map(room=>room.gx)),maxX=Math.max(...rooms.map(room=>room.gx)),minY=Math.min(...rooms.map(room=>room.gy)),maxY=Math.max(...rooms.map(room=>room.gy));
     const spacing=Math.min(44,140/Math.max(1,maxX-minX),67/Math.max(1,maxY-minY));
     const points=new Map(visible.map(room=>[room.index,{x:left+width/2+(room.gx-(minX+maxX)/2)*spacing,y:top+77+(room.gy-(minY+maxY)/2)*spacing,room}]));
@@ -2685,6 +2718,7 @@
       c.strokeStyle=active?'#f2e4ad':'#7c927477';c.lineWidth=active?2:1;c.strokeRect(Math.round(point.x-size/2)+.5,Math.round(point.y-size/2)+.5,size,size);
       if(active)rect(c,point.x-2,point.y-2,4,4,'#20372e');
     }
+    mapTeammates(c, state, points);
     // The server's actual targetRoom is deliberately not consulted by this map.
     if(lastSeen&&!run.defeated){
       c.strokeStyle='#df9c73';c.lineWidth=2;c.beginPath();c.arc(lastSeen.x,lastSeen.y,11,0,Math.PI*2);c.stroke();
@@ -2710,7 +2744,7 @@
     if (!rooms.length) return;
     const run = state.chapter, rail = railChapter(state), current = state.room && state.room.index;
     const feeder = rail && rooms.find(room => room.index === 6);
-    const visible = rooms.filter(room => room.visited || room.discovered);
+    const visible = rooms.filter(room => room.visited || room.discovered || teammateInRoom(state, room.index));
     const left = 752, top = 18, width = 190, height = 162;
     const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
     const minY = Math.min(...rooms.map(room => room.gy)), maxY = Math.max(...rooms.map(room => room.gy));
@@ -2758,6 +2792,7 @@
         rect(c, point.x - 2, point.y - 2, 4, 4, (room.index === 5 ? run.suppliesTaken : run.beaconLit) ? '#f0ca83' : '#b0b394');
       }
     }
+    mapTeammates(c, state, points);
     const objective = rail ? run.reachedCar ? '已与救援车会合' : run.bossDefeated ? '前往救援车' :
       run.repairerMet ? feeder && !feeder.cleared ? '清理配电廊' : '拨道场守卫挡路' : '循车辙寻找陶铆' :
       run.lampLit ? '第一盏归途灯已点亮' : run.fireTaken ? '火种同行 · 返回哨站' : '循着回收队的痕迹';
@@ -2774,7 +2809,7 @@
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
     const bossIndex = state.bossIndex, current = state.room && state.room.index, progress = state.exploration || {};
-    const visible = rooms.filter(room => room.visited || room.discovered || room.index === bossIndex);
+    const visible = rooms.filter(room => room.visited || room.discovered || room.index === bossIndex || teammateInRoom(state, room.index));
     // Concealed rooms and their connections never reach the drawing pass.
     const points = new Map(), left = 752, top = 18, width = 190, height = 150;
     const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
@@ -2833,6 +2868,7 @@
       }
       if (isCurrent) rect(c, point.x - 1, point.y - 1, 2, 2, '#20372e');
     }
+    mapTeammates(c, state, points);
     const kills = Math.min(num(progress.target), num(progress.kills)), target = num(progress.target);
     label(c, progress.bossDefeated ? '归途已开启' : progress.bossAwake ? '◆  炉心守卫' : `唤醒 ${kills} / ${target}`, left + 12, top + height - 12, wakeColor, 9, 'left');
     const discovered = rooms.filter(room => room.visited).length;
@@ -3126,6 +3162,7 @@
       if (room.index === 3) { rect(c, point.x - 1, point.y - 3, 3, 7, run.workerFreed ? '#c9dfa8' : '#caac78'); rect(c, point.x - 3, point.y - 1, 7, 3, run.workerFreed ? '#c9dfa8' : '#caac78'); }
       if (room.index === 5) path(c, [[point.x - 3, point.y - 3], [point.x + 3, point.y - 3], [point.x + 3, point.y + 2], [point.x, point.y + 4], [point.x - 3, point.y + 2]], run.bossDefeated ? '#c9dfa8' : '#d5b276', 1.5);
     }
+    mapTeammates(c, state, points);
     const objective = run.evacuated ? '工人已接应' : run.bossDefeated ? '回信号岗接应' : run.workerFreed ? '出库口有吊装守卫' : run.cart.position >= .999 ? '侧门已打开' : '寻找绞盘，移开木车';
     label(c, objective, left + 10, top + height - 30, '#d2c08e', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / 2`, left + 10, top + height - 13, '#aab89c', 8, 'left');
@@ -3205,7 +3242,7 @@
       ...values(state.walls).filter(w => w.timberCart).map(w => ({ y: num(w.y) + num(w.h) / 2, draw: () => timberCart(c, w, state) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => timberInteractable(c, item, time, state, localId, still) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => e.timber ? timberBoss(c, e, state, events, still) : timberGuard(c, e, time, poses.get(e.id)) })),
-      ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
+      ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
     ];
     sprites.sort((a, b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b, state));
@@ -3265,7 +3302,7 @@
       ...(rail && state.railAlly ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
-      ...values(state.players).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
+      ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
       ...(ending ? [
         { y: ending.lead.y, draw: () => chapterEndingCivilian(c, ending.lead.x, ending.lead.y, 'lead', ending.gait, ending.looking) },
         { y: ending.pair.y + 6, draw: () => chapterEndingPair(c, ending) },
@@ -3274,7 +3311,7 @@
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     if (rail && state.status === 'playing') {
-      values(state.players).forEach(actor => railShockStatus(c, actor, enemyTime, still, viewTop, viewBottom));
+      roomPlayers(state).forEach(actor => railShockStatus(c, actor, enemyTime, still, viewTop, viewBottom));
       if (state.railAlly) railShockStatus(c, state.railAlly, enemyTime, still, viewTop, viewBottom);
     }
     if (intercepting) interceptBadge(c, intercepting, viewTop);

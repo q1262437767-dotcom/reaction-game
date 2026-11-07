@@ -20,6 +20,7 @@
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
   let account = null;
   let paused = false, disconnected = false, runId = '', finished = '', remoteWeapon = 'pistol', remoteMelee = 'blade';
+  let remotePaused = false;
   let remoteCamp = { upgrades: [] };
   let remoteCompanion = null;
   let remoteFoxRescued = false;
@@ -1068,8 +1069,10 @@
   }
   function displayPause() {
     $('pause-screen').hidden = hudEditing || !paused || !playing();
-    $('pause-title').textContent = disconnected ? '搭档的灯火暂时熄了' : '在灯火边歇一会儿';
-    $('pause-copy').textContent = disconnected ? '房主已离线。返回营地后，可以独自重新出发。' : '遗迹会等你。准备好后，继续向前。';
+    $('pause-title').textContent = disconnected ? '搭档的灯火暂时熄了' :
+      net && net.connected ? '暂时停下你的操作' : '在灯火边歇一会儿';
+    $('pause-copy').textContent = disconnected ? '房主已离线。返回营地后，可以独自重新出发。' :
+      net && net.connected ? '搭档和守卫仍在行动。准备好后，回到你的房间继续探险。' : '遗迹会等你。准备好后，继续向前。';
     $('resume-game').disabled = disconnected;
     $('restart-game').disabled = mode === 'guest';
   }
@@ -1105,6 +1108,7 @@
     remoteCamp = { upgrades: [] };
     remoteCampReady = false;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1;
+    remotePaused = false;
     $('room-id').textContent = '— — — —'; $('start-room').disabled = true;
     $('host-room').disabled = false; $('join-room').disabled = false;
     updateLobbyMenu();
@@ -1142,10 +1146,11 @@
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
     clearChapterEnding(); runId = newRunId(); chapterEndingEligible = gameMode === 'chapter' && mission === 'chapter1' ? runId : ''; finished = ''; paused = false; disconnected = false; accumulator = 0;
-    remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
+    remoteInput = {}; remoteAt = 0; remoteSeq = -1; remotePaused = false; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
-    netRev = 1; netStamp = E.networkStamp(state); linkageSent = E.linkageStamp(state); lastFullSend = performance.now(); lastSend = 0; lastInputKey = '';
-    if (isCoop && !net.send({ type: 'start', state: E.snapshot(state, true), runId, rev: netRev })) {
+    const partnerView = isCoop ? E.viewForPlayer(state, 'p2') : state;
+    netRev = 1; netStamp = E.networkStamp(partnerView); linkageSent = E.linkageStamp(partnerView); lastFullSend = performance.now(); lastSend = 0; lastInputKey = '';
+    if (isCoop && !net.send({ type: 'start', state: E.snapshot(partnerView, true), runId, rev: netRev })) {
       pause(true, false); toast('开局消息尚未送达，请稍后点“重新出发”。');
     }
     startTutorial(); primeChapterNarration(); enableAudio(); canvas.focus(); hud();
@@ -1388,6 +1393,17 @@
     return within(plan.x, 960) && within(plan.y, 600) && within(plan.aimX, 960) && within(plan.aimY, 600) &&
       within(plan.remaining, 1.5) && ['p1', 'p2'].includes(plan.targetId);
   }
+  function validPlayerRooms(s) {
+    const map = s.playerRooms;
+    if (map === undefined) return true;
+    if (!map || typeof map !== 'object' || Array.isArray(map) ||
+        Object.keys(map).length !== 2 || !['p1', 'p2'].every(id => Object.prototype.hasOwnProperty.call(map, id))) return false;
+    if (!['p1', 'p2'].every(id => Number.isInteger(map[id]) && map[id] >= 0 && map[id] < s.rooms.length)) return false;
+    return map.p1 === s.room.index || map.p2 === s.room.index;
+  }
+  function validGuestState(s) {
+    return validState(s) && !!s.playerRooms && s.playerRooms.p2 === s.room.index;
+  }
   function validState(s) {
     if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.weaponVersion !== 1 || s.tacticsVersion !== 1 || s.practice !== false || !['chapter', 'random', 'story', 'relay', 'hunt'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (!s.players || !s.players.p1 || !s.players.p2 || Object.keys(s.players).length !== 2) return false;
@@ -1395,6 +1411,7 @@
     const limits = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, rooms: 16, interactables: 30, decoys: 8, companions: 2 };
     for (const [key, cap] of Object.entries(limits)) if (!Array.isArray(s[key]) || s[key].length > cap || s[key].some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
     const bounded = (n, max) => Number.isFinite(n) && n >= 0 && n <= max;
+    if (!validPlayerRooms(s)) return false;
     const shortId = value => typeof value === 'string' && value.length > 0 && value.length <= 100;
     const furnaceRoom = furnaceArena(s);
     const volleyIds = value => Array.isArray(value) && value.length <= 8 && new Set(value).size === value.length && value.every(shortId);
@@ -1550,7 +1567,9 @@
       if (!['throws', 'catches', 'perfectCatches'].every(key => Number.isSafeInteger(relay[key]) && bounded(relay[key], 100000)) || relay.perfectCatches > relay.catches) return false;
       const cores = s.props.filter(prop => prop.kind === 'core');
       if (cores.length > 1 || cores.some(core => core.id !== relay.coreId)) return false;
-      const core = cores[0], carriers = Object.values(s.players).filter(player => player.carry === relay.coreId);
+      const core = cores[0], allCarriers = Object.values(s.players).filter(player => player.carry === relay.coreId);
+      if (allCarriers.length > 1 || s.playerRooms && allCarriers.some(player => s.playerRooms[player.id] !== relay.coreRoom)) return false;
+      const carriers = allCarriers.filter(player => !s.playerRooms || s.playerRooms[player.id] === s.room.index);
       if (carriers.length > 1 || relay.coreRoom !== s.room.index && (core || carriers.length)) return false;
       if (core && (!bounded(core.x, 960) || !bounded(core.y, 600) || !Number.isFinite(core.vx) || Math.abs(core.vx) > 2000 || !Number.isFinite(core.vy) || Math.abs(core.vy) > 2000 || ![null, 'p1', 'p2'].includes(core.carriedBy) || ![null, 'p1', 'p2'].includes(core.thrower) || typeof core.thrown !== 'boolean' || !bounded(core.flightTime, 1.25) || !bounded(core.catchLock, .3) || !bounded(core.knockCd, 1.2) || !Array.isArray(core.hitIds) || core.hitIds.length > 100 || core.hitIds.some(id => typeof id !== 'string' || id.length > 100))) return false;
       if (core && (core.carriedBy ? !carriers.some(player => player.id === core.carriedBy) || core.thrown : carriers.length)) return false;
@@ -1599,6 +1618,10 @@
       if (value === undefined) continue;
       if (!Array.isArray(value) || value.length > caps[key] || value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
     }
+    if (patch.playerRooms !== undefined) {
+      if (!validPlayerRooms({ ...current, playerRooms: patch.playerRooms }) ||
+          !current.playerRooms || patch.playerRooms.p1 !== current.playerRooms.p1 || patch.playerRooms.p2 !== current.playerRooms.p2) return false;
+    }
     if (patch.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)) || !validRailBoss(enemy, current))) return false;
     if (patch.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current))) return false;
     if (railSection(current)) {
@@ -1633,40 +1656,46 @@
   function inputKey(sample) {
     return [Math.round(sample.mx * 20), Math.round(sample.my * 20), Math.round(sample.aimX / 4), Math.round(sample.aimY / 4), sample.shoot ? 1 : 0, sample.dash ? 1 : 0, sample.guard ? 1 : 0, sample.guardPulse ? 1 : 0, sample.interact ? 1 : 0, sample.switchWeapon ? 1 : 0, sample.switchPulse ? 1 : 0].join(',');
   }
-  function hostBusy(now) {
-    if (state.bullets.length || state.particles.length || (state.decoys && state.decoys.length)) return true;
-    for (const player of Object.values(state.players)) {
+  function hostBusy(now, view) {
+    if (view.bullets.length || view.particles.length || (view.decoys && view.decoys.length)) return true;
+    for (const player of Object.values(view.players)) {
       if (player.moving || player.dashTime > 0 || player.meleeTime > 0 || player.guarding || player.downed) return true;
     }
-    for (const enemy of state.enemies) {
+    for (const enemy of view.enemies) {
       if (enemy.rhythm || enemy.chargeTime > 0 || enemy.stagger > 0 || enemy.windup > 0) return true;
     }
-    if (state.chapter && (state.chapter.railPower > 0 || state.chapter.cart && state.chapter.cart.position > 0 && state.chapter.cart.position < 1)) return true;
+    if (view.chapter && (view.chapter.railPower > 0 || view.chapter.cart && view.chapter.cart.position > 0 && view.chapter.cart.position < 1)) return true;
     if (now - remoteAt < 250 && remoteInput && (remoteInput.mx || remoteInput.my || remoteInput.shoot || remoteInput.dash || remoteInput.guard || remoteInput.interact || remoteInput.switchWeapon)) return true;
     return false;
   }
   function sendHostState(now) {
-    const stamp = E.networkStamp(state);
-    const finishedRun = state.status !== 'playing';
+    const view = E.viewForPlayer(state, 'p2');
+    const stamp = E.networkStamp(view);
+    const finishedRun = view.status !== 'playing';
     if (finishedRun && stamp === netStamp && lastFullSend) return;
     const needFull = !netRev || stamp !== netStamp || (!finishedRun && now - lastFullSend >= 400);
-    if (!needFull && now - lastSend < (hostBusy(now) ? 50 : 100)) return;
+    if (!needFull && now - lastSend < (hostBusy(now, view) ? 50 : 100)) return;
     if (needFull) {
-      const message = { type: 'state', state: E.snapshot(state, true), runId, rev: netRev + 1 };
+      const message = { type: 'state', state: E.snapshot(view, true), runId, rev: netRev + 1 };
       if (!net.send(message)) return;
-      netRev += 1; netStamp = stamp; linkageSent = E.linkageStamp(state); lastFullSend = now; lastSend = now;
+      netRev += 1; netStamp = stamp; linkageSent = E.linkageStamp(view); lastFullSend = now; lastSend = now;
       meterNet('full', message);
       return;
     }
-    const linkage = E.linkageStamp(state);
-    const message = { type: 'sync', runId, rev: netRev, room: state.room.index, state: E.syncPatch(state, linkage === linkageSent) };
+    const linkage = E.linkageStamp(view);
+    const message = { type: 'sync', runId, rev: netRev, room: view.room.index, state: E.syncPatch(view, linkage === linkageSent) };
     if (!net.send(message)) return;
     linkageSent = linkage; lastSend = now;
     meterNet('sync', message);
   }
-  function sendGuestInput(now) {
-    const sample = input();
-    const pulsed = dashPulse || guardPulse || interactPulse || switchPulse;
+  function sendGuestInput(now, controlsReady) {
+    const player = state.players.p2;
+    const sample = controlsReady ? input() : {
+      mx: 0, my: 0, aimX: player.x, aimY: player.y,
+      shoot: false, dash: false, guard: false, guardPulse: false, interact: false,
+      switchWeapon: false, switchPulse: false
+    };
+    const pulsed = controlsReady && (dashPulse || guardPulse || interactPulse || switchPulse);
     const key = inputKey(sample);
     const due = pulsed || key !== lastInputKey ? 30 : 100;
     if (now - lastSend < due) return;
@@ -1693,18 +1722,20 @@
         const preparation = safeCampLoadout(msg.camp), companion = safeCompanion(msg.companion);
         if (preparation && companion !== false && (msg.foxRescued !== false || companion === null)) { remoteWeapon = msg.weapon; remoteMelee = msg.melee || 'blade'; remoteCamp = preparation; remoteCompanion = companion; remoteFoxRescued = msg.foxRescued === true || !!companion; remoteCampReady = true; updateLobbyMenu(); }
       }
-    } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && Number.isInteger(msg.rev) && msg.rev >= 0 && validState(msg.state)) {
+    } else if (msg.type === 'start' && typeof msg.runId === 'string' && msg.runId.length < 100 && Number.isInteger(msg.rev) && msg.rev >= 0 && validGuestState(msg.state)) {
       if (msg.runId === runId && state) return;
       clearChapterEnding();
-      mode = 'guest'; state = msg.state; runId = msg.runId; netRev = msg.rev; lastSend = 0; lastInputKey = ''; finished = ''; paused = false; disconnected = false;
+      mode = 'guest'; state = msg.state; runId = msg.runId; netRev = msg.rev; lastSend = 0; lastInputKey = ''; finished = ''; paused = false; disconnected = false; remotePaused = false;
       chapterEndingEligible = state.mode === 'chapter' && state.chapter.id === 'chapter1' && state.status === 'playing' ? runId : '';
       if (state.mode === 'chapter') $('chapter-select').value = state.mission.id;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
       clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing');
       startTutorial(); primeChapterNarration(); displayPause(); canvas.focus(); hud();
-    } else if (msg.type === 'state' && msg.runId === runId && Number.isInteger(msg.rev) && msg.rev >= netRev && validState(msg.state)) {
+    } else if (msg.type === 'state' && msg.runId === runId && Number.isInteger(msg.rev) && msg.rev >= netRev && validGuestState(msg.state)) {
       if (state && state.mode === 'chapter' && finished === runId && state.status !== msg.state.status) return;
+      const roomChanged = state && state.room.index !== msg.state.room.index;
       netRev = msg.rev; state = msg.state; settle();
+      if (roomChanged) { clearInput(); resetSounds(); lastSend = 0; lastInputKey = ''; }
     } else if (msg.type === 'sync' && msg.runId === runId && state && msg.rev === netRev && msg.room === state.room.index && finished !== runId && validSync(msg.state, state)) {
       E.applySync(state, msg.state); settle();
     }
@@ -1713,13 +1744,9 @@
         remoteTutorialPending = msg.paused;
         if (remoteTutorialPending) { clearInput(); stopSounds(); }
       }
-    } else if (msg.type === 'pause' && typeof msg.paused === 'boolean') {
-      // A fresh manual pause from the other player belongs to them. Closing a
-      // local settings window must not undo it; a partner echo of our own pause
-      // keeps the original automatic-resume intent.
-      if (hasDialog() && msg.reason === 'manual') dialogPaused = false;
-      pause(msg.paused, false);
-      if (net.role === 'host') net.send({ type: 'pause', paused: msg.paused, reason: 'partner' });
+    } else if (msg.type === 'pause' && typeof msg.paused === 'boolean' && msg.reason === 'manual') {
+      remotePaused = msg.paused;
+      if (net.role === 'host') { remoteInput = {}; remoteAt = 0; }
     }
     if (msg.type === 'lobby' && net.role === 'guest' && ['chapter', 'random', 'story', 'relay', 'hunt'].includes(msg.mode) && [1, 2].includes(msg.difficulty) && (msg.mode === 'chapter' ? C.CHAPTERS.some(chapter => chapter.id === msg.mission) && msg.difficulty === 1 : C.MISSIONS.some(m => m.id === msg.mission)) && (!['relay', 'hunt'].includes(msg.mode) || msg.mission === 'salvage' && msg.difficulty === 1)) {
       $('mode-select').value = msg.mode;
@@ -2146,7 +2173,13 @@
     $('hud-dash').textContent = p && p.railStun > 0 ? `电晕 ${p.railStun.toFixed(1)}s` : p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     $('hud-loot').textContent = `${camp.coins} 星屑`;
     const ally = state?.railAlly;
-    $('hud-team').textContent = ally ? (ally.downed ? '阿禾倒地' : `阿禾 ${ally.hp} / ${ally.maxHp}`) : state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ? (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
+    const partnerId = localId() === 'p1' ? 'p2' : 'p1';
+    const partnerRoom = state?.playerRooms?.[partnerId];
+    const separated = Number.isInteger(partnerRoom) && partnerRoom !== state.room.index;
+    $('hud-team').textContent = ally ? (ally.downed ? '阿禾倒地' : `阿禾 ${ally.hp} / ${ally.maxHp}`) :
+      separated ? `搭档 · ${state.rooms[partnerRoom].name}` :
+      state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ?
+        (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
     const rangedName = p && p.weapons.ranged === 'scatter' ? '散射枪' : '手枪';
     const meleeName = p && p.weapons.melee === 'spear' ? '长枪' : '短刃';
     $('hud-melee').textContent = meleeName;
@@ -2181,14 +2214,18 @@
   }
   function frame(now) {
     const delta = last ? Math.min((now - last) / 1000, .1) : 0; last = now;
-    if (!hudEditing && playing() && !paused && !rotateHold && !remoteTutorialPending && !hasDialog() && !((state.practice || relayTutorial || huntTutorial) && tutorialPending)) {
+    const localTutorialHold = !!(state && (state.practice || relayTutorial || huntTutorial) && tutorialPending);
+    const controlsReady = !hudEditing && !paused && !rotateHold && !hasDialog() && !localTutorialHold;
+    const sharedHold = remoteTutorialPending || localTutorialHold;
+    const connectedHost = mode === 'host' && net && net.connected;
+    if (playing() && !sharedHold && (connectedHost || mode === 'guest' || controlsReady)) {
       if (mode === 'guest') {
-        if (net && net.connected) sendGuestInput(now);
+        if (net && net.connected && !disconnected) sendGuestInput(now, controlsReady);
       } else {
         accumulator += delta;
         while (accumulator >= 1 / 60 && state.status === 'playing') {
-          const commands = { p1: input() };
-          if (mode === 'host') commands.p2 = now - remoteAt < 600 ? remoteInput : {};
+          const commands = { p1: controlsReady ? input() : {} };
+          if (mode === 'host') commands.p2 = !remotePaused && now - remoteAt < 600 ? remoteInput : {};
           E.step(state, commands, 1 / 60); soundEvents();
           // A received tap is consumed once, while held guard remains available to later steps.
           remoteInput.guardPulse = false;

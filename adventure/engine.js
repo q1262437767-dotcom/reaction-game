@@ -110,6 +110,21 @@
     return Object.keys(s.players).map(function (k) { return s.players[k]; })
       .filter(function (p) { return !p.downed; });
   }
+  function partyPlayers(s) {
+    return s._split && s._split.allPlayers || s.players;
+  }
+  function partyStanding(s) {
+    var players = partyPlayers(s);
+    return Object.keys(players).some(function (key) { return !players[key].downed; }) ||
+      !!(s.railAlly && !s.railAlly.downed);
+  }
+  function livingParty(s) {
+    var members = partyPlayers(s);
+    var result = Object.keys(members).map(function (key) { return members[key]; })
+      .filter(function (p) { return !p.downed; });
+    if (s.railAlly && !s.railAlly.downed) result.push(s.railAlly);
+    return result;
+  }
   function aliveCombatants(s) {
     var party = alivePlayers(s);
     if (s.railAlly && !s.railAlly.downed) party.push(s.railAlly);
@@ -191,9 +206,11 @@
     if (s.playerCount > 1) clearRailAlly(s);
     event(s, 'player-joined', { playerId: key });
     addCompanion(s, p, companionOption);
+    if (s.room && s.playerCount === 2 && !s.practice && !s.playerRooms) enableSplitRooms(s);
     return p;
   }
   function removePlayer(s, key) {
+    if (s.playerRooms && !s._split.active) return removeSplitPlayer(s, key);
     var p = s.players[key];
     if (!p) return false;
     releaseCarry(s, p, false, true);
@@ -201,9 +218,9 @@
     s.companions = s.companions.filter(function (fox) { return fox.ownerId !== key; });
     s.playerCount = Object.keys(s.players).length;
     if (key === 'p1') clearRailAlly(s);
-    else if (key === 'p2' && s.status === 'playing') placeRailAlly(s);
+    else if (key === 'p2' && s.status === 'playing' && !s.playerRooms) placeRailAlly(s);
     event(s, 'player-left', { playerId: key });
-    if (s.status === 'playing' && !aliveCombatants(s).length) finish(s, 'lost');
+    if (s.status === 'playing' && !partyStanding(s)) finish(s, 'lost');
     return true;
   }
   function create(options) {
@@ -255,6 +272,7 @@
     else if (mode === 'relay') createRelay(s);
     else if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
+    if (s.playerCount === 2 && !s.practice) enableSplitRooms(s);
     return s;
   }
   function addChapterRoutes(s, room, data, prefix, gateOpen, openLabel, lockedLabel) {
@@ -412,11 +430,11 @@
         return true;
       } else if (target.kind === 'chapter-supplies') {
         c.suppliesTaken = true;
-        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
+        livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
         s.message = '取出尚未损坏的药物，全队恢复 3 点生命。这些物资也能帮营地渡过今夜。';
         burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
       } else if (target.kind === 'chapter-beacon') {
-        c.beaconLit = true; alivePlayers(s).forEach(function (q) { q.ward = 1; });
+        c.beaconLit = true; livingParty(s).forEach(function (q) { q.ward = 1; });
         s.message = '旧线路接通了。守灯人的声音传来：“我们看见信号了，等你们带火回来。”全队获得一次护盾。';
         burst(s, 'heal', target.x, target.y, '#a5f6e4', 15);
       } else return false;
@@ -506,7 +524,10 @@
       var nextPos=clamp(c.cart.position+Math.sign(delta)*Math.min(Math.abs(delta),dt*.8),0,1);
       if(Math.abs(nextPos-c.cart.target)<.00001)nextPos=c.cart.target;
       timberSlide.y=417-145*nextPos;
-      var data=s.room.index===5?s:s.roomData[5],blocked=s.room.index===5&&Object.keys(s.players).some(function(k){return circleRect(s.players[k],timberSlide);});
+      var members = partyPlayers(s);
+      var data=s.room.index===5?s:s.roomData[5],blocked=Object.keys(members).some(function(k){
+        return (!s.playerRooms ? s.room.index === 5 : s.playerRooms[k] === 5) && circleRect(members[k],timberSlide);
+      });
       if(!blocked&&data)blocked=data.enemies.some(function(e){return e.hp>0&&!e.timber&&circleRect(e,timberSlide);});
       if(!blocked){c.cart.position=nextPos;if(data)placeTimberCart(data.walls,nextPos);}
     }
@@ -517,7 +538,7 @@
     if(target.kind==='chapter-note'){if(c.clues.indexOf(target.clueId)<0)c.clues.push(target.clueId);target.used=true;target.active=false;s.message=target.title+'：'+target.text;}
     else if(target.kind==='timber-winch'){if(Math.abs(c.cart.position-c.cart.target)>.00001){s.message='绞盘还在转。先让车停稳，留开轨道。';s.messageTime=2;return false;}c.cart.target=c.cart.target?0:1;s.message='绞盘动了。留开轨道，让车过去。';}
     else if(target.kind==='timber-worker'){c.workerFreed=true;c.shortcutOpen=true;target.used=true;target.active=false;s.message='工人：拉我一把……谢了！旁边那扇门能回绞盘棚。先让吊木机停下来，我们才敢走。';spawnTimberBoss(s);}
-    else if(target.kind==='timber-supplies'){c.suppliesTaken=true;target.used=true;target.active=false;alivePlayers(s).forEach(function(q){q.hp=Math.min(q.maxHp,q.hp+3);});s.message='纱布和药都还能用。先把伤口包上。';burst(s,'heal',target.x,target.y,'#8ce6b0',12);}
+    else if(target.kind==='timber-supplies'){c.suppliesTaken=true;target.used=true;target.active=false;livingParty(s).forEach(function(q){q.hp=Math.min(q.maxHp,q.hp+3);});s.message='纱布和药都还能用。先把伤口包上。';burst(s,'heal',target.x,target.y,'#8ce6b0',12);}
     else if(target.kind==='timber-extraction'){if(!c.workerFreed||!c.bossDefeated)return false;c.evacuated=true;c.phase='complete';target.used=true;target.active=false;finish(s,'won');return true;}
     else return false;
     event(s,target.kind==='chapter-note'?'chapter-note':target.kind,{playerId:p.id,x:target.x,y:target.y});s.messageTime=6;syncTimber(s);setHint(s);return true;
@@ -669,7 +690,7 @@
       s.message = '铜轨通电了！';
     } else if (target.kind === 'rail-supplies') {
       target.used = true; target.active = false;
-      aliveCombatants(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
+      livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
       burst(s, 'heal', target.x, target.y, '#8ce6b0', 14);
       s.message = '急救包还有药，全队恢复 3 点生命。';
     } else if (target.kind === 'rail-car' && c.bossDefeated) {
@@ -873,6 +894,12 @@
     run.tracks = run.tracks.filter(function (track) { return s.time - track.time < 90; }).slice(-24);
     if (s.time - run.noiseAt > 8) { run.noiseRoom = null; run.noiseLevel = 0; }
     if (!target) return;
+    if (s.playerRooms && Object.keys(partyPlayers(s)).some(function (key) {
+      return s.playerRooms[key] === run.targetRoom;
+    }) && run.targetRoom !== s.room.index) {
+      run.roamTimer = 6;
+      return;
+    }
     if (run.targetRoom === s.room.index) {
       run.arrival = null; run.roamTimer = 6; run.heardFrom = null;
       if (alivePlayers(s).some(function (p) { return lineClear(s, p, target, 2); })) {
@@ -1297,13 +1324,202 @@
     data.roomEvent = s.roomEvent ? clone(s.roomEvent) : null;
     s.roomData[s.room.index] = data;
   }
+  var SCENE_ARRAYS = ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches',
+    'pickups', 'fountains', 'interactables', 'bullets', 'particles', 'events', 'combatEvents', 'decoys'];
+  var SCENE_VALUES = ['roomEvent', 'hint', 'objective', 'message', 'messageTime'];
+  function enableSplitRooms(s) {
+    s.playerRooms = {};
+    Object.keys(s.players).forEach(function (key) { s.playerRooms[key] = s.room.index; });
+    s._split = { cooldowns: {}, pending: {}, active: false, displayTravelCd: s.travelCd };
+    Object.keys(s.players).forEach(function (key) { s._split.cooldowns[key] = s.travelCd; });
+    cacheSplitScene(s);
+  }
+  function cacheSplitScene(s) {
+    if (!s.room) return;
+    var data = s.roomData[s.room.index] || {};
+    SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (key) { data[key] = s[key]; });
+    data.scenePhase = s.mission.phase;
+    if (isRailChapter(s)) data.railPulse = { power: s.chapter.railPower, cooldown: s.chapter.railCooldown };
+    data.sceneReady = true;
+    s.roomData[s.room.index] = data;
+  }
+  function splitRoomData(s, index) {
+    var data = s.roomData[index];
+    if (!data) {
+      data = s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
+      s.roomData[index] = data;
+    }
+    if (!data.sceneReady) {
+      SCENE_ARRAYS.forEach(function (key) { if (!data[key]) data[key] = []; });
+      data.roomEvent = data.roomEvent || null;
+      data.hint = ''; data.objective = ''; data.message = s.rooms[index].name; data.messageTime = 2;
+      data.railPulse = { power: 0, cooldown: 0 };
+      data.sceneReady = true;
+    }
+    return data;
+  }
+  function selectSplitScene(s, index) {
+    var data = splitRoomData(s, index);
+    SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (key) { s[key] = data[key]; });
+    s.room = clone(s.rooms[index]);
+    if (data.scenePhase !== undefined) {
+      s.mission.phase = data.scenePhase;
+      if (s.chapter) s.chapter.phase = data.scenePhase;
+    }
+    if (isRailChapter(s)) {
+      s.chapter.railPower = data.railPulse ? data.railPulse.power : 0;
+      s.chapter.railCooldown = data.railPulse ? data.railPulse.cooldown : 0;
+    }
+    var local = Object.keys(s.players).filter(function (key) { return s.playerRooms[key] === index; });
+    s.travelCd = local.length ? Math.min.apply(null, local.map(function (key) { return s._split.cooldowns[key] || 0; })) : 0;
+  }
+  function splitPlayers(s, index) {
+    var all = partyPlayers(s), local = {};
+    Object.keys(all).forEach(function (key) {
+      if (s.playerRooms[key] === index) local[key] = all[key];
+    });
+    return local;
+  }
+  function playerTravelReady(s, key) {
+    return s.playerRooms ? (s._split.cooldowns[key] || 0) <= 0 : s.travelCd <= 0;
+  }
+  function canEnterSplitRoom(s, key, index, initial) {
+    var from = s.playerRooms[key], previous = s.rooms[from];
+    if (!partyPlayers(s)[key] || !Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
+    if (initial || index === from) return true;
+    if (['chapter', 'random', 'relay', 'hunt'].indexOf(s.mode) >= 0 &&
+        (!previous.neighbors || previous.neighbors.indexOf(index) < 0)) return false;
+    if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && !s.chapter.sluiceOpen) return false;
+    if (isTimber(s) && !timberGate(s, from, index)) return false;
+    return !isRailChapter(s) || railGate(s, from, index);
+  }
+  function moveSplitPlayer(s, key, index, initial) {
+    var split = s._split, all = split.allPlayers || s.players, allCompanions = split.allCompanions || s.companions;
+    var from = s.playerRooms[key], previous = s.rooms[from], p = all[key];
+    if (!canEnterSplitRoom(s, key, index, initial)) return false;
+    if (from === index) return true;
+    s.players = splitPlayers(s, from);
+    s.companions = allCompanions.filter(function (fox) { return s.playerRooms[fox.ownerId] === from; });
+    selectSplitScene(s, from);
+    var carried = null;
+    if (p.carry) {
+      if (s.mode === 'relay' && p.carry === s.relay.coreId) {
+        carried = s.props.find(function (item) { return item.id === p.carry && item.carriedBy === key; });
+        s.props = s.props.filter(function (item) { return item !== carried; });
+      } else if (!releaseCarry(s, p, false, false)) return false;
+    }
+    cacheSplitScene(s);
+    s.playerRooms[key] = index;
+    s.players = splitPlayers(s, index);
+    s.companions = allCompanions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
+    selectSplitScene(s, index);
+    if (carried) { s.props.push(carried); s.relay.coreRoom = index; }
+    s.rooms[index].visited = true; s.rooms[index].discovered = true;
+    if (s.mode === 'random') s.rooms[index].neighbors.forEach(function (n) { s.rooms[n].discovered = true; });
+    s.room = clone(s.rooms[index]);
+    var i = key === 'p2' ? 1 : 0, dx = s.rooms[index].gx - previous.gx, dy = s.rooms[index].gy - previous.gy;
+    p.x = 130; p.y = 275 + i * 52;
+    if (['chapter', 'random', 'relay', 'hunt'].indexOf(s.mode) >= 0) {
+      p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
+      p.y = dy ? dy > 0 ? 132 : H - 132 : H / 2 + (i ? 28 : -24);
+      if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && from === 3) p.x = 220;
+    }
+    resetCombat(p); p.invuln = Math.max(p.invuln, 0.9); p.moving = false; p.vx = 0; p.vy = 0;
+    split.cooldowns[key] = 0.9;
+    if (collides(s, p.x, p.y, p.r, key, false)) placeEnemyInRoom(s, p, alivePlayers(s).filter(function (other) { return other !== p; }));
+    s.companions.filter(function (fox) { return fox.ownerId === key; }).forEach(function (fox) { placeCompanion(s, fox); });
+    refreshProgress(s);
+    event(s, 'room-enter', { room: index, name: s.room.name, playerId: key });
+    cacheSplitScene(s);
+    return true;
+  }
+  function restoreSplitHost(s, all, companions) {
+    s.players = all; s.companions = companions;
+    var key = all.p1 ? 'p1' : Object.keys(all)[0];
+    if (key) selectSplitScene(s, s.playerRooms[key]);
+    s.players = all; s.companions = companions;
+    s._split.displayTravelCd = s.travelCd;
+  }
+  function finishSplitViews(s, all) {
+    if (s.status === 'playing') return;
+    var endingRoom = s._split.endRoom === undefined ? s.room.index : s._split.endRoom;
+    Object.keys(all).forEach(function (key) { s.playerRooms[key] = endingRoom; });
+    Object.keys(s.roomData).forEach(function (key) { s.roomData[key].bullets = []; });
+  }
+  function enterSplitRoom(s, index, initial, playerId) {
+    index = Number(index);
+    var split = s._split, key = playerId || split.actor;
+    if (key && !canEnterSplitRoom(s, key, index, initial)) return false;
+    if (split.active) {
+      if (!key) return false;
+      if (split.pending[key] === undefined) split.pending[key] = { index: index, initial: !!initial };
+      return true;
+    }
+    var all = s.players, companions = s.companions;
+    split.allPlayers = all; split.allCompanions = companions;
+    cacheSplitScene(s);
+    var keys = key ? [key] : Object.keys(all), success = true;
+    for (var i = 0; i < keys.length; i += 1) {
+      if (!moveSplitPlayer(s, keys[i], index, initial)) { success = false; break; }
+    }
+    finishSplitViews(s, all);
+    restoreSplitHost(s, all, companions);
+    delete split.allPlayers; delete split.allCompanions;
+    return success;
+  }
+  function removeSplitPlayer(s, key) {
+    var split = s._split, all = s.players, companions = s.companions;
+    if (!all[key]) return false;
+    cacheSplitScene(s);
+    selectSplitScene(s, s.playerRooms[key]);
+    split.active = true;
+    var removed = removePlayer(s, key);
+    split.active = false;
+    cacheSplitScene(s);
+    delete s.playerRooms[key]; delete split.cooldowns[key];
+    if (s.playerCount < 2) {
+      var remaining = Object.keys(s.players)[0];
+      if (remaining) selectSplitScene(s, s.playerRooms[remaining]);
+      delete s.playerRooms; delete s._split;
+      if (s.status === 'playing') placeRailAlly(s);
+    } else restoreSplitHost(s, s.players, s.companions);
+    return removed;
+  }
+  function viewForPlayer(s, key) {
+    if (!s || !s.playerRooms || !s.players[key]) return s;
+    var index = s.playerRooms[key], data = index === s.room.index ? null : s.roomData[index];
+    var view = Object.assign({}, s);
+    delete view._split;
+    view.roomData = {};
+    if (data) SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (field) { view[field] = data[field]; });
+    view.room = clone(s.rooms[index]);
+    view.travelCd = s._split ? s._split.cooldowns[key] || 0 : s.travelCd;
+    view.companions = s.companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
+    view.mission = Object.assign({}, s.mission);
+    if (data && data.scenePhase !== undefined) view.mission.phase = data.scenePhase;
+    if (s.chapter) {
+      view.chapter = Object.assign({}, s.chapter);
+      if (data && data.scenePhase !== undefined) view.chapter.phase = data.scenePhase;
+      if (isRailChapter(s) && data) {
+        view.chapter.railPower = data.railPulse ? data.railPulse.power : 0;
+        view.chapter.railCooldown = data.railPulse ? data.railPulse.cooldown : 0;
+      }
+    }
+    if (s.hunt) {
+      view.hunt = Object.assign({}, s.hunt);
+      view.hunt.heardFrom = s.rooms[index].neighbors.indexOf(s.hunt.targetRoom) >= 0 ? s.hunt.targetRoom : null;
+      if (view.hunt.arrival && view.hunt.arrival.to !== index) view.hunt.arrival = null;
+    }
+    return view;
+  }
   function resetCombat(p) {
     p.guarding = false; p.guardWindow = 0; p.guardCd = 0; p.guardStrain = 0; p.guardLoad = 0;
     p.dashWindow = 0; p.dashTime = 0; p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
     p.meleeTime = 0; p.guardAttackLock = 0; p.prevGuard = false; p.prevShoot = false;
     p.parryChain = 0; p.sneaking = false;
   }
-  function enterRoom(s, index, initial) {
+  function enterRoom(s, index, initial, playerId) {
+    if (s.playerRooms) return enterSplitRoom(s, index, initial, playerId);
     index = Number(index);
     if (!Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
     var previous = s.room;
@@ -1811,8 +2027,8 @@
         q.used = true; q.active = false; q.selected = q.id === item.id;
       }
     });
-    if (item.buff === 'vigor') Object.keys(s.players).forEach(function (key) {
-      var p = s.players[key]; p.maxHp = Math.min(7, p.maxHp + 1);
+    if (item.buff === 'vigor') Object.keys(partyPlayers(s)).forEach(function (key) {
+      var p = partyPlayers(s)[key]; p.maxHp = Math.min(7, p.maxHp + 1);
       if (!p.downed) p.hp = Math.min(p.maxHp, p.hp + 2);
     });
     s.message = '全队获得：' + item.label; s.messageTime = 3;
@@ -1834,7 +2050,7 @@
     // inputs cannot collect both rewards in one simulation step.
     choices.forEach(function (q) { q.used = true; q.active = false; });
     if (rest) {
-      alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
+      livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
       burst(s, 'heal', item.x, item.y, '#8ce6b0', 14);
       s.message = '歇息片刻 · 全队恢复2点生命';
     } else {
@@ -2078,7 +2294,7 @@
       s.message = '房间清理完成 · 出口已开启'; s.messageTime = 2.4;
       if (s.room.kind === 'secret') {
         s.secretCleared = true;
-        alivePlayers(s).forEach(function (p) { p.hp = p.maxHp; });
+        livingParty(s).forEach(function (p) { p.hp = p.maxHp; });
         event(s, 'secret-clear', { coins: 12 });
         particle(s, 'text', 480, 285, { text: '星藏补给 +12 星屑', r: 30, ttl: 2, life: 2, color: '#e4c77e' });
       } else if (s.room.kind !== 'boss' && s.room.kind !== 'puzzle') {
@@ -2096,9 +2312,11 @@
   function finish(s, status) {
     if (s.status !== 'playing') return;
     s.status = status;
+    if (s.playerRooms) s._split.endRoom = s.room.index;
     s.bullets = [];
     s.companions.forEach(clearFoxAction);
-    Object.keys(s.players).forEach(function (key) { resetCombat(s.players[key]); });
+    var members = partyPlayers(s);
+    Object.keys(members).forEach(function (key) { resetCombat(members[key]); });
     if (s.practice) {
       s.reward = null; s.rewardGranted = false;
       s.mission.phase = status === 'won' ? 'complete' : 'failed';
@@ -2182,6 +2400,25 @@
     burst(s, 'heal', downed.x, downed.y, '#83f2b5', 12);
   }
   function interact(s, playerId) {
+    if (s.playerRooms && s._split && !s._split.active) {
+      var split = s._split, all = s.players, companions = s.companions, result;
+      if (!all[playerId]) return false;
+      cacheSplitScene(s); split.allPlayers = all; split.allCompanions = companions;
+      s.players = splitPlayers(s, s.playerRooms[playerId]);
+      s.companions = companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === s.playerRooms[playerId]; });
+      selectSplitScene(s, s.playerRooms[playerId]);
+      split.active = true; split.actor = playerId;
+      result = interact(s, playerId);
+      split.active = false; delete split.actor;
+      cacheSplitScene(s);
+      var pending = split.pending;
+      split.pending = {};
+      Object.keys(pending).forEach(function (key) { moveSplitPlayer(s, key, pending[key].index, pending[key].initial); });
+      finishSplitViews(s, all);
+      restoreSplitHost(s, all, companions);
+      delete split.allPlayers; delete split.allCompanions;
+      return result;
+    }
     if (s.status !== 'playing') return false;
     var p = s.players[playerId];
     if (!p || p.downed || p.railStun > 0 || shockRailCombatant(s, p)) return false;
@@ -2263,7 +2500,7 @@
       if (target.kind === 'storehouse-switch') return openStorehouse(s, false);
       if (target.kind === 'breach-cache' && s.roomEvent && s.roomEvent.kind === 'breach' && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
         target.used = true; target.active = false; s.roomEvent.collected = true;
-        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
+        livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
         event(s, 'supply-collected', { kind: 'breach', room: s.room.index, x: target.x, y: target.y });
         burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
         s.message = '藏室补给已领取 · 全队恢复 2 点生命'; s.messageTime = 3; return true;
@@ -2276,14 +2513,14 @@
       }
       if (target.kind === 'storehouse-cache' && s.roomEvent && s.roomEvent.kind === 'storehouse' && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
         target.used = true; target.active = false; s.roomEvent.collected = true;
-        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; q.rangedBroken = false; });
+        livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; q.rangedBroken = false; });
         event(s, 'supply-collected', { kind: 'storehouse', room: s.room.index, x: target.x, y: target.y });
         burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
         s.message = '库存已领取 · 全队恢复 2 点生命、修好远程武器并获得一次护盾'; s.messageTime = 3; return true;
       }
       if (target.kind === 'supply-cache' && s.roomEvent && s.roomEvent.stage === 'complete' && !s.roomEvent.collected) {
         target.used = true; target.active = false; s.roomEvent.collected = true;
-        alivePlayers(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; });
+        livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); q.ward = 1; });
         event(s, 'supply-collected', { room: s.room.index, x: target.x, y: target.y });
         burst(s, 'heal', target.x, target.y, '#8ce6b0', 15);
         s.message = '全队恢复 2 点生命，获得一次护盾'; s.messageTime = 3; return true;
@@ -2312,7 +2549,7 @@
       return true;
     }
     var gate = s.portals.find(function (g) { return g.active && dist(p, g) < 70; });
-    if (gate && s.travelCd <= 0) return enterRoom(s, gate.target);
+    if (gate && playerTravelReady(s, p.id)) return enterRoom(s, gate.target, false, p.id);
     return false;
   }
   function updateCarries(s) {
@@ -2344,7 +2581,7 @@
       if (p === s.railAlly) { p.moving = false; p.mode = 'downed'; p.attackTime = 0; p.evadeTime = 0; }
       s.companions.forEach(function (fox) { if (fox.ownerId === p.id) clearFoxAction(fox); });
       event(s, 'downed', { playerId: p.id });
-      if (!aliveCombatants(s).length) finish(s, 'lost');
+      if (!partyStanding(s)) finish(s, 'lost');
     }
     return true;
   }
@@ -2380,20 +2617,20 @@
   }
   function hitFeedback(s, e, amount, owner, weapon) {
     var recent = (s.combatEvents || []).filter(function (entry) {
-      return entry.type === 'enemy-hit' && entry.enemyId === e.id && entry.playerId === (s.players[owner] ? owner : null) &&
+      return entry.type === 'enemy-hit' && entry.enemyId === e.id && entry.playerId === (partyPlayers(s)[owner] ? owner : null) &&
         entry.weapon === weapon && s.time - entry.time < 0.075;
     }).pop();
     if (recent) {
       recent.amount += amount; recent.x = e.x; recent.y = e.y;
       var fresh = s.events.find(function (entry) { return entry.id === recent.id; });
       if (fresh) { fresh.amount = recent.amount; fresh.x = e.x; fresh.y = e.y; }
-    } else event(s, 'enemy-hit', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+    } else event(s, 'enemy-hit', { enemyId: e.id, playerId: partyPlayers(s)[owner] ? owner : null,
       weapon: weapon || null, amount: amount, x: e.x, y: e.y });
   }
   function openWeakpoint(s, e, owner, source, duration) {
     if (e.hp <= 0) return;
     e.weakTime = duration || 1.6;
-    event(s, 'weakpoint-open', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+    event(s, 'weakpoint-open', { enemyId: e.id, playerId: partyPlayers(s)[owner] ? owner : null,
       weapon: null, source: source, x: e.x, y: e.y });
   }
   function isChapterCoreGuard(s, e) {
@@ -2417,7 +2654,7 @@
     cancelCoreIntercept(e);
     if (!/^(duelist|brute|pyromancer|hookwarden|boss)$/.test(e.kind)) e.stun = Math.max(e.stun, 1);
     e.attackCd = Math.max(e.attackCd, 0.8); e.shieldOpen = Math.max(e.shieldOpen, 1.6);
-    event(s, 'posture-break', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+    event(s, 'posture-break', { enemyId: e.id, playerId: partyPlayers(s)[owner] ? owner : null,
       weapon: weapon || 'blade', x: e.x, y: e.y });
     openWeakpoint(s, e, owner, 'posture');
   }
@@ -2438,10 +2675,10 @@
         recentGuard.amount += amount; recentGuard.reduced += original - amount;
         var freshGuard = s.events.find(function (q) { return q.id === recentGuard.id; });
         if (freshGuard) { freshGuard.amount = recentGuard.amount; freshGuard.reduced = recentGuard.reduced; }
-      } else event(s, 'lantern-guard', { enemyId: e.id, sourceId: source.id, playerId: s.players[owner] ? owner : null,
+      } else event(s, 'lantern-guard', { enemyId: e.id, sourceId: source.id, playerId: partyPlayers(s)[owner] ? owner : null,
         weapon: weapon || null, amount: amount, reduced: original - amount, x: e.x, y: e.y });
     }
-    var furnaceHit = e.coreExposed && e.weakTime > 0 && s.players[owner] && /^(blade|spear|pistol|scatter)$/.test(weapon);
+    var furnaceHit = e.coreExposed && e.weakTime > 0 && partyPlayers(s)[owner] && /^(blade|spear|pistol|scatter)$/.test(weapon);
     if (furnaceHit) {
       delete e.coreExposed;
       e.weakTime = 0;
@@ -2466,7 +2703,7 @@
     if (e.hp <= 0) {
       delete e.ai;
       s.stats.kills += 1;
-      if (s.players[owner]) s.players[owner].kills += 1;
+      if (partyPlayers(s)[owner]) partyPlayers(s)[owner].kills += 1;
       burst(s, 'enemy-death', e.x, e.y, e.kind === 'boss' ? '#ffc477' : '#ec9c8d', 12);
       event(s, 'enemy-killed', { enemyId: e.id, kind: e.kind, playerId: owner || null });
       if (s.mode === 'chapter' && e.kind === 'boss') {
@@ -2527,13 +2764,13 @@
     particle(s, 'explosion', barrel.x, barrel.y, { r: 112, ttl: 0.48, life: 0.48, color: '#ffb256' });
     burst(s, 'spark', barrel.x, barrel.y, '#ffbd69', 22);
     event(s, 'explosion', { x: barrel.x, y: barrel.y });
-    event(s, 'environment-hit', { enemyId: null, playerId: s.players[owner] ? owner : null,
+    event(s, 'environment-hit', { enemyId: null, playerId: partyPlayers(s)[owner] ? owner : null,
       weapon: null, source: source || 'explosion', target: 'prop', propId: barrel.id, x: barrel.x, y: barrel.y });
     huntNoise(s, 3, barrel.x, barrel.y);
     s.enemies.forEach(function (e) {
       if (e.hp <= 0 || dist(e, barrel) >= 112 + e.r) return;
       var actual = damageEnemy(s, e, 8, owner, null);
-      event(s, 'environment-hit', { enemyId: e.id, playerId: s.players[owner] ? owner : null,
+      event(s, 'environment-hit', { enemyId: e.id, playerId: partyPlayers(s)[owner] ? owner : null,
         weapon: null, source: 'explosion', target: 'enemy', amount: actual, propId: barrel.id, x: e.x, y: e.y });
       if (e.huntTarget && e.hp > 0) { e.stagger = 1.2; e.rhythm = null; e.chargeTime = 0; e.attackCd = 1; }
     });
@@ -2543,7 +2780,7 @@
       }
       if (p !== barrel && p.kind === 'barrel' && !p.destroyed && dist(p, barrel) < 110) {
         p.lit = true; p.fuse = p.fuse > 0 ? Math.min(p.fuse, 0.15) : 0.15;
-        p.thrower = s.players[owner] ? owner : null;
+        p.thrower = partyPlayers(s)[owner] ? owner : null;
       }
     });
     // The blast consumes hostile projectiles as a useful emergency tool.
@@ -3630,7 +3867,7 @@
               var actual = damageEnemy(s, foe, amount, b.owner, b.weapon || null, weakShot);
               if (weakShot) {
                 foe.weakTime = 0;
-                event(s, 'weakpoint-hit', { enemyId: foe.id, playerId: s.players[b.owner] ? b.owner : null,
+                event(s, 'weakpoint-hit', { enemyId: foe.id, playerId: partyPlayers(s)[b.owner] ? b.owner : null,
                   weapon: 'pistol', amount: actual, source: 'pistol', x: foe.x, y: foe.y });
               }
               // Tempering belongs to the volley, including a piercing shot.
@@ -3713,7 +3950,7 @@
       var x = foe.x, y = foe.y;
       move(s, foe, Math.cos(angle) * amount, Math.sin(angle) * amount, false);
       if (!boss && !elite) foe.stun = Math.max(foe.stun, 0.2);
-      event(s, 'scatter-push', { enemyId: foe.id, playerId: s.players[b.owner] ? b.owner : null, weapon: 'scatter',
+      event(s, 'scatter-push', { enemyId: foe.id, playerId: partyPlayers(s)[b.owner] ? b.owner : null, weapon: 'scatter',
         volleyId: b.volleyId, amount: len(foe.x - x, foe.y - y), x: foe.x, y: foe.y });
     });
     s.bullets = s.bullets.filter(function (b) {
@@ -3829,11 +4066,15 @@
     });
   }
   function getHint(s, playerId) {
+    if (s.playerRooms && s.players[playerId || 'p1'] && s.playerRooms[playerId || 'p1'] !== s.room.index) {
+      return getHint(viewForPlayer(s, playerId || 'p1'), playerId);
+    }
     var p = s.players[playerId || 'p1'];
     if (!p) return '';
     if (p.downed) return '等待搭档靠近按 E 救援';
     var buddy = Object.keys(s.players).map(function (key) { return s.players[key]; })
-      .find(function (q) { return q.downed && q.id !== p.id && dist(q, p) < 78; });
+      .find(function (q) { return q.downed && q.id !== p.id && dist(q, p) < 78 &&
+        (!s.playerRooms || s.playerRooms[q.id] === s.room.index); });
     if (buddy) return 'E · 救起搭档';
     var held = s.props.find(function (q) { return q.id === p.carry; });
     if (held && held.kind === 'core') {
@@ -3864,7 +4105,7 @@
     if (gate) return '踏入光门 / E · ' + gate.label;
     return s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter' ? '' : s.hint;
   }
-  function step(s, inputs, dt) {
+  function stepRoom(s, inputs, dt) {
     if (!s || s.status !== 'playing') return s;
     dt = clamp(finite(Number(dt), 1 / 60), 0, 0.05);
     inputs = inputs || {};
@@ -3877,6 +4118,7 @@
       shockRailCombatant(s, s.railAlly);
     }
     Object.keys(s.players).forEach(function (key) {
+      if (s._split) s._split.actor = key;
       var p = s.players[key], input = inputs[key] || {};
       var dashEdge = !!input.dash && !p.prevDash, interactEdge = !!input.interact && !p.prevInteract;
       var guardEdge = !!input.guardPulse || !!input.guard && !p.prevGuard, shootEdge = !!input.shoot && !p.prevShoot;
@@ -3947,8 +4189,12 @@
       }
       if (interactEdge) interact(s, key);
     });
+    if (s._split) delete s._split.actor;
     if (s.room.index !== roomBefore) return s;
-    updateCarries(s); updateProps(s, dt); updateHunt(s, dt); updateTimber(s, dt); updateRailChapter(s, dt);
+    updateCarries(s); updateProps(s, dt);
+    if (!s._split || s._split.advanceGlobals) { updateHunt(s, dt); updateTimber(s, dt); }
+    else if (s.mode === 'hunt' && s.hunt.targetRoom === s.room.index) updateHunt(s, 0);
+    updateRailChapter(s, dt);
     updateEnemies(s, dt); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     aliveCombatants(s).forEach(function (p) {
@@ -3960,17 +4206,73 @@
       fx.ttl -= dt; fx.x += fx.vx * dt; fx.y += fx.vy * dt; return fx.ttl > 0;
     });
     if (s.status === 'playing' && s.travelCd <= 0) {
+      var traveler = null;
       var gate = s.portals.find(function (portal) {
-        return portal.active && alivePlayers(s).some(function (p) { return !(p.railStun > 0) && dist(p, portal) < portal.r + 1; });
+        if (!portal.active) return false;
+        traveler = alivePlayers(s).find(function (p) {
+          return !(p.railStun > 0) && playerTravelReady(s, p.id) && dist(p, portal) < portal.r + 1;
+        });
+        return !!traveler;
       });
-      if (gate) enterRoom(s, gate.target);
+      if (gate) enterRoom(s, gate.target, false, traveler.id);
     }
+    return s;
+  }
+  function step(s, inputs, dt) {
+    if (!s || !s.playerRooms) return stepRoom(s, inputs, dt);
+    if (s.status !== 'playing') return s;
+    dt = clamp(finite(Number(dt), 1 / 60), 0, 0.05);
+    var split = s._split, all = s.players, companions = s.companions;
+    var originalTime = s.time, originalElapsed = s.elapsed;
+    if (s.travelCd !== split.displayTravelCd && Number.isFinite(s.travelCd)) {
+      Object.keys(all).forEach(function (key) {
+        if (s.playerRooms[key] === s.room.index) split.cooldowns[key] = Math.max(0, s.travelCd);
+      });
+    }
+    cacheSplitScene(s);
+    split.allPlayers = all; split.allCompanions = companions;
+    split.pending = {}; split.active = true;
+    Object.keys(all).forEach(function (key) {
+      split.cooldowns[key] = Math.max(0, (split.cooldowns[key] || 0) - dt);
+    });
+    var occupied = Object.keys(all).map(function (key) { return s.playerRooms[key]; })
+      .filter(function (index, i, values) { return values.indexOf(index) === i; });
+    for (var i = 0; i < occupied.length && s.status === 'playing'; i += 1) {
+      var index = occupied[i];
+      s.players = splitPlayers(s, index);
+      s.companions = companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
+      selectSplitScene(s, index);
+      s.time = originalTime; s.elapsed = originalElapsed;
+      split.advanceGlobals = i === 0;
+      stepRoom(s, inputs, dt);
+      cacheSplitScene(s);
+    }
+    s.time = originalTime + dt; s.elapsed = originalElapsed + dt;
+    split.active = false; delete split.actor;
+    if (s.status === 'playing') {
+      var pending = split.pending;
+      split.pending = {};
+      Object.keys(pending).forEach(function (key) {
+        moveSplitPlayer(s, key, pending[key].index, pending[key].initial);
+      });
+      // Shared switches and discoveries update both occupied views in this tick.
+      occupied = Object.keys(all).map(function (key) { return s.playerRooms[key]; })
+        .filter(function (index, i, values) { return values.indexOf(index) === i; });
+      occupied.forEach(function (index) {
+        s.players = splitPlayers(s, index);
+        s.companions = companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
+        selectSplitScene(s, index); refreshProgress(s); cacheSplitScene(s);
+      });
+    }
+    finishSplitViews(s, all);
+    restoreSplitHost(s, all, companions);
+    delete split.allPlayers; delete split.allCompanions; delete split.advanceGlobals;
     return s;
   }
   // Navigation and hit lists stay on the host. A guest only draws the result.
   var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1, railShockLatch: 1 };
   var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
-  var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
+  var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'playerRooms', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
   var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
 
   function quantizeNumber(n) {
@@ -4039,6 +4341,7 @@
       var room = rooms[i];
       stamp += (room.visited ? 'v' : '.') + (room.cleared ? 'c' : '.') + (room.discovered ? 'd' : '.');
     }
+    if (s.playerRooms) stamp += '|p1:' + s.playerRooms.p1 + '|p2:' + s.playerRooms.p2;
     return stamp;
   }
   function snapshot(s, compact) {
@@ -4048,7 +4351,7 @@
     // serialized before the next step.
     var result = {};
     for (var key in s) {
-      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData' || key === 'railAlly') continue;
+      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData' || key === 'railAlly' || key === '_split') continue;
       result[key] = s[key];
     }
     if (Object.keys(s.players).some(function (key) { return s.players[key].railShockLatch; })) {
@@ -4091,5 +4394,5 @@
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, syncPatch: syncPatch, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource };
+    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource };
 });
