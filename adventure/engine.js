@@ -127,8 +127,11 @@
   }
   function aliveCombatants(s) {
     var party = alivePlayers(s);
-    if (s.railAlly && !s.railAlly.downed) party.push(s.railAlly);
+    if (railAllyHere(s) && !s.railAlly.downed) party.push(s.railAlly);
     return party;
+  }
+  function railAllyHere(s) {
+    return !!(s.railAlly && (!s.playerRooms || s.railAlly.roomIndex === s.room.index));
   }
   function solidProp(p) { return !p.destroyed && (p.kind === 'crate' || p.kind === 'barrel'); }
   function collides(s, x, y, r, ignoreId, ignoreProps) {
@@ -204,6 +207,10 @@
     s.players[key] = p;
     s.playerCount = Object.keys(s.players).length;
     if (s.playerCount > 1) clearRailAlly(s);
+    if (s.playerRooms) {
+      s.playerRooms[key] = s.room.index;
+      s._split.cooldowns[key] = 0.9;
+    }
     event(s, 'player-joined', { playerId: key });
     addCompanion(s, p, companionOption);
     if (s.room && s.playerCount === 2 && !s.practice && !s.playerRooms) enableSplitRooms(s);
@@ -272,7 +279,7 @@
     else if (mode === 'relay') createRelay(s);
     else if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
-    if (s.playerCount === 2 && !s.practice) enableSplitRooms(s);
+    if (!s.practice && (s.playerCount === 2 || s.railAlly)) enableSplitRooms(s);
     return s;
   }
   function addChapterRoutes(s, room, data, prefix, gateOpen, openLabel, lockedLabel) {
@@ -1440,6 +1447,31 @@
     s.players = all; s.companions = companions;
     s._split.displayTravelCd = s.travelCd;
   }
+  function moveSplitAlly(s, index) {
+    var ally = s.railAlly, split = s._split;
+    if (!ally || ally.downed || ally.railStun > 0 || !s.rooms[index] || s.status !== 'playing') return false;
+    var from = ally.roomIndex, previous = s.rooms[from];
+    if (!previous.neighbors || previous.neighbors.indexOf(index) < 0 || !railGate(s, from, index)) return false;
+    s.players = splitPlayers(s, from);
+    s.companions = (split.allCompanions || s.companions).filter(function (fox) { return s.playerRooms[fox.ownerId] === from; });
+    selectSplitScene(s, from); cacheSplitScene(s);
+    ally.roomIndex = index;
+    s.players = splitPlayers(s, index);
+    s.companions = (split.allCompanions || s.companions).filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
+    selectSplitScene(s, index);
+    s.rooms[index].visited = true; s.rooms[index].discovered = true;
+    s.room = clone(s.rooms[index]);
+    var dx = s.rooms[index].gx - previous.gx, dy = s.rooms[index].gy - previous.gy;
+    ally.x = dx ? dx > 0 ? 132 : W - 132 : W / 2;
+    ally.y = dy ? dy > 0 ? 132 : H - 132 : H / 2;
+    resetCombat(ally); ally.invuln = Math.max(ally.invuln, 0.9);
+    ally.moving = false; ally.vx = 0; ally.vy = 0; ally.navTime = 0; ally.travelCd = 0.9;
+    if (collides(s, ally.x, ally.y, ally.r, ally.id, false)) placeEnemyInRoom(s, ally, alivePlayers(s));
+    refreshProgress(s);
+    event(s, 'room-enter', { room: index, name: s.room.name, playerId: null, allyId: ally.id });
+    cacheSplitScene(s);
+    return true;
+  }
   function finishSplitViews(s, all) {
     if (s.status === 'playing') return;
     var endingRoom = s._split.endRoom === undefined ? s.room.index : s._split.endRoom;
@@ -1480,8 +1512,14 @@
     if (s.playerCount < 2) {
       var remaining = Object.keys(s.players)[0];
       if (remaining) selectSplitScene(s, s.playerRooms[remaining]);
-      delete s.playerRooms; delete s._split;
-      if (s.status === 'playing') placeRailAlly(s);
+      if (remaining === 'p1' && isRailChapter(s)) {
+        if (s.status === 'playing') placeRailAlly(s);
+        cacheSplitScene(s);
+        split.displayTravelCd = s.travelCd;
+      } else {
+        delete s.playerRooms; delete s._split;
+        if (s.status === 'playing') placeRailAlly(s);
+      }
     } else restoreSplitHost(s, s.players, s.companions);
     return removed;
   }
@@ -1597,7 +1635,7 @@
     event(s, 'room-enter', { room: index, name: s.room.name });
     s.message = s.room.name; s.messageTime = 2;
     if (s.mode === 'chapter' && initial) {
-      s.message = isRailChapter(s) ? '阿禾：就是这条旧线。车辙还新，顺着找。' :
+      s.message = isRailChapter(s) ? s.railAlly ? '阿禾：我去北边工棚看看。你沿轨道找陶铆，咱们在维修站台碰头。' : '阿禾：就是这条旧线。车辙还新，顺着找。' :
         isTimber(s) ? '阿禾：灯还在闪。先进去找人，听见敲铁管就回应一声。' : '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。';
       s.messageTime = 8;
     }
@@ -1671,21 +1709,32 @@
   function clearRailAlly(s) {
     if (!s.railAlly) return;
     var key = s.railAlly.id;
+    if (s._split) s._split.allyTask = s.railAlly.task;
     delete s.railAlly;
-    s.bullets = s.bullets.filter(function (bullet) { return !bullet.railAlly; });
     function unrelated(e) { return e.playerId !== key && e.by !== key && e.allyId !== key; }
-    s.events = s.events.filter(unrelated); s.combatEvents = s.combatEvents.filter(unrelated);
-    s.enemies.forEach(function (enemy) {
-      if (enemy.targetId === key) delete enemy.targetId;
-      if (enemy.rhythm && enemy.rhythm.targetId === key) enemy.rhythm.targetId = null;
-      if (enemy.rushHitIds) enemy.rushHitIds = enemy.rushHitIds.filter(function (idValue) { return idValue !== key; });
-    });
+    function clearScene(scene) {
+      if (scene.bullets) scene.bullets = scene.bullets.filter(function (bullet) { return !bullet.railAlly && bullet.owner !== key; });
+      if (scene.events) scene.events = scene.events.filter(unrelated);
+      if (scene.combatEvents) scene.combatEvents = scene.combatEvents.filter(unrelated);
+      (scene.enemies || []).forEach(function (enemy) {
+        if (enemy.targetId === key) delete enemy.targetId;
+        if (enemy.rhythm && enemy.rhythm.targetId === key) enemy.rhythm.targetId = null;
+        if (enemy.pursuit && enemy.pursuit.targetId === key) delete enemy.pursuit;
+        if (enemy.intercept && enemy.intercept.targetId === key || enemy.coreInterceptRead && enemy.coreInterceptRead.targetId === key) clearCoreIntercept(enemy);
+        if (enemy.rushHitIds) enemy.rushHitIds = enemy.rushHitIds.filter(function (idValue) { return idValue !== key; });
+      });
+    }
+    clearScene(s);
+    Object.keys(s.roomData).forEach(function (index) { clearScene(s.roomData[index]); });
+    if (s._split) delete s._split.pendingAlly;
   }
   function placeRailAlly(s) {
     var owner = s.players.p1;
     if (!isRailChapter(s) || !owner || s.playerCount !== 1) return;
+    if (s.railAlly && s.playerRooms) return;
     var ally = s.railAlly || player('rail-ally', 1, 'pistol', 'pistol', 'blade');
     Object.assign(ally, { name: '阿禾', x: owner.x, y: owner.y,
+      roomIndex: s.room.index, task: s._split && s._split.allyTask || ally.task || 'investigate', travelCd: 0.9,
       facing: owner.facing, travelFacing: owner.facing, moving: false,
       mode: ally.downed ? 'downed' : ally.railStun > 0 ? 'stunned' : 'follow',
       attackTime: 0, evadeTime: 0, fireCd: 0.35, evadeX: 0, evadeY: 0,
@@ -1731,10 +1780,10 @@
       color: '#ffe0a2', railAlly: true, hitsLeft: 1, hitIds: [], dead: false });
     event(s, 'shoot', { playerId: null, allyId: ally.id, weapon: 'pistol', x: ally.x, y: ally.y });
   }
-  function railAllyTarget(s, ally, owner) {
+  function railAllyTarget(s, ally) {
     var best = Infinity, target = null;
     s.enemies.forEach(function (enemy) {
-      if (enemy.hp <= 0 || enemy.railGuard && enemy.hp <= 1 || dist(enemy, owner) > 430) return;
+      if (enemy.hp <= 0 || enemy.railGuard && enemy.hp <= 1) return;
       var gap = dist(ally, enemy);
       if (gap > 465) return;
       var score = gap + (foxSight(s, ally, enemy, 4) ? 0 : 95) - (enemy.weakTime > 0 ? 60 : 0);
@@ -1770,13 +1819,76 @@
     if (ally.moving && ally.attackTime <= 0) ally.facing = Math.atan2(stepY, stepX);
     shockRailCombatant(s, ally);
   }
+  function railAllyReport(s, text) {
+    s.message = text; s.messageTime = 7;
+    var ownerRoom = s.playerRooms && s.playerRooms.p1;
+    if (ownerRoom !== undefined && ownerRoom !== s.room.index) {
+      var data = splitRoomData(s, ownerRoom);
+      data.message = text; data.messageTime = 7;
+    }
+  }
+  function railAllyMissionGoal(s, ally) {
+    var c = s.chapter;
+    if (ally.task === 'investigate') {
+      var note = ally.roomIndex === 5 && s.interactables.find(function (q) { return q.clueId === 'rail-order'; });
+      if (note && dist(ally, note) < 68 && foxSight(s, ally, note, 3)) {
+        if (c.clues.indexOf('rail-order') < 0) {
+          c.clues.push('rail-order'); note.used = true; note.active = false;
+          event(s, 'chapter-note', { clueId: note.clueId, title: note.title, text: note.text,
+            playerId: null, allyId: ally.id, x: note.x, y: note.y });
+        }
+        ally.task = 'rendezvous';
+        railAllyReport(s, '阿禾：工棚里找到一张调度单，主芯是陶铆借走的。我去维修站台等你。');
+      } else return { roomIndex: 5, x: 710, y: 221, combat: ally.roomIndex === 5 };
+    }
+    if (ally.task === 'rendezvous') {
+      if (ally.roomIndex === 2 && dist(ally, { x: 465, y: 307 }) < 75 && c.repairerMet) {
+        ally.task = 'feeder';
+        railAllyReport(s, '阿禾：那我先去配电廊看路，你跟上。电闸等你来操作。');
+      } else return { roomIndex: 2, x: 465, y: 307, combat: false };
+    }
+    if (ally.task === 'feeder') {
+      if (s.rooms[6].cleared) ally.task = 'guard';
+      else return { roomIndex: 6, x: 475, y: 305, combat: true };
+    }
+    if (ally.task === 'guard') {
+      if (c.bossDefeated) {
+        ally.task = 'rescue';
+        railAllyReport(s, '阿禾：守卫倒了，我去接应救援车。');
+      } else return { roomIndex: 3, x: 395, y: 305, combat: true };
+    }
+    if (ally.task === 'rescue') {
+      if (ally.roomIndex === 4 && dist(ally, { x: 600, y: 305 }) < 45) {
+        ally.task = 'done';
+        railAllyReport(s, '阿禾：人都在车上，过来看看吧。');
+      }
+      return { roomIndex: 4, x: 600, y: 305, combat: false };
+    }
+    return { roomIndex: 4, x: 600, y: 305, combat: false };
+  }
+  function railAllyNextRoom(s, from, destination) {
+    var queue = [from], previous = {}; previous[from] = -1;
+    for (var head = 0; head < queue.length; head += 1) {
+      var index = queue[head];
+      if (index === destination) {
+        while (previous[index] !== from && previous[index] !== -1) index = previous[index];
+        return index === from ? null : index;
+      }
+      s.rooms[index].neighbors.forEach(function (next) {
+        if (previous[next] !== undefined || !railGate(s, index, next)) return;
+        previous[next] = index; queue.push(next);
+      });
+    }
+    return null;
+  }
   function updateRailAlly(s, dt) {
-    var ally = s.railAlly, owner = s.players.p1;
-    if (!ally || dt <= 0 || s.status !== 'playing' || !owner) return;
+    var ally = s.railAlly, owner = partyPlayers(s).p1;
+    if (!railAllyHere(s) || dt <= 0 || s.status !== 'playing' || !owner) return;
     ally.invuln = Math.max(0, ally.invuln - dt);
     ally.dashCd = Math.max(0, ally.dashCd - dt);
     ally.fireCd = Math.max(0, ally.fireCd - dt);
     ally.attackTime = Math.max(0, ally.attackTime - dt);
+    ally.travelCd = Math.max(0, (ally.travelCd || 0) - dt);
     ally.moving = false; ally.vx = 0; ally.vy = 0;
     if (ally.downed || ally.railStun > 0) { ally.mode = ally.downed ? 'downed' : 'stunned'; return; }
     var rush = s.enemies.find(function (e) {
@@ -1794,43 +1906,55 @@
       shockRailCombatant(s, ally);
       return;
     }
-    var ownerDistance = dist(ally, owner);
-    if (owner.downed) {
-      ally.mode = 'revive';
-      if (ownerDistance < 78 && foxSight(s, ally, owner, 3)) reviveCombatant(s, ally, owner);
-      else moveRailAlly(s, ally, owner, rush, dt, 260);
-      return;
+    // A rescue is a temporary detour; the assigned task survives the trip.
+    var goal = owner.downed ? { roomIndex: s.playerRooms ? s.playerRooms.p1 : ally.roomIndex,
+      x: owner.x, y: owner.y, combat: false } : railAllyMissionGoal(s, ally);
+    ally.mode = owner.downed ? 'revive' : 'follow';
+    if (owner.downed && goal.roomIndex === ally.roomIndex && dist(ally, owner) < 78 && foxSight(s, ally, owner, 3)) {
+      reviveCombatant(s, ally, owner); return;
     }
-    var target = ownerDistance < 245 ? railAllyTarget(s, ally, owner) : null;
+    var traveling = goal.roomIndex !== ally.roomIndex;
+    if (traveling) {
+      var nextRoom = railAllyNextRoom(s, ally.roomIndex, goal.roomIndex);
+      var portal = s.portals.find(function (q) { return q.target === nextRoom && q.active; });
+      if (!portal) return;
+      goal = portal;
+      if (dist(ally, portal) < portal.r + 7 && ally.travelCd <= 0) {
+        if (s._split) s._split.pendingAlly = portal.target;
+        return;
+      }
+    }
+    var target = railAllyTarget(s, ally);
     var range = target ? dist(ally, target) : 0;
     var line = target && foxSight(s, ally, target, 4);
     if (line && range <= 306 && range > target.r + 23 && ally.fireCd <= 0) shootRailAlly(s, ally, target);
-    ally.mode = ally.attackTime > 0 ? 'attack' : 'follow';
-    if (target && ownerDistance < 210) {
-      if (range < 118) {
+    if (ally.attackTime > 0) ally.mode = 'attack';
+    if (target && !owner.downed && !traveling && goal.combat) {
+      var safeRange = target.kind === 'duelist' || target.railGuard ? 190 : 135;
+      if (range < safeRange) {
         var retreat = { x: ally.x + (ally.x - target.x) * 100 / (range || 1),
           y: ally.y + (ally.y - target.y) * 100 / (range || 1) };
         if (!collides(s, retreat.x, retreat.y, ally.r, ally.id, false)) {
           moveRailAlly(s, ally, retreat, rush, dt, 215);
           return;
         }
-      } else if (line && range <= 280) return;
+      } else if (line && range <= 280 && !(target.kind === 'shield' && target.shieldOpen <= 0)) return;
       var angle = Math.atan2(ally.y - target.y, ally.x - target.x);
       var firingLane = { x: target.x + Math.cos(angle) * 218, y: target.y + Math.sin(angle) * 218 };
       if (!line && dist(ally, firingLane) < 25) {
         firingLane.x -= Math.sin(angle) * 82;
         firingLane.y += Math.cos(angle) * 82;
       }
-      if (!collides(s, firingLane.x, firingLane.y, ally.r, ally.id, false) && dist(firingLane, owner) < 248) {
+      if (target.kind === 'shield' && target.shieldOpen <= 0) {
+        firingLane.x = target.x + Math.cos(target.facing + Math.PI * 0.7) * 160;
+        firingLane.y = target.y + Math.sin(target.facing + Math.PI * 0.7) * 160;
+      }
+      if (!collides(s, firingLane.x, firingLane.y, ally.r, ally.id, false)) {
         moveRailAlly(s, ally, firingLane, rush, dt, 212);
         return;
       }
     }
-    if (len(owner.vx, owner.vy) > 16) ally.travelFacing = Math.atan2(owner.vy, owner.vx);
-    var dx = Math.cos(ally.travelFacing), dy = Math.sin(ally.travelFacing);
-    var goal = { x: owner.x - dx * 50 - dy * 40, y: owner.y - dy * 50 + dx * 40 };
-    if (collides(s, goal.x, goal.y, ally.r, ally.id, false)) goal = owner;
-    moveRailAlly(s, ally, goal, rush, dt, clamp(ownerDistance * 2.2, 185, 322));
+    moveRailAlly(s, ally, goal, rush, dt, owner.downed ? 260 : 205);
   }
   function foxSight(s, a, b, radius) {
     // Fine sampling keeps thin walls and closed doors honest. Portable solid
@@ -2424,7 +2548,7 @@
     if (!p || p.downed || p.railStun > 0 || shockRailCombatant(s, p)) return false;
     var downed = Object.keys(s.players).map(function (key) { return s.players[key]; })
       .find(function (q) { return q.downed && q.id !== p.id && dist(p, q) < 78; });
-    var ally = s.railAlly;
+    var ally = railAllyHere(s) ? s.railAlly : null;
     if (!downed && ally && ally.downed && dist(p, ally) < 78 && foxSight(s, p, ally, 3)) downed = ally;
     if (downed) {
       reviveCombatant(s, p, downed);
@@ -4113,7 +4237,7 @@
     s.combatEvents = (s.combatEvents || []).filter(function (entry) { return s.time - entry.time <= 2; }).slice(-24);
     s.travelCd = Math.max(0, s.travelCd - dt); s.messageTime = Math.max(0, s.messageTime - dt);
     var roomBefore = s.room.index;
-    if (s.railAlly) {
+    if (railAllyHere(s)) {
       advanceRailStun(s.railAlly, dt);
       shockRailCombatant(s, s.railAlly);
     }
@@ -4231,12 +4355,13 @@
     }
     cacheSplitScene(s);
     split.allPlayers = all; split.allCompanions = companions;
-    split.pending = {}; split.active = true;
+    split.pending = {}; delete split.pendingAlly; split.active = true;
     Object.keys(all).forEach(function (key) {
       split.cooldowns[key] = Math.max(0, (split.cooldowns[key] || 0) - dt);
     });
     var occupied = Object.keys(all).map(function (key) { return s.playerRooms[key]; })
       .filter(function (index, i, values) { return values.indexOf(index) === i; });
+    if (s.railAlly && occupied.indexOf(s.railAlly.roomIndex) < 0) occupied.push(s.railAlly.roomIndex);
     for (var i = 0; i < occupied.length && s.status === 'playing'; i += 1) {
       var index = occupied[i];
       s.players = splitPlayers(s, index);
@@ -4255,9 +4380,13 @@
       Object.keys(pending).forEach(function (key) {
         moveSplitPlayer(s, key, pending[key].index, pending[key].initial);
       });
+      if (split.pendingAlly !== undefined) {
+        moveSplitAlly(s, split.pendingAlly); delete split.pendingAlly;
+      }
       // Shared switches and discoveries update both occupied views in this tick.
       occupied = Object.keys(all).map(function (key) { return s.playerRooms[key]; })
         .filter(function (index, i, values) { return values.indexOf(index) === i; });
+      if (s.railAlly && occupied.indexOf(s.railAlly.roomIndex) < 0) occupied.push(s.railAlly.roomIndex);
       occupied.forEach(function (index) {
         s.players = splitPlayers(s, index);
         s.companions = companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });

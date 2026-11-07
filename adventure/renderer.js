@@ -19,9 +19,14 @@
   function roomPlayers(state) {
     return values(state.players).filter(player => playerInRoom(state, player.id));
   }
+  function railAllyInRoom(state) {
+    const ally = state.railAlly;
+    return !!ally && (ally.roomIndex == null || ally.roomIndex === state.room?.index);
+  }
   function teammateInRoom(state, index) {
-    return !!state.playerRooms && index !== state.room?.index &&
-      Object.entries(state.playerRooms).some(([id, room]) => state.players?.[id] && room === index);
+    if (index === state.room?.index) return false;
+    return (!!state.playerRooms && Object.entries(state.playerRooms).some(([id, room]) => state.players?.[id] && room === index)) ||
+      (railChapter(state) && state.railAlly?.roomIndex === index);
   }
   const rect = (c, x, y, w, h, color) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   function seedRandom(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -2607,6 +2612,18 @@
       c.restore();
     }
   }
+  function mapRailAlly(c, state, points) {
+    const ally = state.railAlly, point = ally && points.get(ally.roomIndex);
+    if (!point || railAllyInRoom(state)) return;
+    const x = num(point.x), y = num(point.y), color = ally.downed ? '#edaa82' : '#f5b655';
+    const rim = [[x, y - 10], [x + 10, y], [x, y + 10], [x - 10, y], [x, y - 10]];
+    c.save(); path(c, rim, '#142b29', 4); path(c, rim, color, 1.5);
+    if (ally.downed) {
+      rect(c, x - 1, y - 4, 2, 8, color); rect(c, x - 4, y - 1, 8, 2, color);
+    } else rect(c, x - 2, y - 2, 4, 4, color);
+    label(c, ally.downed ? `${ally.name || '阿禾'}待救` : ally.name || '阿禾', x, y + 19, color, 8);
+    c.restore();
+  }
   function relayMap(c, state) {
     if (state.practice || !state.relay || !Array.isArray(state.rooms)) return;
     const rooms=state.rooms.filter(room=>Number.isFinite(room.gx)&&Number.isFinite(room.gy));
@@ -2793,10 +2810,14 @@
       }
     }
     mapTeammates(c, state, points);
+    if (rail) mapRailAlly(c, state, points);
     const objective = rail ? run.reachedCar ? '已与救援车会合' : run.bossDefeated ? '前往救援车' :
       run.repairerMet ? feeder && !feeder.cleared ? '清理配电廊' : '拨道场守卫挡路' : '循车辙寻找陶铆' :
       run.lampLit ? '第一盏归途灯已点亮' : run.fireTaken ? '火种同行 · 返回哨站' : '循着回收队的痕迹';
-    label(c, objective, left + 12, top + height - 33, run.lampLit || run.reachedCar ? '#e8d79e' : '#c1b895', 8, 'left');
+    const ally = rail && state.railAlly;
+    const allyTask = ally && { investigate: '工棚调查', rendezvous: '站台会合', feeder: '支援配电廊', guard: '支援拨道场', rescue: '接应伤员', done: '任务完成' }[ally.task];
+    const mission = allyTask && `${ally.name || '阿禾'} · ${ally.downed ? '倒地待救' : allyTask}`;
+    label(c, mission || objective, left + 12, top + height - 33, mission ? ally.downed ? '#edaa82' : '#e5c08a' : run.lampLit || run.reachedCar ? '#e8d79e' : '#c1b895', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / ${rail ? 2 : 3}`, left + 12, top + height - 13, '#a8b39a', 8, 'left');
     label(c, `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + width - 12, top + height - 13, '#92a38a', 8, 'right');
     c.restore();
@@ -3299,7 +3320,7 @@
       ...enemies.map(e => ({ y: e.y, draw: () => rail && e.railGuard === true
         ? railGuard(c, e, state, enemyPoses.get(e.id), viewTop, still)
         : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail) })),
-      ...(rail && state.railAlly ? [{
+      ...(rail && railAllyInRoom(state) ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
       ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
@@ -3312,7 +3333,7 @@
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     if (rail && state.status === 'playing') {
       roomPlayers(state).forEach(actor => railShockStatus(c, actor, enemyTime, still, viewTop, viewBottom));
-      if (state.railAlly) railShockStatus(c, state.railAlly, enemyTime, still, viewTop, viewBottom);
+      if (railAllyInRoom(state)) railShockStatus(c, state.railAlly, enemyTime, still, viewTop, viewBottom);
     }
     if (intercepting) interceptBadge(c, intercepting, viewTop);
     values(state.bullets).forEach(b => bullet(c, b, state));

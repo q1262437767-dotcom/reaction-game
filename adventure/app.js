@@ -627,7 +627,7 @@
     Object.keys(activeChapterMoments(chapter.id)).forEach(flag => { if (chapter[flag]) chapterMomentsSeen.add(chapter.id + ':' + flag); });
     if (state.status !== 'playing' || state.elapsed >= 1) return;
     if (chapter.id === 'chapter1_3') {
-      const line = state.railAlly ? '阿禾：“我跟你走。你看路，我掩护。”' : '阿禾：“车辙还新。沿西线找，车上那些人说不定还等着呢。”';
+      const line = state.railAlly ? '阿禾：“我去工棚查查，你先找陶铆。等会儿在站台碰头。”' : '阿禾：“车辙还新。沿西线找，车上那些人说不定还等着呢。”';
       toast(line, 6000);
     }
     else if (chapter.id === 'chapter1_2') toast('阿禾：灯还在闪。进去看看，留神那些还在干活的机器。', 6000);
@@ -2176,7 +2176,11 @@
     const partnerId = localId() === 'p1' ? 'p2' : 'p1';
     const partnerRoom = state?.playerRooms?.[partnerId];
     const separated = Number.isInteger(partnerRoom) && partnerRoom !== state.room.index;
-    $('hud-team').textContent = ally ? (ally.downed ? '阿禾倒地' : `阿禾 ${ally.hp} / ${ally.maxHp}`) :
+    const allyTasks = { investigate: '调查工棚', rendezvous: '站台会合', feeder: '打通配电廊', guard: '支援拨道场', rescue: '接应救援车', done: '任务完成' };
+    const allyRoom = ally && Number.isInteger(ally.roomIndex) ? state.rooms[ally.roomIndex]?.name : '';
+    const allyTask = ally?.taskReturn ? '赶去救你' : allyTasks[ally?.task] || '同行';
+    $('hud-team').textContent = ally ? (ally.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
+      `阿禾 ${ally.hp} / ${ally.maxHp}${ally.task ? ' · ' + allyTask : ''}`) :
       separated ? `搭档 · ${state.rooms[partnerRoom].name}` :
       state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ?
         (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
