@@ -126,3 +126,61 @@ test('the third section unlocks from old saves and settles its own record once',
   assert.equal(C.applyResult(old, loss, 'rail-loss').profile.runs, 2);
   assert.equal(C.applyResult(old, loss, 'rail-loss').reward, 0);
 });
+
+function routeChapter(extra) {
+  return Object.assign({ id: 'chapter1_4', version: 1, phase: 'complete', clues: ['route-order'],
+    bridgeRaised: true, wallBreached: false, gateOpened: true, signalLit: true }, extra);
+}
+
+test('the fourth section unlocks after the third and records a bounded 70-coin clear', () => {
+  const old = { v: 2, missions: { chapter1_3: { clears: 1, hardClears: 0, bestTime: 80 } } };
+  assert.equal(C.CHAPTERS[3].id, 'chapter1_4');
+  assert.equal(C.CHAPTERS[3].reward, 70);
+  assert.equal(C.canPlay(null, 'chapter1_4', 1), false);
+  assert.equal(C.canPlay({ v: 2, missions: { chapter1_2: { clears: 1 } } }, 'chapter1_4', 1), false);
+  assert.equal(C.canPlay(old, 'chapter1_4', 1), true);
+  assert.equal(C.canPlay(old, 'chapter1_4', 2), false);
+  assert.equal(C.chapterProgress(old).nextChapter, 'chapter1_4');
+  const state = storyWin({ mode: 'chapter', mission: { id: 'chapter1_4' }, chapter: routeChapter() });
+  const result = C.applyResult(old, state, 'route-win');
+  assert.equal(result.reward, 70);
+  assert.equal(result.profile.v, 2);
+  assert.equal(result.profile.coins, 70);
+  assert.equal(result.profile.runs, 2);
+  assert.equal(result.profile.missions.chapter1_3.clears, 1);
+  assert.deepEqual(result.profile.missions.chapter1_4, { clears: 1, hardClears: 0, bestTime: 12.3 });
+  assert.equal(C.chapterProgress(result.profile).fourthCompleted, true);
+  assert.equal(C.chapterProgress(result.profile).nextChapter, null);
+  assert.equal(C.applyResult(result.profile, state, 'route-win').duplicate, true);
+  // Guests keep their own result even when the host selected a locked section.
+  assert.equal(C.applyResult(null, state, 'route-guest-win').profile.missions.chapter1_4.clears, 1);
+  assert.equal(C.applyResult(old, { ...state, mode: 'story' }, 'route-as-story').profile.runs, 1);
+  const loss = { ...state, status: 'lost', chapter: routeChapter({ phase: 'failed', signalLit: false }) };
+  assert.equal(C.applyResult(old, loss, 'route-loss').reward, 0);
+  assert.equal(C.applyResult(old, loss, 'route-loss').profile.runs, 2);
+  assert.equal(C.applyResult(old, loss, 'route-loss').profile.missions.chapter1_4.clears, 0);
+});
+
+test('fourth-section validation follows both routes and requires a real signal completion', () => {
+  for (const route of [{ bridgeRaised: true, wallBreached: false }, { bridgeRaised: false, wallBreached: true },
+    { bridgeRaised: true, wallBreached: true }]) {
+    assert(C.validRouteChapter(routeChapter(route), 'won'));
+    assert(C.validRouteChapter(routeChapter({ ...route, phase: 'signal', signalLit: false }), 'playing'));
+  }
+  const initial = routeChapter({ phase: 'arrive', clues: [], bridgeRaised: false, gateOpened: false, signalLit: false });
+  assert(C.validRouteChapter(initial, 'playing'));
+  assert(C.validRouteChapter({ ...initial, phase: 'routes' }, 'playing'));
+  assert(C.validRouteChapter({ ...initial, phase: 'dispatch', wallBreached: true }, 'playing'));
+  assert(C.validRouteChapter({ ...initial, phase: 'gate', clues: ['route-order'], wallBreached: true }, 'playing'));
+  for (const chapter of [routeChapter({ signalLit: false }), routeChapter({ gateOpened: false }),
+    routeChapter({ clues: ['route-shift'] }), routeChapter({ bridgeRaised: false }),
+    routeChapter({ clues: ['route-order', 'route-order'] }), routeChapter({ clues: ['other'] }),
+    routeChapter({ signalLit: 1 }), routeChapter({ extra: true }), routeChapter({ version: 2 })]) {
+    assert.equal(C.validRouteChapter(chapter, 'won'), false);
+    const result = C.applyResult(null, storyWin({ mode: 'chapter', mission: { id: 'chapter1_4' }, chapter }), 'invalid-route');
+    assert.equal(result.profile.runs, 0);
+    assert.equal(result.reward, 0);
+  }
+  assert.equal(C.validRouteChapter(routeChapter(), 'playing'), false);
+  assert.equal(C.validRouteChapter(routeChapter({ phase: 'failed' }), 'lost'), false);
+});

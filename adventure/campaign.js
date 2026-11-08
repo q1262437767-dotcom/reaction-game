@@ -17,7 +17,8 @@
   var CHAPTERS = Object.freeze([
     Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 }),
     Object.freeze({ id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', description: '旧木场的求援灯还在闪。挪开木车，救出被困的维修工。', goal: '救出维修工，停下吊木守卫，再回信号岗接应撤离', reward: 50 }),
-    Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '救援车沿西边旧线走了。循着车辙，去找维修匠陶铆。', goal: '找到陶铆，打通配电廊和拨道场，接应载着伤员的救援车', reward: 60 })
+    Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '救援车沿西边旧线走了。循着车辙，去找维修匠陶铆。', goal: '找到陶铆，打通配电廊和拨道场，接应载着伤员的救援车', reward: 60 }),
+    Object.freeze({ id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', description: '前面的轨道塌了。绕过断轨，去调度室查清那张回收令，给救援车开路。', goal: '选择路线穿过断轨，查阅回收令，打开主轨闸并点亮冷却站信号', reward: 70 })
   ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
@@ -159,11 +160,13 @@
 
   function chapterProgress(profile) {
     var normalized = normalize(profile), record = normalized.missions.chapter1, second = normalized.missions.chapter1_2,
-      third = normalized.missions.chapter1_3;
+      third = normalized.missions.chapter1_3, fourth = normalized.missions.chapter1_4;
     return { completed: record.clears > 0, clears: record.clears, hardClears: record.hardClears,
       bestTime: record.bestTime, secondCompleted: second.clears > 0, secondClears: second.clears,
       secondBestTime: second.bestTime, thirdCompleted: third.clears > 0, thirdClears: third.clears,
-      thirdBestTime: third.bestTime, nextChapter: second.clears > 0 && third.clears === 0 ? 'chapter1_3' :
+      thirdBestTime: third.bestTime, fourthCompleted: fourth.clears > 0, fourthClears: fourth.clears,
+      fourthBestTime: fourth.bestTime, nextChapter: third.clears > 0 && fourth.clears === 0 ? 'chapter1_4' :
+        second.clears > 0 && third.clears === 0 ? 'chapter1_3' :
         record.clears > 0 && second.clears === 0 ? 'chapter1_2' : null };
   }
 
@@ -188,6 +191,23 @@
     return normalize(profile).missions.chapter1.clears > 0;
   }
 
+  function validRouteChapter(chapter, status) {
+    var c = object(chapter);
+    var keys = ['id', 'version', 'phase', 'clues', 'bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'];
+    if (c.id !== 'chapter1_4' || c.version !== 1 || Object.keys(c).length !== keys.length ||
+        !keys.every(function (key) { return Object.prototype.hasOwnProperty.call(c, key); }) ||
+        !['bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'].every(function (key) { return typeof c[key] === 'boolean'; }) ||
+        !Array.isArray(c.clues) || c.clues.length > 2 || new Set(c.clues).size !== c.clues.length ||
+        c.clues.some(function (key) { return !['route-shift', 'route-order'].includes(key); }) ||
+        c.gateOpened && (!c.clues.includes('route-order') || !c.bridgeRaised && !c.wallBreached) ||
+        c.signalLit && !c.gateOpened) return false;
+    if (status === 'won') return c.phase === 'complete' && c.signalLit;
+    if (status === 'lost') return c.phase === 'failed' && !c.signalLit;
+    return status === 'playing' && !c.signalLit && (c.gateOpened ? c.phase === 'signal' :
+      c.clues.includes('route-order') ? c.phase === 'gate' : c.bridgeRaised || c.wallBreached ? c.phase === 'dispatch' :
+        ['arrive', 'routes'].includes(c.phase));
+  }
+
   function applyResult(profile, state, runId) {
     var p = normalize(profile), before = progress(p), unlocks = [], newBadges = [];
     var result = { profile: p, reward: 0, unlocks: unlocks, newBadges: newBadges, duplicate: false };
@@ -198,12 +218,14 @@
     if (p.clearedRuns.includes(runId)) { result.duplicate = true; return result; }
     var missionId = object(state.mission).id || 'ember';
     var mission = missionById(missionId), difficulty = state.difficulty === undefined ? 1 : state.difficulty;
-    if (state.mode === 'chapter' && ['chapter1_2', 'chapter1_3'].includes(missionId)) {
-      var rail = missionId === 'chapter1_3';
+    if (state.mode === 'chapter' && ['chapter1_2', 'chapter1_3', 'chapter1_4'].includes(missionId)) {
+      var rail = missionId === 'chapter1_3', route = missionId === 'chapter1_4';
       var timber = object(state.chapter), sectionWon = state.status === 'won', cart = object(timber.cart);
       var timberKeys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
       if (difficulty !== 1) return result;
-      if (rail) {
+      if (route) {
+        if (!validRouteChapter(state.chapter, state.status)) return result;
+      } else if (rail) {
         if (!validRailChapter(state.chapter, state.status)) return result;
       } else if (timber.id !== 'chapter1_2' || timber.version !== 1 ||
           Object.keys(timber).length !== timberKeys.length || !timberKeys.every(function (key) { return Object.prototype.hasOwnProperty.call(timber, key); }) ||
@@ -221,7 +243,7 @@
       });
       if (p.relics.length === RELICS.length) earn('collector');
       if (sectionWon) {
-        var chapterCap = rail ? 60 : 50, sectionCoins = object(state.reward).coins;
+        var chapterCap = route ? 70 : rail ? 60 : 50, sectionCoins = object(state.reward).coins;
         result.reward = typeof sectionCoins === 'number' && Number.isFinite(sectionCoins) ? Math.min(chapterCap, count(sectionCoins)) : chapterCap;
         p.coins = Math.min(LIMIT, p.coins + result.reward); p.wins = Math.min(LIMIT, p.wins + 1);
         var sectionRecord = p.missions[missionId];
@@ -232,7 +254,8 @@
         }
         if (object(state.stats).damage === 0) earn('flawless');
         if (sectionRecord.clears === 1) {
-          if (rail) unlocks.push('第三节完成 · 找到救援车');
+          if (route) unlocks.push('第四节完成 · 冷却站信号已亮');
+          else if (rail) unlocks.push('第三节完成 · 找到救援车', '第四节解锁 · 断轨开路');
           else unlocks.push('第二节完成 · 维修工回营', '第三节解锁 · 借走的主芯');
         }
       }
@@ -335,7 +358,7 @@
 
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    chapterProgress: chapterProgress, validRailChapter: validRailChapter, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    chapterProgress: chapterProgress, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
     validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });

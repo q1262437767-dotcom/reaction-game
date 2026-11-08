@@ -78,6 +78,7 @@ declare
   v_clear_delta numeric;
   v_clear_sum numeric := 0;
   v_third_clear_delta numeric := 0;
+  v_fourth_clear_delta numeric := 0;
   v_bad_window boolean;
   v_old_upgrades jsonb;
   v_new_upgrades jsonb;
@@ -89,7 +90,7 @@ begin
   --   ember 40, salvage 30, holdout 35
   --   story hard +20, one cleared secret +12
   --   richest story win = 40 + 20 + 12 = 72
-  --   chapter1 earns 40, chapter1_2 earns 50, chapter1_3 earns 60
+  --   chapter1 earns 40, chapter1_2 earns 50, chapter1_3 earns 60, chapter1_4 earns 70
   --   hunt 32, relay 24
   --   a loss or the practice arena adds no coins
   -- So each new win explains at most 72 coins. New wins cannot exceed new runs.
@@ -176,7 +177,7 @@ begin
     raise exception using errcode = '22023', message = 'progress_rejected';
   end if;
 
-  foreach v_key in array array['ember','salvage','holdout','chapter1','chapter1_2','chapter1_3'] loop
+  foreach v_key in array array['ember','salvage','holdout','chapter1','chapter1_2','chapter1_3','chapter1_4'] loop
     v_old_mission := p_old->'missions'->v_key;
     v_new_mission := p_new->'missions'->v_key;
     if v_old_mission is null then
@@ -218,7 +219,7 @@ begin
     v_clear_delta := v_new_clears - v_old_clears;
     -- Chapter sections have no hard mode. Story hard clears cannot outrun
     -- that mission's new clears, and cannot fall.
-    if v_key in ('chapter1', 'chapter1_2', 'chapter1_3') then
+    if v_key in ('chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4') then
       if v_new_hard <> v_old_hard then
         raise exception using errcode = '22023', message = 'progress_rejected';
       end if;
@@ -243,14 +244,17 @@ begin
     v_clear_sum := v_clear_sum + v_clear_delta;
     if v_key = 'chapter1_3' then
       v_third_clear_delta := v_clear_delta;
+    elsif v_key = 'chapter1_4' then
+      v_fourth_clear_delta := v_clear_delta;
     end if;
   end loop;
   -- Hunt and relay wins do not increment a mission clear, so clears may lag wins.
-  -- Third-section clears explain 60 coins each; the other wins retain the
+  -- Third/fourth-section clears explain 60/70 coins each; other wins retain the
   -- existing global ceiling of 72 (ember + hard + secret).
   if v_clear_sum > v_win_delta
      or v_new_coins > v_old_coins + v_third_clear_delta * 60
-                    + (v_win_delta - v_third_clear_delta) * 72 - v_spend then
+                    + v_fourth_clear_delta * 70
+                    + (v_win_delta - v_third_clear_delta - v_fourth_clear_delta) * 72 - v_spend then
     raise exception using errcode = '22023', message = 'progress_rejected';
   end if;
 
@@ -419,9 +423,9 @@ begin
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   if not ((p_profile->'missions') ?& array['ember','salvage','holdout'])
-      or (select count(*) from jsonb_object_keys(p_profile->'missions')) not in (3, 4, 5, 6)
+      or (select count(*) from jsonb_object_keys(p_profile->'missions')) not in (3, 4, 5, 6, 7)
       or exists (select 1 from jsonb_object_keys(p_profile->'missions') as keys(id)
-                 where id not in ('ember', 'salvage', 'holdout', 'chapter1', 'chapter1_2', 'chapter1_3')) then
+                 where id not in ('ember', 'salvage', 'holdout', 'chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4')) then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   for v_key in select jsonb_object_keys(p_profile->'missions') loop
@@ -444,7 +448,7 @@ begin
     v_count := (v_mission->>'hardClears')::numeric;
     if v_count < 0 or v_count > (v_mission->>'clears')::numeric
         or trunc(v_count) <> v_count
-        or (v_key = 'chapter1_3' and v_count <> 0) then
+        or (v_key in ('chapter1_3', 'chapter1_4') and v_count <> 0) then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
     if v_mission->'bestTime' is distinct from 'null'::jsonb then
@@ -569,6 +573,9 @@ begin
                            else '{}'::jsonb end)
                   || (case when not ((p_profile->'missions') ? 'chapter1_3') and ((v_stored->'missions') ? 'chapter1_3')
                            then jsonb_build_object('chapter1_3', v_stored#>'{missions,chapter1_3}')
+                           else '{}'::jsonb end)
+                  || (case when not ((p_profile->'missions') ? 'chapter1_4') and ((v_stored->'missions') ? 'chapter1_4')
+                           then jsonb_build_object('chapter1_4', v_stored#>'{missions,chapter1_4}')
                            else '{}'::jsonb end))
                   || (case when not (p_profile ? 'camp') and (v_stored ? 'camp')
                            then jsonb_build_object('camp', v_stored->'camp')

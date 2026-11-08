@@ -13,7 +13,8 @@
     holdout: { id: 'holdout', name: '信标守夜', goal: '启动庭院信标，守住 3 波敌人，再按 E 撤离', total: 3, coins: 35 },
     chapter1: { id: 'chapter1', name: '第一章 · 第一节 · 借火归营', goal: '进入苔火工坊，借回火种，重新点亮营地归途灯', total: 1, coins: 40 },
     chapter1_2: { id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', goal: '移开木车，救出工人，停下吊木守卫后返回信号岗接应', total: 1, coins: 50 },
-    chapter1_3: { id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', goal: '找到陶铆，穿过配电廊和拨道场，接应救援车', total: 1, coins: 60 }
+    chapter1_3: { id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', goal: '找到陶铆，穿过配电廊和拨道场，接应救援车', total: 1, coins: 60 },
+    chapter1_4: { id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', goal: '绕过断桥，查明回收程序，打开通往冷却站的轨闸', total: 1, coins: 70 }
   };
   var CHAPTER_NOTES = {
     trail: { title: '采集队的刻痕', text: '新刻下的箭头指向工坊。字迹还很清楚：“灯灭了，我们去找备用火。若有人来，请把归途灯点亮。”' },
@@ -22,7 +23,9 @@
     'timber-tracks': { title: '压深的车辙', text: '运木车的轮槽里留着新鲜铜屑。重物从工坊方向运进来，又转上了西边的旧线。' },
     'timber-bandage': { title: '带血的绑带', text: '绑带压在旧车板下面，旁边还有半卷干净的纱布。这里没有被抢翻的箱子，倒像是有人匆忙照顾过伤员。' },
     'rail-tracks': { title: '一路向西的车辙', text: '车轮带着工坊的铜屑，枕木边还夹着一角包扎布。两道深印拖得很直，开车的人急着赶路。' },
-    'rail-order': { title: '守卫的调度单', text: '“目标离开炉座后继续追踪，以主芯的脉冲为准。”下边有一行新写的字：“借的，有伤员，回头再解释。陶铆。”' }
+    'rail-order': { title: '守卫的调度单', text: '“目标离开炉座后继续追踪，以主芯的脉冲为准。”下边有一行新写的字：“借的，有伤员，回头再解释。陶铆。”' },
+    'route-shift': { title: '交班簿上的小字', text: '“栈桥放下后记得锁绞盘，别让夜班的再绕废料坡。”边上画了几道身高线，最矮那道旁边写着：“等我长高，也来接班。”' },
+    'route-order': { title: '没有撤销的回收令', text: '“识别线断开。停炉回收程序继续，以主芯脉冲为准。”调度板把救援车标成了设备。一个更重的光点正往维修棚移动，名字是：归炉者。' }
   };
   var BUFFS = {
     pierce: { label: '穿透棱镜', description: '子弹穿透 2 个敌人；近战伤害 +1' },
@@ -234,7 +237,7 @@
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
     var mode = options.mode === 'chapter' ? 'chapter' : options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
-    var missionId = mode === 'chapter' ? ['chapter1', 'chapter1_2', 'chapter1_3'].indexOf(options.mission) >= 0 ? options.mission : 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
+    var missionId = mode === 'chapter' ? ['chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4'].indexOf(options.mission) >= 0 ? options.mission : 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
     var missionDef = MISSIONS[missionId];
     var hostUpgrades = options.practice ? [] : campUpgrades(options.camp);
     var partnerUpgrades = options.practice ? [] : campUpgrades(options.partnerCamp);
@@ -271,7 +274,8 @@
         doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
     } else if (mode === 'chapter') {
-      if (missionId === 'chapter1_3') createRailChapter(s);
+      if (missionId === 'chapter1_4') createRouteChapter(s);
+      else if (missionId === 'chapter1_3') createRailChapter(s);
       else if (missionId === 'chapter1_2') createTimber(s);
       else createChapter(s);
     }
@@ -390,6 +394,7 @@
     });
   }
   function syncChapter(s) {
+    if (isRouteChapter(s)) { syncRouteChapter(s); return; }
     if (isTimber(s)) { syncTimber(s); return; }
     if (isRailChapter(s)) { syncRailChapter(s); return; }
     var c = s.chapter;
@@ -411,6 +416,7 @@
     });
   }
   function interactChapter(s, p, target) {
+    if (isRouteChapter(s)) return interactRouteChapter(s, p, target);
     if (isTimber(s)) return interactTimber(s, p, target);
     if (isRailChapter(s)) return interactRailChapter(s, p, target);
     var c = s.chapter;
@@ -738,6 +744,169 @@
       openWeakpoint(s, e, null, 'counter');
       s.message = '巡轨守卫短路了，趁现在！'; s.messageTime = 2.4;
     }
+    return true;
+  }
+  function isRouteChapter(s) { return s.mode === 'chapter' && s.chapter && s.chapter.id === 'chapter1_4'; }
+  function chapterAllySection(s) { return isRailChapter(s) || isRouteChapter(s); }
+  function routeGate(s, from, to) {
+    if (from === 3 && to === 6 || from === 6 && to === 3) return s.chapter.bridgeRaised;
+    if (from === 5 && to === 6 || from === 6 && to === 5) return s.chapter.wallBreached;
+    if (from === 1 && to === 6 || from === 6 && to === 1 || from === 6 && to === 7 || from === 7 && to === 6) return s.chapter.gateOpened;
+    return true;
+  }
+  function routeGateLabel(s, from, to) {
+    if (from === 3 && to === 6 || from === 6 && to === 3) return '栈桥还没升起';
+    if (from === 5 && to === 6 || from === 6 && to === 5) return '塌墙挡住了货道';
+    return '主轨闸要从调度室打开';
+  }
+  function createRouteChapter(s) {
+    var definitions = [
+      ['维修棚', 'camp', 0, 0, [1]], ['断桥岔口', 'battle', 1, 0, [0, 2, 4, 6]],
+      ['绞盘栈道', 'battle', 1, -1, [1, 3]], ['上桥机房', 'puzzle', 2, -1, [2, 6]],
+      ['废料坡道', 'battle', 1, 1, [1, 5]], ['塌墙货场', 'battle', 2, 1, [4, 6]],
+      ['旧线调度室', 'puzzle', 2, 0, [3, 5, 1, 7]], ['冷却站入口', 'rescue', 3, 0, [6]]
+    ];
+    s.chapter = { id: 'chapter1_4', version: 1, phase: 'arrive', clues: [],
+      bridgeRaised: false, wallBreached: false, gateOpened: false, signalLit: false };
+    s.rooms = definitions.map(function (d, index) {
+      return { index: index, id: 'chapter1_4-' + index, name: d[0], kind: d[1], gx: d[2], gy: d[3],
+        neighbors: d[4], cleared: index === 0 || index === 7, visited: false, discovered: true };
+    });
+    function item(data, kind, x, y, label, extra) {
+      data.interactables.push(Object.assign({ id: kind, kind: kind, x: x, y: y, r: 23,
+        label: label, used: false, active: true }, extra || {}));
+    }
+    function note(data, clue, x, y) {
+      var def = CHAPTER_NOTES[clue];
+      item(data, 'chapter-note', x, y, '查看' + def.title, {
+        id: 'chapter1-note-' + clue, clueId: clue, title: def.title, text: def.text
+      });
+    }
+    function guard(data, kind, x, y, name) {
+      var foe = enemy(s, kind, x, y); foe.name = name; data.enemies.push(foe); return foe;
+    }
+    s.rooms.forEach(function (room) {
+      var data = { walls: [], doors: [], portals: [], props: [], enemies: [], fires: [],
+        switches: [], pickups: [], fountains: [], interactables: [] };
+      addChapterRoutes(s, room, data, 'route-path-', function (to) { return routeGate(s, room.index, to); },
+        '检修通道', routeGateLabel(s, room.index, 6));
+      if (room.index === 0) {
+        data.walls.push(rect(346, 135, 120, 52), Object.assign(rect(625, 205, 160, 90), { id: 'route-car-body', routeCar: true }));
+        item(data, 'route-repairer', 530, 307, '问问陶铆接下来怎么走', {
+          description: '陶铆：上头的绞盘能放桥，下头货道也通。你们先去开闸，我守着车。'
+        });
+      } else if (room.index === 1) {
+        data.walls.push(rect(320, 365, 105, 55), rect(620, 125, 105, 55));
+        data.props.push(prop(s, 'crate', 710, 385));
+        guard(data, 'chaser', 545, 305, '夜班刀兵'); guard(data, 'shooter', 745, 210, '守桥枪兵');
+      } else if (room.index === 2) {
+        data.walls.push(rect(335, 230, 105, 65), rect(578, 120, 120, 55));
+        data.props.push(prop(s, 'crate', 560, 365));
+        guard(data, 'shooter', 742, 310, '栈道枪兵'); guard(data, 'chaser', 615, 405, '缆索巡兵');
+        note(data, 'route-shift', 380, 175);
+        item(data, 'route-supplies', 650, 402, '取用夜班留下的药包', { description: '全队恢复 2 点生命。' });
+      } else if (room.index === 3) {
+        data.walls.push(rect(350, 140, 110, 50), rect(660, 405, 90, 65),
+          Object.assign(rect(424, 496, 112, 76), { id: 'route-bridge-gap', routeGap: true }));
+        data.props.push(prop(s, 'barrel', 730, 230));
+        guard(data, 'shield', 565, 245, '绞盘护卫'); guard(data, 'chaser', 735, 325, '机房巡兵');
+        item(data, 'route-winch', 620, 342, '转动绞盘 · 升起栈桥', { description: '把断开的桥面拉回轨道。' });
+      } else if (room.index === 4) {
+        data.walls.push(rect(327, 175, 110, 70), rect(610, 395, 100, 55));
+        data.props.push(prop(s, 'barrel', 715, 215), prop(s, 'crate', 560, 390));
+        guard(data, 'charger', 625, 295, '废料撞兽'); guard(data, 'shooter', 770, 405, '坡道枪兵');
+      } else if (room.index === 5) {
+        data.walls.push(rect(315, 370, 105, 65), rect(705, 245, 95, 55),
+          Object.assign(rect(425, 130, 110, 50), { id: 'route-breach-wall', routeWall: true }));
+        data.props.push(prop(s, 'crate', 720, 400));
+        var breaker = guard(data, 'brute', 540, 320, '拆梁重工');
+        breaker.routeBreaker = true; breaker.elite = true; breaker.relicBuff = 'resonance'; breaker.attackCd = 1.4;
+      } else if (room.index === 6) {
+        data.walls.push(rect(330, 135, 100, 55), rect(535, 405, 125, 55));
+        guard(data, 'shooter', 765, 235, '调度枪兵'); guard(data, 'chaser', 600, 370, '回收巡兵');
+        note(data, 'route-order', 515, 235);
+        item(data, 'route-gate', 700, 340, '打开主轨闸', { active: false, description: '先看清调度板上的回收令。' });
+      } else {
+        data.walls.push(rect(365, 145, 125, 55), rect(540, 415, 105, 55));
+        item(data, 'route-signal', 665, 300, '点亮冷却站入口信号', { active: false,
+          description: '告诉陶铆路已接通，让救援车准备出发。' });
+      }
+      data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
+      s.roomData[room.index] = data;
+    });
+  }
+  function syncRouteChapter(s) {
+    var c = s.chapter, read = c.clues.indexOf('route-order') >= 0;
+    if (s.status === 'playing') c.phase = c.gateOpened ? 'signal' : read ? 'gate' :
+      c.bridgeRaised || c.wallBreached ? 'dispatch' : s.rooms[1].visited ? 'routes' : 'arrive';
+    s.mission.phase = c.phase; s.mission.progress = c.signalLit ? 1 : 0;
+    s.walls = s.walls.filter(function (wall) { return !(wall.routeGap && c.bridgeRaised || wall.routeWall && c.wallBreached); });
+    s.portals.forEach(function (q) { q.active = routeGate(s, s.room.index, q.target); });
+    s.doors.forEach(function (q) {
+      var gate = s.portals.find(function (p) { return 'door-' + p.direction === q.id; });
+      q.locked = !!gate && !gate.active;
+      q.label = q.locked ? routeGateLabel(s, s.room.index, gate.target) : '检修通道';
+    });
+    s.interactables.forEach(function (q) {
+      if (q.kind === 'chapter-note') {
+        q.used = c.clues.indexOf(q.clueId) >= 0;
+        q.active = !q.used && (q.clueId !== 'route-order' || c.bridgeRaised || c.wallBreached);
+      }
+      if (q.kind === 'route-winch') { q.used = c.bridgeRaised; q.active = !q.used; }
+      if (q.kind === 'route-gate') { q.used = c.gateOpened; q.active = read && !q.used; }
+      if (q.kind === 'route-signal') { q.used = c.signalLit; q.active = c.gateOpened && !q.used; }
+    });
+    if (s.railAlly) s.railAlly.task = c.signalLit ? 'done' : c.gateOpened ? 'signal' :
+      c.bridgeRaised || c.wallBreached ? 'dispatch' : 'route';
+  }
+  function interactRouteChapter(s, p, target) {
+    var c = s.chapter;
+    if (target.used || !target.active) return false;
+    if (target.kind === 'chapter-note') {
+      if (['route-shift', 'route-order'].indexOf(target.clueId) < 0) return false;
+      if (target.clueId === 'route-order' && !c.bridgeRaised && !c.wallBreached) return false;
+      c.clues.push(target.clueId);
+      event(s, 'chapter-note', { clueId: target.clueId, title: target.title, text: target.text,
+        playerId: p.id, x: target.x, y: target.y });
+      s.message = target.clueId === 'route-order' ? '阿禾：它们根本不知道车里有人……还有个大家伙在往棚里走。快开闸。' : target.text;
+    } else if (target.kind === 'route-repairer') {
+      s.message = '陶铆：上边绞盘能把桥拉起来。下边的重工也能砸开货道，就是别站它正前头。我守车，你们去开闸。';
+    } else if (target.kind === 'route-winch') {
+      c.bridgeRaised = true;
+      s.message = '阿禾：桥接上了！南边能过去，先去调度室。';
+      burst(s, 'spark', target.x, target.y, '#d4bf87', 12);
+    } else if (target.kind === 'route-gate') {
+      if (c.clues.indexOf('route-order') < 0 || !c.bridgeRaised && !c.wallBreached) return false;
+      c.gateOpened = true;
+      s.message = '主轨闸升起来了，岔口也能直接通行。去东边，把入口信号点亮。';
+      burst(s, 'spark', target.x, target.y, '#b4dbc9', 14);
+    } else if (target.kind === 'route-supplies') {
+      livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
+      burst(s, 'heal', target.x, target.y, '#8ce6b0', 12);
+      s.message = '药包还没受潮。全队恢复 2 点生命。';
+    } else if (target.kind === 'route-signal') {
+      if (!c.gateOpened) return false;
+      c.signalLit = true;
+      if (s.railAlly) s.railAlly.task = 'done';
+      target.used = true; target.active = false;
+      event(s, 'chapter-beacon', { playerId: p.id, x: target.x, y: target.y });
+      burst(s, 'heal', target.x, target.y, '#c8ead4', 18);
+      finish(s, 'won'); return true;
+    } else return false;
+    target.used = true; target.active = false;
+    if (target.kind !== 'chapter-note') event(s, 'interact', { playerId: p.id, x: target.x, y: target.y });
+    s.messageTime = target.kind === 'chapter-note' ? 8 : 6;
+    syncRouteChapter(s); setHint(s); return true;
+  }
+  function breakRouteWall(s, e) {
+    if (!isRouteChapter(s) || s.room.index !== 5 || s.chapter.wallBreached || !e.routeBreaker || e.hp <= 0) return false;
+    var wall = s.walls.find(function (q) { return q.id === 'route-breach-wall' && q.routeWall; });
+    if (!wall) return false;
+    s.chapter.wallBreached = true;
+    s.walls = s.walls.filter(function (q) { return q !== wall; });
+    burst(s, 'wood', 480, 155, '#c7aa79', 16);
+    event(s, 'wall-breached', { kind: 'breach', room: 5, enemyId: e.id, wallId: wall.id, x: 480, y: 155 });
+    s.message = '阿禾：墙开了！别和它耗，北边就是调度室。'; s.messageTime = 5;
     return true;
   }
   function createRelay(s) {
@@ -1369,7 +1538,7 @@
     var data = splitRoomData(s, index);
     SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (key) { s[key] = data[key]; });
     s.room = clone(s.rooms[index]);
-    if (data.scenePhase !== undefined) {
+    if (data.scenePhase !== undefined && !isRouteChapter(s)) {
       s.mission.phase = data.scenePhase;
       if (s.chapter) s.chapter.phase = data.scenePhase;
     }
@@ -1379,6 +1548,9 @@
     }
     var local = Object.keys(s.players).filter(function (key) { return s.playerRooms[key] === index; });
     s.travelCd = local.length ? Math.min.apply(null, local.map(function (key) { return s._split.cooldowns[key] || 0; })) : 0;
+    // Fourth-section switches and its story phase are shared. A cached room's
+    // old phase must not undo another player's bridge, breach or gate action.
+    if (isRouteChapter(s)) { syncRouteChapter(s); setHint(s); }
   }
   function splitPlayers(s, index) {
     var all = partyPlayers(s), local = {};
@@ -1398,6 +1570,7 @@
         (!previous.neighbors || previous.neighbors.indexOf(index) < 0)) return false;
     if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && !s.chapter.sluiceOpen) return false;
     if (isTimber(s) && !timberGate(s, from, index)) return false;
+    if (isRouteChapter(s) && !routeGate(s, from, index)) return false;
     return !isRailChapter(s) || railGate(s, from, index);
   }
   function moveSplitPlayer(s, key, index, initial) {
@@ -1451,7 +1624,8 @@
     var ally = s.railAlly, split = s._split;
     if (!ally || ally.downed || ally.railStun > 0 || !s.rooms[index] || s.status !== 'playing') return false;
     var from = ally.roomIndex, previous = s.rooms[from];
-    if (!previous.neighbors || previous.neighbors.indexOf(index) < 0 || !railGate(s, from, index)) return false;
+    if (!previous.neighbors || previous.neighbors.indexOf(index) < 0 ||
+        (isRouteChapter(s) ? !routeGate(s, from, index) : !railGate(s, from, index))) return false;
     s.players = splitPlayers(s, from);
     s.companions = (split.allCompanions || s.companions).filter(function (fox) { return s.playerRooms[fox.ownerId] === from; });
     selectSplitScene(s, from); cacheSplitScene(s);
@@ -1512,7 +1686,7 @@
     if (s.playerCount < 2) {
       var remaining = Object.keys(s.players)[0];
       if (remaining) selectSplitScene(s, s.playerRooms[remaining]);
-      if (remaining === 'p1' && isRailChapter(s)) {
+      if (remaining === 'p1' && chapterAllySection(s)) {
         if (s.status === 'playing') placeRailAlly(s);
         cacheSplitScene(s);
         split.displayTravelCd = s.travelCd;
@@ -1534,14 +1708,24 @@
     view.travelCd = s._split ? s._split.cooldowns[key] || 0 : s.travelCd;
     view.companions = s.companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
     view.mission = Object.assign({}, s.mission);
-    if (data && data.scenePhase !== undefined) view.mission.phase = data.scenePhase;
+    if (data && data.scenePhase !== undefined && !isRouteChapter(s)) view.mission.phase = data.scenePhase;
     if (s.chapter) {
       view.chapter = Object.assign({}, s.chapter);
-      if (data && data.scenePhase !== undefined) view.chapter.phase = data.scenePhase;
+      if (data && data.scenePhase !== undefined && !isRouteChapter(s)) view.chapter.phase = data.scenePhase;
       if (isRailChapter(s) && data) {
         view.chapter.railPower = data.railPulse ? data.railPulse.power : 0;
         view.chapter.railCooldown = data.railPulse ? data.railPulse.cooldown : 0;
       }
+    }
+    if (isRouteChapter(s)) {
+      // Project the shared mechanism flags into this room without mutating its
+      // cached arrays or the live ally while constructing a read-only view.
+      view.walls = view.walls.slice();
+      view.portals = view.portals.map(function (item) { return Object.assign({}, item); });
+      view.doors = view.doors.map(function (item) { return Object.assign({}, item); });
+      view.interactables = view.interactables.map(function (item) { return Object.assign({}, item); });
+      if (view.railAlly) view.railAlly = Object.assign({}, view.railAlly);
+      syncRouteChapter(view); setHint(view);
     }
     if (s.hunt) {
       view.hunt = Object.assign({}, s.hunt);
@@ -1567,6 +1751,7 @@
       if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && !s.chapter.sluiceOpen) return false;
       if (isTimber(s) && !timberGate(s, previous.index, index)) return false;
       if (isRailChapter(s) && !railGate(s, previous.index, index)) return false;
+      if (isRouteChapter(s) && !routeGate(s, previous.index, index)) return false;
       // A carried object belongs to its original room. Place it safely before
       // saving, rather than duplicating it at the next room's entrance.
       var carriers = Object.keys(s.players).map(function (key) { return s.players[key]; }).filter(function (p) { return p.carry; });
@@ -1635,7 +1820,8 @@
     event(s, 'room-enter', { room: index, name: s.room.name });
     s.message = s.room.name; s.messageTime = 2;
     if (s.mode === 'chapter' && initial) {
-      s.message = isRailChapter(s) ? s.railAlly ? '阿禾：我去北边工棚看看。你沿轨道找陶铆，咱们在维修站台碰头。' : '阿禾：就是这条旧线。车辙还新，顺着找。' :
+      s.message = isRouteChapter(s) ? '陶铆：车在棚里还能凉一会儿。你们先去开路，我看着他们。' :
+        isRailChapter(s) ? s.railAlly ? '阿禾：我去北边工棚看看。你沿轨道找陶铆，咱们在维修站台碰头。' : '阿禾：就是这条旧线。车辙还新，顺着找。' :
         isTimber(s) ? '阿禾：灯还在闪。先进去找人，听见敲铁管就回应一声。' : '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。';
       s.messageTime = 8;
     }
@@ -1730,11 +1916,11 @@
   }
   function placeRailAlly(s) {
     var owner = s.players.p1;
-    if (!isRailChapter(s) || !owner || s.playerCount !== 1) return;
+    if (!chapterAllySection(s) || !owner || s.playerCount !== 1) return;
     if (s.railAlly && s.playerRooms) return;
     var ally = s.railAlly || player('rail-ally', 1, 'pistol', 'pistol', 'blade');
     Object.assign(ally, { name: '阿禾', x: owner.x, y: owner.y,
-      roomIndex: s.room.index, task: s._split && s._split.allyTask || ally.task || 'investigate', travelCd: 0.9,
+      roomIndex: s.room.index, task: s._split && s._split.allyTask || ally.task || (isRouteChapter(s) ? 'route' : 'investigate'), travelCd: 0.9,
       facing: owner.facing, travelFacing: owner.facing, moving: false,
       mode: ally.downed ? 'downed' : ally.railStun > 0 ? 'stunned' : 'follow',
       attackTime: 0, evadeTime: 0, fireCd: 0.35, evadeX: 0, evadeY: 0,
@@ -1784,6 +1970,7 @@
     var best = Infinity, target = null;
     s.enemies.forEach(function (enemy) {
       if (enemy.hp <= 0 || enemy.railGuard && enemy.hp <= 1) return;
+      if (isRouteChapter(s) && enemy.routeBreaker && !s.chapter.wallBreached) return;
       var gap = dist(ally, enemy);
       if (gap > 465) return;
       var score = gap + (foxSight(s, ally, enemy, 4) ? 0 : 95) - (enemy.weakTime > 0 ? 60 : 0);
@@ -1829,6 +2016,16 @@
   }
   function railAllyMissionGoal(s, ally) {
     var c = s.chapter;
+    if (isRouteChapter(s)) {
+      var owner = partyPlayers(s).p1;
+      var direction = owner.moving ? Math.atan2(owner.vy, owner.vx) : owner.facing;
+      var goal = { roomIndex: s.playerRooms.p1, x: owner.x - Math.cos(direction) * 65,
+        y: owner.y - Math.sin(direction) * 65, combat: true };
+      if (goal.roomIndex === ally.roomIndex && collides(s, goal.x, goal.y, ally.r, ally.id, false)) {
+        goal.x = owner.x; goal.y = owner.y;
+      }
+      return goal;
+    }
     if (ally.task === 'investigate') {
       var note = ally.roomIndex === 5 && s.interactables.find(function (q) { return q.clueId === 'rail-order'; });
       if (note && dist(ally, note) < 68 && foxSight(s, ally, note, 3)) {
@@ -1875,7 +2072,7 @@
         return index === from ? null : index;
       }
       s.rooms[index].neighbors.forEach(function (next) {
-        if (previous[next] !== undefined || !railGate(s, index, next)) return;
+        if (previous[next] !== undefined || (isRouteChapter(s) ? !routeGate(s, index, next) : !railGate(s, index, next))) return;
         previous[next] = index; queue.push(next);
       });
     }
@@ -1892,7 +2089,7 @@
     ally.moving = false; ally.vx = 0; ally.vy = 0;
     if (ally.downed || ally.railStun > 0) { ally.mode = ally.downed ? 'downed' : 'stunned'; return; }
     var rush = s.enemies.find(function (e) {
-      return e.hp > 0 && e.railGuard && e.rhythm && e.rhythm.type === 'rush' &&
+      return e.hp > 0 && (e.railGuard || isRouteChapter(s) && e.routeBreaker) && e.rhythm && e.rhythm.type === 'rush' &&
         (e.rhythm.phase === 'windup' || e.chargeTime > 0);
     });
     if (rush && ally.dashCd <= 0 && ally.evadeTime <= 0 &&
@@ -1925,6 +2122,7 @@
       }
     }
     var target = railAllyTarget(s, ally);
+    if (isRouteChapter(s) && (dist(ally, owner) > 270 || s.playerRooms.p1 !== ally.roomIndex)) goal.combat = false;
     var range = target ? dist(ally, target) : 0;
     var line = target && foxSight(s, ally, target, 4);
     if (line && range <= 306 && range > target.r + 23 && ally.fireCd <= 0) shootRailAlly(s, ally, target);
@@ -2054,6 +2252,12 @@
     if (s.status !== 'playing') return;
     if (s.practice) { s.objective = '击败持刀守卫'; s.hint = ''; return; }
     if (s.mode === 'chapter') {
+      if (isRouteChapter(s)) {
+        s.objective = s.chapter.gateOpened ? '前往冷却站入口 · 点亮信号' : s.chapter.clues.indexOf('route-order') >= 0 ?
+          '从调度室内侧打开主轨闸' : s.chapter.bridgeRaised || s.chapter.wallBreached ?
+          '前往旧线调度室 · 查看回收令' : '绕过断桥 · 上层升桥，或下层诱敌破墙';
+        s.hint = ''; return;
+      }
       if (isTimber(s)) { s.objective = s.chapter.bossDefeated ? '返回信号岗 · 接应工人回营' : s.chapter.workerFreed ? '让吊木守卫停下来 · 木车能卡住吊钩' : s.chapter.cart.position >= .99 ? '穿过料门 · 救出塌棚工人' : '进入吊装场 · 拉开挡路木车'; s.hint = ''; return; }
       if (isRailChapter(s)) {
         s.objective = s.chapter.bossDefeated ? '穿过拨道场 · 接应救援车' :
@@ -2458,9 +2662,11 @@
       event(s, 'reward', clone(s.reward));
       s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
       if (s.mode === 'chapter') {
-        s.message = isRailChapter(s) ? '陶铆：伤员还撑得住，炉火也没断。坏在前面，那截轨已经塌了。' :
+        s.message = isRouteChapter(s) ? '信号亮起，轨道通了。维修棚的方向传来一声沉重的金属拖响。阿禾：快通知陶铆，得走了。' :
+          isRailChapter(s) ? '陶铆：伤员还撑得住，炉火也没断。坏在前面，那截轨已经塌了。' :
           isTimber(s) ? '工人回到灯下，终于松了口气：“你们也在找炉芯？那晚有人借了辆重车，走的西边旧线。”' : '归途灯重新亮起，采集队循着灯光回到了营地。旧线路里，另一座废弃哨站传来微弱的求援声。';
-        s.objective = isRailChapter(s) ? '第三节完成 · 已接应救援车' :
+        s.objective = isRouteChapter(s) ? '第四节完成 · 通往冷却站的轨道已接通' :
+          isRailChapter(s) ? '第三节完成 · 已接应救援车' :
           isTimber(s) ? '第二节完成 · 木场工人已安全回营' : '第一节完成 · 今夜的归路重新亮起';
       }
     } else if (status === 'lost') {
@@ -2618,6 +2824,7 @@
       if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
       if (isTimber(s) && target.kind.indexOf('timber-') === 0) return interactTimber(s, p, target);
       if (isRailChapter(s) && target.kind.indexOf('rail-') === 0) return interactRailChapter(s, p, target);
+      if (isRouteChapter(s) && target.kind.indexOf('route-') === 0) return interactRouteChapter(s, p, target);
       if (target.kind === 'refuge-rest' || target.kind === 'refuge-relic') return chooseRefuge(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
@@ -3055,6 +3262,21 @@
     particle(s, 'counter', p.x, p.y, { r: 45, ttl: 0.3, life: 0.3, color: '#bfffee' });
   }
   function breachWallInReach(s, e) {
+    if (isRouteChapter(s)) {
+      if (s.room.index !== 5 || s.chapter.wallBreached || !e.routeBreaker || e.kind !== 'brute' || !e.elite || e.hp <= 0) return null;
+      var cracked = s.walls.find(function (w) { return w.id === 'route-breach-wall' && w.routeWall; });
+      if (!cracked) return null;
+      var contact = { x: clamp(e.x, cracked.x, cracked.x + cracked.w), y: clamp(e.y, cracked.y, cracked.y + cracked.h) };
+      var gap = dist(e, contact), samples = Math.max(1, Math.ceil(gap / 4));
+      if (gap > 180) return null;
+      for (var n = 0; n <= samples; n += 1) {
+        var probe = { x: e.x + (contact.x - e.x) * n / samples, y: e.y + (contact.y - e.y) * n / samples, r: 2 };
+        if (s.walls.some(function (w) { return w !== cracked && circleRect(probe, w); }) ||
+            s.doors.some(function (door) { return door.locked && circleRect(probe, door); }) ||
+            s.props.some(function (q) { return solidProp(q) && dist(probe, q) < q.r + probe.r; })) return null;
+      }
+      return cracked;
+    }
     var state = s.roomEvent;
     if (s.mode !== 'random' || !state || state.kind !== 'breach' || state.stage !== 'ready' ||
         state.guardianId !== e.id || e.kind !== 'brute' || !e.elite || e.hp <= 0) return null;
@@ -3076,6 +3298,7 @@
   function breachFromQuake(s, e) {
     var wall = breachWallInReach(s, e);
     if (!wall) return;
+    if (isRouteChapter(s)) { breakRouteWall(s, e); return; }
     s.walls = s.walls.filter(function (candidate) { return candidate !== wall; });
     s.roomEvent.stage = 'complete';
     s.interactables.forEach(function (q) { if (q.kind === 'breach-cache' && !q.used) q.active = true; });
@@ -3188,6 +3411,10 @@
           burst(s, 'wood', pillar.x + pillar.w / 2, pillar.y + pillar.h / 2, '#d4b484', 16);
           return pillar.id;
         }
+      }
+      if (wall && isRouteChapter(s) && e.routeBreaker) {
+        var impact = { x: e.x + dx, y: e.y + dy, r: e.r };
+        if (s.walls.some(function (w) { return w.id === 'route-breach-wall' && w.routeWall && circleRect(impact, w); }) && breakRouteWall(s, e)) return true;
       }
       var block = !wall && s.props.find(function (q) {
         return solidProp(q) && !q.thrown && len(q.x - e.x - dx, q.y - e.y - dy) < q.r + e.r - 1;

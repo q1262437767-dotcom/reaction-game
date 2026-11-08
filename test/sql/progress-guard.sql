@@ -90,6 +90,7 @@ declare
   v_base jsonb;
   v_next jsonb;
   v_third jsonb;
+  v_fourth jsonb;
 begin
   v_def := pg_get_functiondef('ruins_private.reject_ruins_progress_jump(jsonb,jsonb)'::regprocedure);
   if position('v_run_delta > 480' in v_def) = 0 or position('progress_rejected' in v_def) = 0 then
@@ -260,6 +261,71 @@ begin
   select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 3);
   if v_row.revision is distinct from 4 or v_row.profile is distinct from v_next then
     raise exception 'mixed third-section and richest story win was rejected';
+  end if;
+
+  -- The fourth section uses the same v2 shape and permits co-op guests with
+  -- no earlier chapter records. Its own new clears explain exactly 70 coins.
+  perform set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa5', true);
+  v_base := pg_temp.profile(
+    0, 0, 0, false, '[]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  perform ruins_private.save_ruins_profile_impl(v_base, 0);
+  v_fourth := pg_temp.mission(1, 0, 48);
+  v_next := pg_temp.profile(
+    70, 1, 1, false, '["fourth"]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  v_next := jsonb_set(v_next, '{missions,chapter1_4}', v_fourth);
+  perform pg_temp.expect_rejected(jsonb_set(v_next, '{coins}', '71'::jsonb), 1, 'fourth section coin ceiling');
+  perform pg_temp.expect_rejected(
+    jsonb_set(jsonb_set(v_next, '{wins}', '0'::jsonb), '{coins}', '0'::jsonb),
+    1, 'fourth section clear without a win');
+  begin
+    perform ruins_private.save_ruins_profile_impl(jsonb_set(v_next, '{missions,chapter1_4,hardClears}', '1'::jsonb), 1);
+    raise exception 'fourth section accepted a hard clear';
+  exception when sqlstate '22023' then
+    if sqlerrm is distinct from 'invalid_profile' then
+      raise exception 'fourth section hard clear returned %', sqlerrm;
+    end if;
+  end;
+  begin
+    perform ruins_private.save_ruins_profile_impl(jsonb_set(v_next, '{missions,chapter1_5}', pg_temp.zero_mission()), 1);
+    raise exception 'shape accepted an unknown chapter key';
+  exception when sqlstate '22023' then
+    if sqlerrm is distinct from 'invalid_profile' then
+      raise exception 'unknown chapter key returned %', sqlerrm;
+    end if;
+  end;
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 1);
+  if v_row.revision is distinct from 2
+     or v_row.profile#>'{missions,chapter1_4}' is distinct from v_fourth
+     or v_row.profile->'missions' ? 'chapter1_3' then
+    raise exception 'fourth section co-op clear did not persist independently';
+  end if;
+  -- Old clients omit this key entirely; they must retain the cloud record.
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next #- '{missions,chapter1_4}', 2);
+  if v_row.revision is distinct from 3 or v_row.profile#>'{missions,chapter1_4}' is distinct from v_fourth then
+    raise exception 'legacy save lost the fourth section record';
+  end if;
+  perform pg_temp.expect_rejected(
+    jsonb_set(v_next, '{missions,chapter1_4}', pg_temp.zero_mission()), 3, 'fourth section regression');
+  perform pg_temp.expect_rejected(
+    jsonb_set(v_next, '{missions,chapter1_4,bestTime}', '49'::jsonb), 3, 'fourth section worse time');
+  perform pg_temp.expect_rejected(jsonb_set(v_next, '{coins}', '100000'::jsonb), 3, 'fourth section coin spike');
+
+  -- A mixed offline batch explains 70 + 60 + 72 additional coins. The richer
+  -- story ceiling must not accidentally apply to either new chapter record.
+  v_next := pg_temp.profile(
+    272, 4, 4, false, '["fourth","fourth-again","third","ember-hard"]'::jsonb,
+    pg_temp.mission(1, 1, 25), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  v_next := jsonb_set(v_next, '{missions,chapter1_4}', pg_temp.mission(2, 0, 45));
+  v_next := jsonb_set(v_next, '{missions,chapter1_3}', pg_temp.mission(1, 0, 40));
+  perform pg_temp.expect_rejected(jsonb_set(v_next, '{coins}', '273'::jsonb), 3, 'mixed fourth third and story coin ceiling');
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 3);
+  if v_row.revision is distinct from 4 or v_row.profile is distinct from v_next then
+    raise exception 'mixed fourth-third-story batch was rejected';
   end if;
 end;
 $$;

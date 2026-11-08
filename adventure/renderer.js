@@ -26,7 +26,7 @@
   function teammateInRoom(state, index) {
     if (index === state.room?.index) return false;
     return (!!state.playerRooms && Object.entries(state.playerRooms).some(([id, room]) => state.players?.[id] && room === index)) ||
-      (railChapter(state) && state.railAlly?.roomIndex === index);
+      ((railChapter(state) || routeChapter(state)) && state.railAlly?.roomIndex === index);
   }
   const rect = (c, x, y, w, h, color) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   function seedRandom(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -94,6 +94,140 @@
   }
   function railChapter(state) {
     return state?.mode === 'chapter' && state.chapter?.id === 'chapter1_3';
+  }
+  function routeChapter(state) {
+    return state?.mode === 'chapter' && state.chapter?.id === 'chapter1_4';
+  }
+  function routeTrack(c, start, end, y, broken = false) {
+    for (let x = start + 6; x < end - 3; x += 24) {
+      rect(c, x, y - 18, 9, 37, '#253238'); rect(c, x + 1, y - 17, 7, 33, '#675b48');
+      rect(c, x + 2, y - 15, 2, 29, '#9b7f5670');
+      for (const dy of [-11, 10]) rect(c, x + 2, y + dy, 4, 3, '#b2a074');
+    }
+    for (const dy of [-11, 10]) {
+      rect(c, start, y + dy, end - start, 5, '#1d2e35');
+      rect(c, start, y + dy, end - start, 2, '#9a987e');
+      rect(c, start + 2, y + dy + 2, end - start - 2, 1, '#687b7a');
+      if (broken) path(c, [[end - 2, y + dy + 1], [end + 8, y + dy - 2], [end + 16, y + dy + 5]], '#ab936a', 3);
+    }
+  }
+  function routeBridge(c, x, y, width, height, raised) {
+    rect(c, x, y, width, height, '#14262e');
+    rect(c, x + 7, y + 5, width - 14, height - 5, '#0d2029');
+    for (const side of [0, 1]) {
+      const bx = x + side * (width - 9);
+      rect(c, bx, y, 9, height, '#485657'); rect(c, bx + 1, y, 2, height, '#b2a17d');
+      for (let at = y + 7; at < y + height; at += 20) rect(c, bx + 3, at, 3, 3, '#cdb78a');
+    }
+    if (raised) {
+      for (let at = y + 3; at < y + height; at += 13) {
+        rect(c, x + 10, at, width - 20, 11, '#716951');
+        rect(c, x + 11, at, width - 22, 2, '#b5a17a');
+        rect(c, x + 13, at + 7, width - 26, 2, '#4c5147');
+        for (const bolt of [x + 16, x + width - 19]) rect(c, bolt, at + 3, 3, 3, '#c3bd93');
+      }
+      for (const bx of [x + 19, x + width - 22]) { rect(c, bx, y, 3, height, '#9b967b'); rect(c, bx, y, 1, height, '#d0c39a'); }
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const bx = x + 12 + i * 17, length = 8 + i % 3 * 7;
+        rect(c, bx, y, 13, length, '#68624c'); rect(c, bx + 1, y, 2, length, '#b29a70');
+        path(c, [[bx + 2, y + length], [bx + 7, y + length - 5], [bx + 12, y + length + 1]], '#182c31', 2);
+      }
+      path(c, [[x + 18, y + 13], [x + 30, y + 36], [x + 22, y + height]], '#6b7c79', 2);
+      path(c, [[x + width - 19, y + 11], [x + width - 31, y + 41], [x + width - 21, y + height]], '#8d8d71', 2);
+      rect(c, x + 12, y + height - 6, width - 24, 6, '#615d49');
+    }
+    for (const bx of [x - 5, x + width - 3]) { rect(c, bx, y - 4, 8, 13, '#263b40'); rect(c, bx + 1, y - 5, 6, 3, '#c5a56f'); }
+  }
+  function routeRubble(c, x, y) {
+    for (const side of [-1, 1]) for (let i = 0; i < 6; i++) {
+      const px = x + side * (43 + i * 4), py = y + 6 + (i % 3) * 9;
+      rect(c, px - 6, py + 3, 13 - i % 3, 6, '#172b30');
+      rect(c, px - 6, py, 10 + i % 3, 7, '#6d7060');
+      rect(c, px - 5, py, 8, 2, '#b3a17e');
+    }
+    for (const [dx, dy] of [[-21, 11], [22, 32], [-13, 40], [15, 9]]) rect(c, x + dx, y + dy, 4, 2, '#a9966a78');
+  }
+  function routeFloor(c, state, time, still) {
+    const index = state.room.index, run = state.chapter;
+    const lower = index === 4 || index === 5;
+    rect(c, 29, 29, 902, 542, lower ? '#3d403b' : index === 7 ? '#2b4249' : '#2c4046');
+    for (let y = 40; y < 570; y += 44) for (let x = 40 + (y % 88 ? 0 : 30); x < 925; x += 60) {
+      rect(c, x, y, 57, 41, lower ? '#4f4e4238' : '#60736e13');
+      rect(c, x + 2, y + 39, 53, 1, '#142c3380'); rect(c, x + 56, y + 3, 1, 35, '#172f3459');
+      if ((x + y) % 4 === 0) rect(c, x + 7, y + 5, 11, 1, lower ? '#9e875530' : '#a4aa8122');
+    }
+    for (const y of [70, 533]) {
+      rect(c, 68, y, 824, 5, '#1c3138'); rect(c, 68, y, 824, 1, '#87937c55');
+      for (let x = 87; x < 883; x += 58) { rect(c, x, y - 2, 6, 9, '#54605a'); rect(c, x + 1, y - 1, 2, 2, '#b89d6c'); }
+    }
+    if (index === 0) {
+      routeTrack(c, 80, 887, 286);
+      rect(c, 118, 88, 171, 75, '#424a40'); rect(c, 124, 94, 159, 63, '#75695035');
+      for (let x = 132; x < 280; x += 19) rect(c, x, 96, 2, 58, '#a18c5a32');
+      for (let i = 0; i < 3; i++) { ellipse(c, 186, 438, 29 - i * 6, 14 - i * 3, '#94836344'); }
+      path(c, [[214, 438], [237, 454], [270, 454]], '#96856166', 3);
+    } else if (index === 1) {
+      routeTrack(c, 74, run.gateOpened ? 887 : 537, 301, !run.gateOpened);
+      if (!run.gateOpened) {
+        routeTrack(c, 665, 885, 301);
+        path(c, [[550, 287], [572, 307], [611, 307]], '#8f82624a', 3);
+        for (let i = 0; i < 6; i++) rect(c, 558 + i * 15, 297 + (i % 3) * 10, 9, 3, '#ad98794a');
+      }
+      for (const sign of [{ x: 382, y: 119, dy: -1 }, { x: 382, y: 457, dy: 1 }]) {
+        path(c, [[sign.x - 9, sign.y + sign.dy * 8], [sign.x, sign.y], [sign.x + 9, sign.y + sign.dy * 8]], '#b3a27f70', 3);
+      }
+    } else if (index === 2 || index === 3) {
+      for (const x of [119, 835]) {
+        rect(c, x, 105, 7, 375, '#21343b'); rect(c, x + 1, 105, 2, 375, '#9c916c63');
+        for (let y = 113; y < 470; y += 26) rect(c, x - 2, y, 11, 3, '#7a817166');
+      }
+      if (index === 3) {
+        const machine = values(state.interactables).find(item => item.kind === 'route-winch');
+        if (machine) for (const side of [-1, 1]) {
+          const at = 480 + side * 53;
+          path(c, [[machine.x + side * 20, machine.y + 8], [at, 444], [at, 501]], '#142d35', 5);
+          path(c, [[machine.x + side * 20, machine.y + 8], [at, 444], [at, 501]], run.bridgeRaised ? '#b4ab84' : '#7a8675', 2);
+        }
+        if (run.bridgeRaised) routeBridge(c, 424, 496, 112, 76, true);
+      } else {
+        for (let i = 0; i < 4; i++) {
+          c.strokeStyle = '#9b8b6455'; c.lineWidth = 2; c.beginPath(); c.ellipse(196, 178, 28 - i * 5, 14 - i * 2, .2, 0, Math.PI * 2); c.stroke();
+        }
+        path(c, [[216, 186], [244, 202], [262, 200]], '#92876966', 3);
+      }
+    } else if (lower) {
+      for (let y = 105; y < 505; y += 26) {
+        const dx = index === 4 ? (y - 105) * .13 : 0;
+        path(c, [[217 + dx, y], [246 + dx, y + 11], [275 + dx, y]], '#9b8b6255', 2);
+      }
+      for (const [x, y] of [[126, 126], [777, 142], [154, 465], [808, 473]]) {
+        for (let i = 0; i < 4; i++) {
+          const dx = i * 14;
+          rect(c, x + dx, y + i % 2 * 9, 24, 5, '#293b39'); rect(c, x + dx, y + i % 2 * 9, 24, 1, '#b0986560');
+        }
+      }
+      if (index === 5 && run.wallBreached) routeRubble(c, 480, 151);
+    } else if (index === 6) {
+      routeTrack(c, 72, 889, 299);
+      for (const y of [86, 498]) {
+        rect(c, 286, y, 388, 17, '#1b3038'); rect(c, 289, y + 2, 382, 3, '#6f8074');
+        for (let x = 306; x < 655; x += 27) { rect(c, x, y + 6, 17, 5, '#3c5758'); rect(c, x + 3, y + 7, 4, 2, run.gateOpened ? '#c3d1a0' : '#a58a63'); }
+      }
+      for (const x of [172, 784]) { rect(c, x, 148, 5, 103, '#23373c'); rect(c, x + 1, 149, 2, 100, '#948b663f'); }
+    } else if (index === 7) {
+      routeTrack(c, 76, 551, 301);
+      for (const x of [147, 799]) {
+        rect(c, x, 119, 16, 337, '#152f3a'); rect(c, x + 2, 119, 11, 337, '#557e85'); rect(c, x + 4, 119, 3, 337, '#9ab6aa60');
+        for (let y = 130; y < 447; y += 31) { rect(c, x - 3, y, 22, 7, '#526b70'); rect(c, x - 2, y, 20, 2, '#b2ac88'); }
+      }
+      for (let i = 0; i < 7; i++) {
+        const y = 113 + i * 54, offset = still ? 0 : Math.floor(time * .008) % 22;
+        rect(c, 165, y, 625, 3, '#5c929341');
+        for (let x = 180 + offset; x < 780; x += 59) rect(c, x, y, 13, 1, '#b5d1bd39');
+      }
+      glow(c, 666, 280, 191, run.signalLit ? '#a3ddbd16' : '#578d9c10');
+    }
   }
   function railFloor(c, state, time, still) {
     const index = state.room.index;
@@ -167,6 +301,7 @@
   }
   function chapterFloor(c, state, time, still) {
     if (state.mode !== 'chapter') return;
+    if (routeChapter(state)) { routeFloor(c, state, time, still); return; }
     if (railChapter(state)) { railFloor(c, state, time, still); return; }
     const index = num(state.room && state.room.index), run = state.chapter || {};
     // Recessed copper conduits and cooling channels belong to the floor; their
@@ -231,6 +366,10 @@
   }
   function wall(c, w, openingPillar = false) {
     const x = num(w.x), y = num(w.y), width = num(w.w ?? w.width, 32), height = num(w.h ?? w.height, 32);
+    if (w.routeGap === true) { routeBridge(c, x, y, width, height, false); return; }
+    // The parked rescue cart is painted with the actors; its collision body
+    // must not acquire a second masonry sprite underneath it.
+    if (w.routeCar === true) return;
     // Beveled cap, recessed masonry and contact shade share the exact existing
     // ground footprint. Surface wear never invents a new piece of cover.
     rect(c, x + 4, y + 7, width, height, '#0d2029a0');
@@ -262,6 +401,16 @@
       rect(c, bx + 2, y + 7, 2, 2, '#c1ac7a'); rect(c, bx + 2, y + 13, 2, 2, '#78817a');
     }
     if (w.corePillar === true) corePillarFace(c, x, y, width, height, openingPillar);
+    if (w.routeWall === true) {
+      const crack = [[x + width * .42, y + 3], [x + width * .53, y + 14], [x + width * .43, y + 23], [x + width * .57, y + 34], [x + width * .49, y + height - 2]];
+      path(c, crack.map(([px, py]) => [px + 2, py]), '#d0aa72', 3);
+      path(c, crack, '#132b32', 5);
+      path(c, [[x + width * .53, y + 14], [x + width * .74, y + 17], [x + width * .85, y + 10]], '#172f34', 3);
+      path(c, [[x + width * .43, y + 23], [x + width * .24, y + 29], [x + width * .15, y + 41]], '#172f34', 3);
+      for (const side of [x + 5, x + width - 11]) for (let at = y + 4; at < y + height - 4; at += 13) {
+        rect(c, side, at, 6, 8, '#b09b6b'); rect(c, side, at + 4, 6, 4, '#3d4744');
+      }
+    }
   }
 
   function corePillarFace(c, x, y, width, height, openingPillar) {
@@ -561,12 +710,86 @@
     }
     if (nearby && active) label(c, 'E · ' + item.label, x, y + (kind === 'rail-car' ? 45 : 27), '#eed6a3', 10);
   }
+  function routeInteractable(c, item, time, state, localId, still) {
+    const x = num(item.x), y = num(item.y), run = state.chapter, kind = item.kind;
+    const p = state.players?.[localId], nearby = p && playerInRoom(state, localId) && !p.downed &&
+      Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
+    const finished = kind === 'route-winch' && run.bridgeRaised || kind === 'route-gate' && run.gateOpened || kind === 'route-signal' && run.signalLit;
+    const active = item.active !== false && !item.used && !finished;
+    if (kind === 'route-repairer') {
+      railInteractable(c, { ...item, kind: 'rail-repairer' }, still ? 0 : time, state, localId, still);
+      return;
+    }
+    if (kind === 'route-supplies') {
+      chapterInteractable(c, { ...item, kind: 'chapter-supplies' }, time,
+        { ...state, chapter: { suppliesTaken: !!item.used } }, localId, still);
+      return;
+    }
+    time = still ? 0 : time;
+    shadow(c, x, y, kind === 'route-winch' ? 49 : kind === 'route-gate' ? 37 : 28, .35);
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    if (kind === 'route-winch') {
+      const raised = !!run.bridgeRaised;
+      rect(c, -47, 2, 94, 17, '#243940'); rect(c, -43, 0, 86, 6, '#9a906d');
+      for (const dx of [-34, 29]) {
+        rect(c, dx, -48, 7, 56, '#3e5356'); rect(c, dx + 1, -48, 2, 52, '#ac9e79');
+        rect(c, dx - 3, -51, 13, 6, '#8b8d76');
+      }
+      rect(c, -29, -31, 58, 27, '#6f6f58');
+      for (let dx = -26; dx < 28; dx += 5) { rect(c, dx, -31, 3, 27, '#b1a17b'); rect(c, dx, -26, 1, 17, '#d5c294'); }
+      for (const dx of [-32, 27]) { rect(c, dx, -36, 5, 36, '#2d4348'); rect(c, dx + 1, -35, 2, 33, '#aaa684'); }
+      rect(c, -8, -7, 16, 14, '#3a5052'); rect(c, -6, -8, 12, 3, '#b7a577');
+      const wheelX = -38, wheelY = -20;
+      c.save(); c.translate(wheelX, wheelY); c.rotate(raised ? Math.PI / 4 : -.18);
+      c.strokeStyle = '#142d35'; c.lineWidth = 7; c.beginPath(); c.arc(0, 0, 19, 0, Math.PI * 2); c.stroke();
+      c.strokeStyle = raised ? '#b7ccb0' : '#d2af77'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, 19, 0, Math.PI * 2); c.stroke();
+      for (let i = 0; i < 5; i++) { const a = i * Math.PI * 2 / 5; path(c, [[Math.cos(a) * 4, Math.sin(a) * 4], [Math.cos(a) * 17, Math.sin(a) * 17]], raised ? '#b7ccb0' : '#bf9c65', 3); }
+      rect(c, -4, -4, 8, 8, '#e5cc95'); c.restore();
+      path(c, [[27, -9], [42, -18], [49, -13]], '#9b8a69', 3);
+      rect(c, 24, -50, 11, 7, raised ? '#c4ddba' : '#c3905e');
+      if (raised) path(c, [[29, -58], [34, -53], [43, -65]], '#d0e0bd', 2);
+    } else if (kind === 'route-gate') {
+      const opened = !!run.gateOpened;
+      rect(c, -30, 0, 60, 18, '#2b4147'); rect(c, -34, -4, 68, 8, '#9a987c');
+      rect(c, -28, -56, 56, 52, '#253c43'); rect(c, -26, -56, 52, 4, '#a2a584');
+      rect(c, -22, -49, 44, 27, '#657c73'); rect(c, -19, -46, 38, 21, '#1a333a');
+      path(c, [[-15, -35], [-4, -35], [2, -41], [15, -41]], opened ? '#c2d8ac' : '#d3ad73', 2);
+      path(c, [[-4, -35], [3, -29], [15, -29]], opened ? '#c2d8ac' : '#6d8173', 2);
+      for (const dx of [-16, 0, 16]) rect(c, dx - 2, -17, 5, 3, opened ? '#b9dfb7' : dx ? '#827c5c' : '#d7aa6a');
+      path(c, [[-6, -4], [opened ? 11 : -15, -21]], '#172e36', 7);
+      path(c, [[-6, -4], [opened ? 11 : -15, -21]], '#be9d67', 3);
+      ellipse(c, opened ? 11 : -15, -21, 5, 3, '#d3b583');
+      for (const side of [-1, 1]) { rect(c, side * 24 - 2, -44, 4, 32, '#8a997f'); rect(c, side * 24 - 1, -43, 1, 28, '#c2c3a0'); }
+      if (opened) glow(c, 2, -36, 50, '#b4d8aa20');
+    } else if (kind === 'route-signal') {
+      const lit = !!run.signalLit;
+      ellipse(c, 0, 13, 31, 12, '#203740'); rect(c, -23, 0, 46, 11, '#566d6c');
+      rect(c, -27, -4, 54, 6, '#a2ae94'); rect(c, -6, -75, 12, 73, '#3c535b'); rect(c, -4, -75, 3, 70, '#bbc3a0');
+      rect(c, -19, -82, 38, 9, '#88977e'); rect(c, -17, -75, 34, 35, '#243b44');
+      rect(c, -13, -72, 26, 28, '#536d71'); rect(c, -10, -69, 20, 22, '#19383f');
+      rect(c, -6, -65, 12, 14, lit ? '#e7f4ca' : '#b3996b'); rect(c, -4, -64, 4, 12, lit ? '#fff8d1' : '#debd7b');
+      rect(c, -21, -85, 42, 4, '#c0b58a');
+      path(c, [[-18, -80], [-34, -91], [-34, -106]], '#9bad99', 2);
+      path(c, [[18, -80], [34, -91], [34, -106]], '#799995', 2);
+      glow(c, 0, -58, lit ? 117 : 48, lit ? '#c1e2ab36' : '#e1bd7420');
+      if (lit) {
+        path(c, [[0, -85], [0, -148]], '#c6e3ae14', 25); path(c, [[0, -85], [0, -148]], '#d5edbe55', 2);
+        for (const side of [-1, 1]) path(c, [[side * 25, -68], [side * 34, -60], [side * 25, -52]], '#d3e9bb', 2);
+      }
+    }
+    c.restore();
+    if (nearby && active) label(c, 'E · ' + (item.label || item.title || '查看'), x, y + 35, '#ead7a3', 10);
+    else if (nearby && (item.used || finished)) {
+      label(c, kind === 'route-winch' ? '桥已升起' : kind === 'route-gate' ? '主轨闸已打开' : '信号已点亮', x, y + 32, '#abc6a4', 9);
+    }
+  }
   function interactable(c, item, time, state, localId, still = false) {
     if (!item || (item.kind === 'relic' && item.used)) return;
     if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
     if (state.mode === 'random' && (item.kind === 'refuge-rest' || item.kind === 'refuge-relic')) { refugeInteractable(c, item, time, state, localId, still); return; }
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
     if (railChapter(state) && /^rail-/.test(item.kind)) { railInteractable(c, item, time, state, localId, still); return; }
+    if (routeChapter(state) && /^route-/.test(item.kind)) { routeInteractable(c, item, time, state, localId, still); return; }
     if (item.kind === 'breach-cache') { breachCache(c,item,state,localId); return; }
     if (['forge','forge-reward','storehouse-switch','storehouse-cache'].includes(item.kind)) { expeditionInteractable(c, item, still ? 0 : time, state, localId); return; }
     const x = num(item.x), y = num(item.y), kind = item.kind, active = item.active !== false && !item.used;
@@ -2005,7 +2228,7 @@
       if(friendly)path(c,[[x-dx*(r+7)-dy*5,y-dy*(r+7)+dx*5],[x-dx*(r+2),y-dy*(r+2)],[x-dx*(r+7)+dy*5,y-dy*(r+7)-dx*5]],'#d8f5db',2);
       return;
     }
-    if (friendly && b.railAlly === true && railChapter(state)) {
+    if (friendly && b.railAlly === true && (railChapter(state) || routeChapter(state))) {
       path(c, [[x - dx * 11, y - dy * 11], [x, y]], '#93c8cc8c', 2);
       rect(c, x - 2, y - 2, 4, 4, '#8cbac5');
       rect(c, x - 1, y - 1, 2, 2, '#dcf0e9');
@@ -2284,16 +2507,17 @@
   function furnaceCoreHit(e) {
     return e.type === 'weakpoint-hit' && e.source === 'furnace-core';
   }
-  function combatMotion(events, disabled, coreRoom = false) {
+  function combatMotion(events, disabled, coreRoom = false, routeRoom = false) {
     if (disabled) return { x:0, y:0, flash:0 };
     let x = 0, y = 0, flash = 0;
     for (const {event:e, age} of events) {
       const success = ['perfect-parry','mikiri','counterattack','fireball-reflected'].includes(e.type), beat = e.type === 'rhythm-beat', phase = e.type === 'boss-phase';
       const coreHit = coreRoom && furnaceCoreHit(e);
-      if (!success && !beat && !phase && !coreHit) continue;
-      const duration = coreHit ? .20 : phase ? .24 : beat ? .16 : .13;
+      const wallBreak = routeRoom && e.type === 'wall-breached';
+      if (!success && !beat && !phase && !coreHit && !wallBreak) continue;
+      const duration = wallBreak ? .20 : coreHit ? .20 : phase ? .24 : beat ? .16 : .13;
       if (age > duration) continue;
-      const amplitude = (coreHit ? 3.7 : phase ? 1.5 : beat ? 1.8 : 2.5) * (1 - age / duration), oscillation = (hash(e.id || e.type) % 17) + age * 175;
+      const amplitude = (wallBreak ? 3 : coreHit ? 3.7 : phase ? 1.5 : beat ? 1.8 : 2.5) * (1 - age / duration), oscillation = (hash(e.id || e.type) % 17) + age * 175;
       x += Math.sin(oscillation) * amplitude; y += Math.cos(oscillation * 1.3) * amplitude * .7;
       if (success || beat || coreHit) flash = Math.max(flash, (coreHit ? .048 : success ? .07 : .035) * Math.max(0, 1 - age / .09));
     }
@@ -2500,6 +2724,21 @@
       if(e.type==='wall-breached'){
         const life=.8;if(age>life)continue;
         const ratio=age/life,motion=still?.22:ratio,x=num(e.x),y=num(e.y);
+        if (routeChapter(state)) {
+          alpha(c, 1 - ratio, () => {
+            ellipse(c, x, y + 15, 44 + motion * 52, 12 + motion * 18, '#c0b08420');
+            for (let i = 0; i < 20; i++) {
+              const angle = i * 2.399, reach = 19 + motion * (33 + i % 5 * 13), lift = still ? 8 : Math.sin(Math.min(1, motion * 1.3) * Math.PI) * (8 + i % 4 * 6);
+              const px = x + Math.cos(angle) * reach, py = y + Math.sin(angle) * reach * .47 - lift;
+              rect(c, px - 3, py + 2, 7 + i % 4, 5, '#24383a');
+              rect(c, px - 3, py, 6 + i % 4, 4 + i % 2, i % 3 ? '#92927a' : '#b7a575');
+              rect(c, px - 2, py, 4 + i % 4, 1, '#d4bf8c');
+            }
+            for (const side of [-1, 1]) path(c, [[x + side * (15 + motion * 21), y - 17], [x + side * (32 + motion * 29), y - 26], [x + side * (48 + motion * 37), y - 18]], '#e1c28b', 2);
+            label(c, '裂墙崩塌', x, y - 49 - motion * 8, '#ead7a6', 12);
+          });
+          continue;
+        }
         alpha(c,1-ratio,()=>{
           for(let i=0;i<12;i++){
             const side=i%2?-1:1,dx=side*(9+(i%6)*8+motion*15),dy=Math.sin(i*3.7)*10+motion*15;
@@ -2757,6 +2996,7 @@
   }
   function chapterMap(c, state) {
     if (!state.chapter || !Array.isArray(state.rooms)) return;
+    if (routeChapter(state)) { routeMap(c, state); return; }
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
     const run = state.chapter, rail = railChapter(state), current = state.room && state.room.index;
@@ -2820,6 +3060,60 @@
     label(c, mission || objective, left + 12, top + height - 33, mission ? ally.downed ? '#edaa82' : '#e5c08a' : run.lampLit || run.reachedCar ? '#e8d79e' : '#c1b895', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / ${rail ? 2 : 3}`, left + 12, top + height - 13, '#a8b39a', 8, 'left');
     label(c, `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + width - 12, top + height - 13, '#92a38a', 8, 'right');
+    c.restore();
+  }
+  function routeMap(c, state) {
+    const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
+    if (!rooms.length) return;
+    const run = state.chapter, current = state.room?.index;
+    const visible = rooms.filter(room => room.visited || room.discovered || teammateInRoom(state, room.index));
+    const left = 752, top = 18, width = 190, height = 162, spacing = 36;
+    const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
+    const points = new Map(visible.map(room => [room.index, { room,
+      x: left + width / 2 + (room.gx - (minX + maxX) / 2) * spacing, y: top + 67 + room.gy * 28 }]));
+    c.save(); rect(c, left, top, width, height, '#102631ed'); c.strokeStyle = '#92a19380'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, '第四节 · 断轨开路', left + 12, top + 15, '#d9c391', 9, 'left');
+    const phases = { arrive: '维修棚', routes: '开路', dispatch: '调度室', gate: '主轨闸', signal: '冷却站', complete: '道路已通', failed: '探险中断' };
+    label(c, phases[run.phase] || '开路', left + width - 12, top + 15, run.signalLit ? '#d7e9b9' : '#afbea9', 8, 'right');
+    const linked = new Set();
+    for (const room of visible) {
+      const a = points.get(room.index);
+      for (const nextIndex of values(room.neighbors)) {
+        const b = points.get(nextIndex); if (!b || !room.visited && !b.room.visited) continue;
+        const first = Math.min(room.index, nextIndex), last = Math.max(room.index, nextIndex), key = `${first}:${last}`;
+        if (linked.has(key)) continue; linked.add(key);
+        const blocked = first === 3 && last === 6 && !run.bridgeRaised || first === 5 && last === 6 && !run.wallBreached ||
+          first === 1 && last === 6 && !run.gateOpened || first === 6 && last === 7 && !run.gateOpened;
+        if (blocked) c.setLineDash([3, 4]);
+        path(c, [[a.x, a.y], [b.x, b.y]], blocked ? '#b0956b80' : room.visited && b.room.visited ? '#b8c0a4b0' : '#708c8a75', 2);
+        c.setLineDash([]);
+      }
+    }
+    for (const room of visible) {
+      const p = points.get(room.index), active = room.index === current, size = active ? 14 : 10;
+      rect(c, p.x - size / 2 - 2, p.y - size / 2 - 2, size + 4, size + 4, '#142c32');
+      rect(c, p.x - size / 2, p.y - size / 2, size, size, active ? '#e3d9ac' : room.visited ? '#79988a' : '#354f55');
+      c.strokeStyle = active ? '#f1e2b2' : '#a7b49b80'; c.lineWidth = active ? 2 : 1;
+      c.strokeRect(Math.round(p.x - size / 2) + .5, Math.round(p.y - size / 2) + .5, size, size);
+      if (room.index === 3) {
+        c.strokeStyle = run.bridgeRaised ? '#c8e0b7' : '#d3ac70'; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x, p.y, 4, 0, Math.PI * 2); c.stroke();
+        path(c, [[p.x - 3, p.y + 3], [p.x + 3, p.y - 3]], c.strokeStyle, 1);
+      } else if (room.index === 5) {
+        path(c, [[p.x - 2, p.y - 5], [p.x + 2, p.y - 1], [p.x - 2, p.y + 2], [p.x + 1, p.y + 5]], run.wallBreached ? '#c8e0b7' : '#d3ac70', 1.5);
+      } else if (room.index === 6) {
+        for (const dx of [-3, 2]) rect(c, p.x + dx, p.y - 4, 2, 8, run.gateOpened ? '#c5e4bc' : '#d8b57b');
+      } else if (room.index === 7) {
+        rect(c, p.x - 1, p.y - 5, 2, 10, '#afc5b4'); rect(c, p.x - 3, p.y - 5, 6, 4, run.signalLit ? '#f0efbc' : '#91b0ad');
+      }
+    }
+    mapTeammates(c, state, points); mapRailAlly(c, state, points);
+    const orderRead = values(run.clues).includes('route-order');
+    const objective = run.signalLit ? '通往冷却站的路已打通' : run.gateOpened ? '前往冷却站点亮信号' : orderRead ? '打开主轨闸' :
+      run.bridgeRaised || run.wallBreached ? '前往旧线调度室' : '寻找通往调度室的路';
+    const rescue = state.railAlly?.downed;
+    label(c, rescue ? '阿禾倒地 · 前往接应' : objective, left + 12, top + height - 33, rescue ? '#e4ac85' : '#bdc9ad', 8, 'left');
+    label(c, `线索 ${values(run.clues).length} / 2`, left + 12, top + height - 13, '#a8b9a7', 8, 'left');
+    label(c, `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + width - 12, top + height - 13, '#92aaa4', 8, 'right');
     c.restore();
   }
   function minimap(c, state) {
@@ -3278,8 +3572,8 @@
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const ending = chapterEndingScene(state, options);
-    const coreRoom = chapterCoreRoom(state), rail = railChapter(state);
-    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom);
+    const coreRoom = chapterCoreRoom(state), rail = railChapter(state), route = routeChapter(state);
+    const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom, route);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     const enemies = values(state.enemies);
     const viewTop = num(options.view?.y), viewBottom = viewTop + num(options.view?.h, H);
@@ -3315,12 +3609,14 @@
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
+      ...(route && state.room.index === 0 ? [{ y: 255, draw: () => railInteractable(c,
+        { kind: 'rail-car', x: 705, y: 255, active: false, used: true }, enemyTime, state, localId, still) }] : []),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
       ...enemies.map(e => ({ y: e.y, draw: () => rail && e.railGuard === true
         ? railGuard(c, e, state, enemyPoses.get(e.id), viewTop, still)
         : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail) })),
-      ...(rail && railAllyInRoom(state) ? [{
+      ...((rail || route) && railAllyInRoom(state) ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
       ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
@@ -3331,7 +3627,7 @@
       ] : [])
     ];
     sprites.sort((a,b) => num(a.y) - num(b.y)).forEach(s => s.draw());
-    if (rail && state.status === 'playing') {
+    if ((rail || route) && state.status === 'playing') {
       roomPlayers(state).forEach(actor => railShockStatus(c, actor, enemyTime, still, viewTop, viewBottom));
       if (railAllyInRoom(state)) railShockStatus(c, state.railAlly, enemyTime, still, viewTop, viewBottom);
     }
