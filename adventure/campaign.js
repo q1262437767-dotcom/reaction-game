@@ -18,7 +18,8 @@
     Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 }),
     Object.freeze({ id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', description: '旧木场的求援灯还在闪。挪开木车，救出被困的维修工。', goal: '救出维修工，停下吊木守卫，再回信号岗接应撤离', reward: 50 }),
     Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '救援车沿西边旧线走了。循着车辙，去找维修匠陶铆。', goal: '找到陶铆，打通配电廊和拨道场，接应载着伤员的救援车', reward: 60 }),
-    Object.freeze({ id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', description: '前面的轨道塌了。绕过断轨，去调度室查清那张回收令，给救援车开路。', goal: '选择路线穿过断轨，查阅回收令，打开主轨闸并点亮冷却站信号', reward: 70 })
+    Object.freeze({ id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', description: '前面的轨道塌了。绕过断轨，去调度室查清那张回收令，给救援车开路。', goal: '选择路线穿过断轨，查阅回收令，打开主轨闸并点亮冷却站信号', reward: 70 }),
+    Object.freeze({ id: 'chapter1_5', name: '第一章 · 第五节 · 末班车', description: '通路和信号都已准备好。护送载着伤员的救援车，穿过还没停工的旧线。', goal: '护住救援车，打开道闸、接水冷却，把伤员送进避风车库', reward: 70 })
   ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
@@ -160,12 +161,14 @@
 
   function chapterProgress(profile) {
     var normalized = normalize(profile), record = normalized.missions.chapter1, second = normalized.missions.chapter1_2,
-      third = normalized.missions.chapter1_3, fourth = normalized.missions.chapter1_4;
+      third = normalized.missions.chapter1_3, fourth = normalized.missions.chapter1_4, fifth = normalized.missions.chapter1_5;
     return { completed: record.clears > 0, clears: record.clears, hardClears: record.hardClears,
       bestTime: record.bestTime, secondCompleted: second.clears > 0, secondClears: second.clears,
       secondBestTime: second.bestTime, thirdCompleted: third.clears > 0, thirdClears: third.clears,
       thirdBestTime: third.bestTime, fourthCompleted: fourth.clears > 0, fourthClears: fourth.clears,
-      fourthBestTime: fourth.bestTime, nextChapter: third.clears > 0 && fourth.clears === 0 ? 'chapter1_4' :
+      fourthBestTime: fourth.bestTime, fifthCompleted: fifth.clears > 0, fifthClears: fifth.clears,
+      fifthBestTime: fifth.bestTime, nextChapter: fourth.clears > 0 && fifth.clears === 0 ? 'chapter1_5' :
+        third.clears > 0 && fourth.clears === 0 ? 'chapter1_4' :
         second.clears > 0 && third.clears === 0 ? 'chapter1_3' :
         record.clears > 0 && second.clears === 0 ? 'chapter1_2' : null };
   }
@@ -208,6 +211,38 @@
         ['arrive', 'routes'].includes(c.phase));
   }
 
+  function validTrainChapter(chapter, status) {
+    var c = object(chapter), cart = object(c.cart);
+    var keys = ['id', 'version', 'phase', 'clues', 'started', 'gateOpened', 'coolingStarted', 'coolingLeft', 'cooled', 'arrived', 'unloaded', 'repairsLeft', 'cart'];
+    var cartKeys = ['roomIndex', 'x', 'y', 'hp', 'maxHp', 'moving', 'hitCd'];
+    if (c.id !== 'chapter1_5' || c.version !== 1 || Object.keys(c).length !== keys.length ||
+        !keys.every(function (key) { return Object.prototype.hasOwnProperty.call(c, key); }) ||
+        !['started', 'gateOpened', 'coolingStarted', 'cooled', 'arrived', 'unloaded'].every(function (key) { return typeof c[key] === 'boolean'; }) ||
+        !Array.isArray(c.clues) || c.clues.length > 2 || new Set(c.clues).size !== c.clues.length ||
+        c.clues.some(function (key) { return !['train-passengers', 'train-refuge'].includes(key); }) ||
+        !Number.isInteger(c.repairsLeft) || c.repairsLeft < 0 || c.repairsLeft > 2 ||
+        !Number.isFinite(c.coolingLeft) || c.coolingLeft < 0 || c.coolingLeft > 10 ||
+        Object.keys(cart).length !== cartKeys.length || !cartKeys.every(function (key) { return Object.prototype.hasOwnProperty.call(cart, key); }) ||
+        !Number.isInteger(cart.roomIndex) || ![0, 1, 2, 4, 5, 6, 7].includes(cart.roomIndex) ||
+        !Number.isFinite(cart.x) || cart.x < 180 || cart.x > 780 || cart.y !== 300 ||
+        !Number.isInteger(cart.hp) || cart.hp < 0 || cart.hp > 14 || cart.maxHp !== 14 || typeof cart.moving !== 'boolean' ||
+        !Number.isFinite(cart.hitCd) || cart.hitCd < 0 || cart.hitCd > .8) return false;
+    if (!c.started && (cart.roomIndex !== 0 || cart.x !== 180 || cart.hp !== 14 || cart.moving || c.gateOpened || c.coolingStarted || c.arrived) ||
+        !c.coolingStarted && (c.coolingLeft !== 0 || c.cooled) ||
+        c.coolingStarted && (!c.started || cart.roomIndex < 4) ||
+        c.cooled && c.coolingLeft !== 0 || cart.roomIndex >= 4 && !c.gateOpened ||
+        cart.roomIndex > 4 && !c.cooled ||
+        c.arrived && (!c.started || !c.gateOpened || !c.cooled || cart.roomIndex !== 7 || cart.x !== 680 || cart.moving) ||
+        c.unloaded && !c.arrived || cart.moving && (!c.started || c.arrived || cart.hp <= 0 || c.coolingStarted && !c.cooled)) return false;
+    if (status === 'won') return c.phase === 'complete' && c.unloaded && c.arrived && cart.hp > 0;
+    if (status === 'lost') return c.phase === 'failed' && !c.unloaded;
+    if (status !== 'playing' || c.unloaded || cart.hp <= 0) return false;
+    var phase = !c.started ? 'board' : c.arrived ? 'unload' : c.coolingStarted && !c.cooled ? 'cooling' :
+      cart.roomIndex === 2 && cart.x >= 600 && !c.gateOpened ? 'gate' :
+      cart.roomIndex === 4 && cart.x >= 480 && !c.coolingStarted ? 'water' : 'escort';
+    return c.phase === phase && (!['gate', 'water', 'cooling'].includes(phase) || !cart.moving);
+  }
+
   function applyResult(profile, state, runId) {
     var p = normalize(profile), before = progress(p), unlocks = [], newBadges = [];
     var result = { profile: p, reward: 0, unlocks: unlocks, newBadges: newBadges, duplicate: false };
@@ -218,12 +253,14 @@
     if (p.clearedRuns.includes(runId)) { result.duplicate = true; return result; }
     var missionId = object(state.mission).id || 'ember';
     var mission = missionById(missionId), difficulty = state.difficulty === undefined ? 1 : state.difficulty;
-    if (state.mode === 'chapter' && ['chapter1_2', 'chapter1_3', 'chapter1_4'].includes(missionId)) {
-      var rail = missionId === 'chapter1_3', route = missionId === 'chapter1_4';
+    if (state.mode === 'chapter' && ['chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'].includes(missionId)) {
+      var rail = missionId === 'chapter1_3', route = missionId === 'chapter1_4', train = missionId === 'chapter1_5';
       var timber = object(state.chapter), sectionWon = state.status === 'won', cart = object(timber.cart);
       var timberKeys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
       if (difficulty !== 1) return result;
-      if (route) {
+      if (train) {
+        if (!validTrainChapter(state.chapter, state.status)) return result;
+      } else if (route) {
         if (!validRouteChapter(state.chapter, state.status)) return result;
       } else if (rail) {
         if (!validRailChapter(state.chapter, state.status)) return result;
@@ -243,7 +280,7 @@
       });
       if (p.relics.length === RELICS.length) earn('collector');
       if (sectionWon) {
-        var chapterCap = route ? 70 : rail ? 60 : 50, sectionCoins = object(state.reward).coins;
+        var chapterCap = train || route ? 70 : rail ? 60 : 50, sectionCoins = object(state.reward).coins;
         result.reward = typeof sectionCoins === 'number' && Number.isFinite(sectionCoins) ? Math.min(chapterCap, count(sectionCoins)) : chapterCap;
         p.coins = Math.min(LIMIT, p.coins + result.reward); p.wins = Math.min(LIMIT, p.wins + 1);
         var sectionRecord = p.missions[missionId];
@@ -254,7 +291,8 @@
         }
         if (object(state.stats).damage === 0) earn('flawless');
         if (sectionRecord.clears === 1) {
-          if (route) unlocks.push('第四节完成 · 冷却站信号已亮');
+          if (train) unlocks.push('第五节完成 · 伤员已送进避风车库');
+          else if (route) unlocks.push('第四节完成 · 冷却站信号已亮', '第五节解锁 · 末班车');
           else if (rail) unlocks.push('第三节完成 · 找到救援车', '第四节解锁 · 断轨开路');
           else unlocks.push('第二节完成 · 维修工回营', '第三节解锁 · 借走的主芯');
         }
@@ -358,7 +396,7 @@
 
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    chapterProgress: chapterProgress, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    chapterProgress: chapterProgress, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
     validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });

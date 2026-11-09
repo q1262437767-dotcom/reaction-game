@@ -26,7 +26,7 @@
   function teammateInRoom(state, index) {
     if (index === state.room?.index) return false;
     return (!!state.playerRooms && Object.entries(state.playerRooms).some(([id, room]) => state.players?.[id] && room === index)) ||
-      ((railChapter(state) || routeChapter(state)) && state.railAlly?.roomIndex === index);
+      ((railChapter(state) || routeChapter(state) || trainChapter(state)) && state.railAlly?.roomIndex === index);
   }
   const rect = (c, x, y, w, h, color) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   function seedRandom(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -97,6 +97,182 @@
   }
   function routeChapter(state) {
     return state?.mode === 'chapter' && state.chapter?.id === 'chapter1_4';
+  }
+  function trainChapter(state) {
+    return state?.mode === 'chapter' && state.chapter?.id === 'chapter1_5';
+  }
+  function trainFloor(c, state, time, still) {
+    const index = state.room.index, run = state.chapter, cool = index === 0 || index === 4, safe = index === 7;
+    rect(c, 29, 29, 902, 542, safe ? '#3d4039' : cool ? '#293e45' : index === 5 ? '#3a3735' : '#303b3d');
+    for (let y = 42; y < 570; y += 40) for (let x = 40 + (y % 80 ? 0 : 28); x < 922; x += 58) {
+      rect(c, x, y, 55, 37, safe ? '#79705714' : '#7180790b');
+      rect(c, x + 2, y + 35, 51, 1, '#142a3170');
+      if ((x + y) % 3 === 0) rect(c, x + 8, y + 8, 9, 1, '#9c9b7624');
+    }
+    if (index !== 3) {
+      rect(c, 55, 270, 850, 68, '#1c2d32');
+      for (let x = 64; x < 903; x += 17) {
+        rect(c, x, 271 + x % 5, 7, 3, '#7c80684d'); rect(c, x + 6, 332 - x % 5, 4, 2, '#8d8a6c51');
+      }
+      routeTrack(c, 55, 905, 310);
+    }
+    for (const y of [90, 505]) {
+      rect(c, 80, y, 800, 5, '#182d32'); rect(c, 81, y, 798, 1, '#97a18b37');
+      for (let x = 91; x < 872; x += 56) { rect(c, x, y - 2, 7, 9, '#59645c'); rect(c, x + 1, y - 1, 2, 2, '#b69d70'); }
+    }
+    if (index === 0 || index === 7) {
+      for (const y of [188, 392]) {
+        rect(c, 84, y, 786, 37, safe ? '#565344' : '#3d5456');
+        rect(c, 84, y, 786, 4, safe ? '#8e825e' : '#77908a');
+        for (let x = 101; x < 861; x += 28) { rect(c, x, y + 4, 2, 29, '#20343a71'); rect(c, x + 3, y + 7, 10, 1, '#b9ae7940'); }
+      }
+      for (const x of [140, 820]) {
+        rect(c, x - 8, 108, 16, 58, '#21383c'); rect(c, x - 6, 108, 12, 4, '#8d997e');
+        rect(c, x - 3, 112, 5, 45, '#a9b9a02c');
+        glow(c, x, 121, 84, safe ? '#edb85c18' : '#7accc51a');
+      }
+      if (safe) {
+        for (const [x, y] of [[170, 144], [270, 144]]) {
+          rect(c, x - 31, y + 3, 64, 16, '#203235'); rect(c, x - 29, y, 60, 14, '#737965');
+          rect(c, x - 26, y - 3, 15, 10, '#c0bd97'); rect(c, x - 8, y - 2, 36, 11, '#79826e');
+          rect(c, x - 29, y + 14, 4, 7, '#9e8f6b'); rect(c, x + 25, y + 14, 4, 7, '#9e8f6b');
+          if (run.unloaded) {
+            rect(c, x - 23, y - 8, 13, 10, '#b99b77'); rect(c, x - 22, y - 8, 11, 4, '#d8b78b');
+            rect(c, x - 22, y - 9, 9, 2, '#dedcc3'); rect(c, x - 12, y - 5, 37, 14, '#9caa8c');
+            rect(c, x - 10, y - 5, 33, 3, '#bdc4a1'); rect(c, x - 8, y + 6, 33, 3, '#73846b');
+          }
+        }
+        for (let x = 145; x < 821; x += 43) { rect(c, x, 446, 27, 3, '#8e7a4c42'); rect(c, x + 8, 450, 13, 1, '#bdac7961'); }
+        if (run.arrived) glow(c, 425, 160, 160, '#e3b76f18');
+      }
+    } else if (index === 1) {
+      for (let x = 130; x < 860; x += 71) {
+        path(c, [[x, 143], [x + 18, 150], [x + 32, 145]], '#92a89a38', 2);
+        path(c, [[x + 12, 444], [x + 30, 452], [x + 41, 447]], '#82968c3c', 2);
+      }
+      for (let i = 0; i < 11; i++) { const x = 84 + i * 69, y = 171 + i % 3 * 28; rect(c, x, y, 5, 2, '#a3b3a13a'); }
+    } else if (index === 2 || index === 3) {
+      if (index === 2) {
+        path(c, [[520, 298], [520, 231], [480, 177], [480, 80]], '#172b32', 13);
+        for (const dx of [-10, 10]) path(c, [[520 + dx, 298], [520 + dx, 231], [480 + dx, 177], [480 + dx, 80]], '#92937b', 3);
+      } else {
+        for (const x of [383, 576]) {
+          rect(c, x, 139, 7, 300, '#1c3037'); rect(c, x + 1, 139, 2, 300, '#8f9d8460');
+          for (let y = 151; y < 433; y += 25) rect(c, x - 2, y, 11, 3, '#6f877462');
+        }
+        path(c, [[479, 527], [479, 419], [530, 367]], '#a7986970', 3);
+      }
+      const open = !!(run.gateOpened || run.switchSet);
+      for (const x of [255, 705]) {
+        rect(c, x - 4, 171, 8, 64, '#223a3e'); rect(c, x - 9, 162, 18, 26, '#4c615d');
+        rect(c, x - 5, 167, 10, 7, open ? '#a3d4b0' : '#d59972');
+        glow(c, x, 170, 42, open ? '#9de0b728' : '#d58e6530');
+      }
+    } else if (index === 4) {
+      for (const y of [159, 439]) {
+        rect(c, 91, y, 779, 12, '#182d36'); rect(c, 93, y, 775, 8, '#527c82'); rect(c, 95, y, 771, 2, '#aac2af5a');
+        for (let x = 109; x < 859; x += 64) { rect(c, x, y - 3, 9, 17, '#35555d'); rect(c, x + 2, y - 2, 3, 2, '#c0b28a'); }
+      }
+      for (const x of [194, 798]) {
+        rect(c, x, 108, 19, 369, '#1b333c'); rect(c, x + 2, 109, 13, 367, '#567f82'); rect(c, x + 4, 110, 3, 364, '#a3c4b15e');
+        for (let y = 121; y < 470; y += 43) { rect(c, x - 3, y, 25, 8, '#435f63'); rect(c, x - 1, y, 21, 2, '#adac8e'); }
+      }
+      for (let i = 0; i < 5; i++) {
+        const p = still ? .4 : (num(state.time) * .2 + i * .21) % 1;
+        ellipse(c, 682 + Math.sin(i * 2) * 11, 197 - p * 36, 8 + p * 7, 3 + p * 4, '#9dbcb329');
+      }
+    } else if (index === 5) {
+      for (const [x, y] of [[143, 151], [745, 164], [170, 432], [767, 435]]) for (let i = 0; i < 5; i++) {
+        rect(c, x + i * 12, y + i % 2 * 9, 21, 5, '#25383b'); rect(c, x + i * 12, y + i % 2 * 9, 21, 1, '#aa8c5c71');
+      }
+      path(c, [[208, 455], [382, 461], [512, 454], [682, 463]], '#bb895e31', 5);
+      path(c, [[211, 464], [386, 470], [514, 463], [686, 472]], '#4b28234a', 3);
+      glow(c, 900, 182, 220, '#e78c6d0d');
+    } else if (index === 6) {
+      for (const x of [141, 819]) for (const y of [138, 405]) {
+        rect(c, x - 17, y + 5, 34, 31, '#152c33'); rect(c, x - 14, y, 28, 30, '#5f6b61');
+        rect(c, x - 12, y, 24, 4, '#acaa84'); rect(c, x - 10, y + 5, 4, 21, '#a4b09030');
+      }
+      for (let y = 141; y < 445; y += 32) {
+        rect(c, 90, y, 5, 19, '#a39c7047'); rect(c, 865, y, 5, 19, '#a39c7047');
+      }
+      glow(c, 870, 236, 145, '#e6bf6c10');
+    }
+  }
+  function trainCar(c, state, time, localId, still, viewTop) {
+    const run = state.chapter, car = run.cart;
+    if (!car || car.roomIndex !== state.room.index) return;
+    const x = num(car.x), y = num(car.y, 300), ratio = Math.max(0, Math.min(1, num(car.hp) / Math.max(1, num(car.maxHp, 14))));
+    const moving = car.moving === true && state.status === 'playing', wheelAngle = moving && !still ? x * .075 : 0;
+    shadow(c, x, y + 19, 85, .4);
+    for (const dx of [-55, -31, 31, 55]) {
+      ellipse(c, x + dx, y + 23, 10, 9, '#14272e'); ellipse(c, x + dx, y + 23, 7, 6, '#737d73');
+      for (const angle of [wheelAngle, wheelAngle + Math.PI / 2]) path(c,
+        [[x + dx - Math.cos(angle) * 5, y + 23 - Math.sin(angle) * 5], [x + dx + Math.cos(angle) * 5, y + 23 + Math.sin(angle) * 5]], '#c0ac7d', 1.5);
+      rect(c, x + dx - 1, y + 22, 3, 3, '#d1bf8b');
+    }
+    rect(c, x - 76, y + 1, 153, 20, '#172f36'); rect(c, x - 72, y + 2, 145, 14, '#6e654c');
+    rect(c, x - 73, y + 1, 147, 3, '#c3a06a'); rect(c, x - 71, y + 13, 142, 3, '#a38b5d');
+    rect(c, x - 67, y - 24, 94, 25, '#4e625b'); rect(c, x - 65, y - 24, 90, 5, '#8f9b7f');
+    if (!run.unloaded) {
+      chapterEndingCivilian(c, x - 44, y - 13, 'injured', 0, true, true);
+      chapterEndingCivilian(c, x - 9, y - 13, 'injured', 0, false, true);
+    }
+    rect(c, x - 69, y - 1, 98, 7, '#a18258');
+    rect(c, x + 29, y - 36, 29, 44, '#253b3f'); rect(c, x + 32, y - 35, 23, 37, '#9c784b');
+    rect(c, x + 35, y - 31, 17, 25, '#394d49');
+    glow(c, x + 43, y - 21, 59, '#efbf6b42'); crystal(c, x + 43, y - 21, 1.3, '#eac07c');
+    path(c, [[x + 43, y - 8], [x + 43, y + 4], [x + 9, y + 4]], '#b99a62', 3);
+    // A seated driver and a slatted front guard make the moving rescue car
+    // recognizable without inventing a second collision footprint.
+    rect(c, x + 59, y - 7, 15, 15, '#705a41'); rect(c, x + 61, y - 17, 11, 13, '#bb9a6c');
+    rect(c, x + 59, y - 19, 15, 5, '#626e61'); rect(c, x + 61, y - 21, 10, 3, '#b1ad84');
+    rect(c, x + 69, y - 11, 3, 3, '#273737');
+    path(c, [[x + 66, y - 1], [x + 73, y + 3], [x + 79, y]], '#c9ac7b', 3);
+    for (const dx of [-61, -41, -20, 2, 22, 65]) { rect(c, x + dx, y + 5, 4, 11, '#3e4e46'); rect(c, x + dx, y + 5, 3, 2, '#d2b77f'); }
+    if (ratio < .55) for (const [dx, dy] of [[-48, 7], [-11, 10], [61, 10]]) path(c,
+      [[x + dx - 6, y + dy - 4], [x + dx + 1, y + dy], [x + dx - 3, y + dy + 5]], '#233936', 2);
+    const hit = num(car.hitCd) > .4;
+    if (hit) alpha(c, still ? .17 : .15 + Math.sin(num(state.time) * 40) * .07, () => rect(c, x - 73, y - 25, 146, 42, '#e8a277'));
+    if (moving && !still) for (let i = 0; i < 3; i++) {
+      const p = (num(state.time) * .8 + i * .31) % 1;
+      rect(c, x - 73 - p * 19, y + 25 + i % 2 * 4, 5 - p * 3, 2, '#b8b18942');
+    }
+    const top = Math.max(viewTop + 22, y - 76), color = ratio < .3 ? '#e3a17c' : ratio < .6 ? '#e4bd80' : '#bdd7b1';
+    label(c, '救援车', x, top - 13, '#e3cca1', 10); bar(c, x, top + 1, 96, ratio, color, 5);
+    label(c, Math.ceil(Math.max(0, num(car.hp))) + ' / ' + num(car.maxHp, 14), x + 58, top + 2, color, 9, 'left');
+  }
+  function trainInteractable(c, item, time, state, localId, still) {
+    const x = num(item.x), y = num(item.y), kind = item.kind, run = state.chapter, p = state.players?.[localId];
+    const nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 102;
+    const active = item.active !== false && !item.used;
+    const focused = p && values(state.interactables).filter(q => q.active !== false && !q.used && /^train-/.test(q.kind))
+      .sort((a, b) => Math.hypot(num(p.x) - num(a.x), num(p.y) - num(a.y)) - Math.hypot(num(p.x) - num(b.x), num(p.y) - num(b.y)))[0]?.id === item.id;
+    if (/repair/.test(kind)) {
+      if (!active) return;
+      shadow(c, x, y, 15, .3); rect(c, x - 13, y - 8, 27, 18, '#35504b'); rect(c, x - 11, y - 9, 23, 4, '#a4b796');
+      path(c, [[x - 7, y + 5], [x + 5, y - 7]], '#d3c89d', 4);
+      path(c, [[x + 3, y - 7], [x + 8, y - 8], [x + 8, y - 3]], '#e2d8b5', 2);
+    } else if (/switch|points|lever/.test(kind)) {
+      const open = item.used || run.gateOpened || run.switchSet;
+      shadow(c, x, y, 26, .35); rect(c, x - 28, y - 4, 56, 15, '#20373b'); rect(c, x - 26, y - 6, 52, 8, '#7a8272');
+      rect(c, x - 20, y - 7, 40, 3, '#b4aa7e');
+      path(c, [[x - 2, y - 7], [x + (open ? 13 : -16), y - 31]], '#273a3c', 7);
+      path(c, [[x - 2, y - 7], [x + (open ? 13 : -16), y - 31]], '#c3a876', 3);
+      rect(c, x + 13, y - 15, 8, 6, open ? '#b6e2bd' : '#dbb47a');
+      glow(c, x + 17, y - 12, 26, open ? '#b1d99a28' : '#d9ba7f25');
+    } else if (/cool|water|pump/.test(kind)) {
+      shadow(c, x, y, 38, .4); rect(c, x - 34, y - 12, 68, 27, '#203740'); rect(c, x - 31, y - 15, 62, 24, '#5b8284');
+      rect(c, x - 29, y - 14, 58, 4, '#b5bf9d'); rect(c, x - 24, y + 7, 47, 5, '#344e57');
+      for (const dx of [-19, 17]) { rect(c, x + dx, y - 32, 8, 29, '#2d4b53'); rect(c, x + dx + 1, y - 32, 3, 23, '#a4c0ad'); }
+      c.strokeStyle = '#c2b17f'; c.lineWidth = 3; c.beginPath(); c.arc(x, y - 13, 9, 0, Math.PI * 2); c.stroke();
+      path(c, [[x - 8, y - 13], [x + 8, y - 13]], '#d3bf86', 2); path(c, [[x, y - 21], [x, y - 5]], '#d3bf86', 2);
+      if (num(run.coolingLeft) > 0) label(c, '冷却中 ' + num(run.coolingLeft).toFixed(1) + 's', x, y + 29, '#bcdbcd', 10);
+    } else if (/unload|shelter|arrival|finish/.test(kind)) {
+      shadow(c, x, y, 27, .3); rect(c, x - 25, y - 9, 51, 19, '#3c5550'); rect(c, x - 23, y - 11, 47, 5, '#b4b99b');
+      rect(c, x - 13, y - 13, 7, 20, '#d6d0a2'); rect(c, x - 19, y - 6, 19, 7, '#d6d0a2');
+    }
+    if (nearby && active && focused) label(c, 'E · ' + item.label, x, y + (/cart|car|depart|stop/.test(kind) ? 51 : 31), '#ead8ad', 10);
   }
   function routeTrack(c, start, end, y, broken = false) {
     for (let x = start + 6; x < end - 3; x += 24) {
@@ -301,6 +477,7 @@
   }
   function chapterFloor(c, state, time, still) {
     if (state.mode !== 'chapter') return;
+    if (trainChapter(state)) { trainFloor(c, state, time, still); return; }
     if (routeChapter(state)) { routeFloor(c, state, time, still); return; }
     if (railChapter(state)) { railFloor(c, state, time, still); return; }
     const index = num(state.room && state.room.index), run = state.chapter || {};
@@ -784,6 +961,7 @@
     }
   }
   function interactable(c, item, time, state, localId, still = false) {
+    if (trainChapter(state) && /^train-/.test(item.kind)) { trainInteractable(c, item, time, state, localId, still); return; }
     if (!item || (item.kind === 'relic' && item.used)) return;
     if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
     if (state.mode === 'random' && (item.kind === 'refuge-rest' || item.kind === 'refuge-relic')) { refugeInteractable(c, item, time, state, localId, still); return; }
@@ -2228,7 +2406,7 @@
       if(friendly)path(c,[[x-dx*(r+7)-dy*5,y-dy*(r+7)+dx*5],[x-dx*(r+2),y-dy*(r+2)],[x-dx*(r+7)+dy*5,y-dy*(r+7)-dx*5]],'#d8f5db',2);
       return;
     }
-    if (friendly && b.railAlly === true && (railChapter(state) || routeChapter(state))) {
+    if (friendly && b.railAlly === true && (railChapter(state) || routeChapter(state) || trainChapter(state))) {
       path(c, [[x - dx * 11, y - dy * 11], [x, y]], '#93c8cc8c', 2);
       rect(c, x - 2, y - 2, 4, 4, '#8cbac5');
       rect(c, x - 1, y - 1, 2, 2, '#dcf0e9');
@@ -2502,7 +2680,7 @@
       !['perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'weapon-switch',
         'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'decoy', 'rail-shock'].includes(event.type));
     return local.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open','train-hit'].includes(event.type));
   }
   function furnaceCoreHit(e) {
     return e.type === 'weakpoint-hit' && e.source === 'furnace-core';
@@ -2636,6 +2814,18 @@
   function combatEffects(c, events, state, still) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (e.type === 'train-hit') {
+        if (!trainChapter(state) || age > .48) continue;
+        const x = num(e.x), y = num(e.y), progress = still ? .25 : age / .48;
+        alpha(c, 1 - age / .48, () => {
+          for (let i = 0; i < 6; i++) {
+            const a = i * Math.PI / 3, reach = 9 + progress * 22;
+            path(c, [[x + Math.cos(a) * 5, y + Math.sin(a) * 5], [x + Math.cos(a) * reach, y + Math.sin(a) * reach]], '#e0b784', i % 2 ? 1 : 2);
+          }
+          label(c, '车体 ' + damageText(e.amount), x, y - 42 - progress * 12, '#ebba94', 11);
+        });
+        continue;
+      }
       if (e.type === 'weakpoint-open' && events.some(other => other.event.type === 'boss-overload-open' && other.event.enemyId === e.enemyId && Math.abs(other.age - age) < .09)) continue;
       if (e.kind === 'breach' && e.type === 'event-complete') continue;
       if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
@@ -2996,6 +3186,7 @@
   }
   function chapterMap(c, state) {
     if (!state.chapter || !Array.isArray(state.rooms)) return;
+    if (trainChapter(state)) { trainMap(c, state); return; }
     if (routeChapter(state)) { routeMap(c, state); return; }
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
@@ -3114,6 +3305,65 @@
     label(c, rescue ? '阿禾倒地 · 前往接应' : objective, left + 12, top + height - 33, rescue ? '#e4ac85' : '#bdc9ad', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / 2`, left + 12, top + height - 13, '#a8b9a7', 8, 'left');
     label(c, `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + width - 12, top + height - 13, '#92aaa4', 8, 'right');
+    c.restore();
+  }
+  function trainMap(c, state) {
+    const rooms = values(state.rooms).filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy)), run = state.chapter, car = run.cart;
+    if (!rooms.length || !car) return;
+    const left = 752, top = 18, width = 190, height = 179, spacing = 24;
+    const visible = rooms.filter(room => room.visited || room.discovered || room.index === car.roomIndex || teammateInRoom(state, room.index));
+    const points = new Map(visible.map(room => [room.index, { room, x: left + 23 + room.gx * spacing, y: top + 83 + room.gy * 32 }]));
+    c.save(); rect(c, left, top, width, height, '#10262deb'); c.strokeStyle = '#9ba98b80'; c.lineWidth = 1;
+    c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, '第五节 · 末班车', left + 12, top + 15, '#dfc895', 9, 'left');
+    const phases = { board: '准备发车', escort: '护送中', gate: '交汇道闸', water: '等待接水', cooling: '冷却中', unload: '安置伤员', complete: '安全抵达', failed: '护送中断' };
+    label(c, phases[run.phase] || '护送中', left + width - 12, top + 15, run.unloaded ? '#cbe4b4' : '#aabdab', 8, 'right');
+    const linked = new Set();
+    for (const room of visible) {
+      const a = points.get(room.index);
+      for (const nextIndex of values(room.neighbors)) {
+        const b = points.get(nextIndex), key = [Math.min(room.index, nextIndex), Math.max(room.index, nextIndex)].join(':');
+        if (!b || linked.has(key)) continue; linked.add(key);
+        const blocked = key === '2:4' && !run.gateOpened;
+        if (blocked) c.setLineDash([3, 3]);
+        path(c, [[a.x, a.y], [b.x, b.y]], blocked ? '#d3aa6c70' : '#93ab938a', 2); c.setLineDash([]);
+      }
+    }
+    for (const room of visible) {
+      const p = points.get(room.index), current = room.index === state.room.index, size = current ? 12 : 8;
+      rect(c, p.x - size / 2 - 2, p.y - size / 2 - 2, size + 4, size + 4, '#142b31');
+      rect(c, p.x - size / 2, p.y - size / 2, size, size, current ? '#e1d7aa' : room.visited ? '#779582' : '#344e51');
+      c.strokeStyle = current ? '#efe2b3' : '#93aa9370'; c.lineWidth = current ? 2 : 1;
+      c.strokeRect(Math.round(p.x - size / 2) + .5, Math.round(p.y - size / 2) + .5, size, size);
+      if (room.index === 3) path(c, [[p.x - 3, p.y + 2], [p.x + 3, p.y - 3]], run.gateOpened ? '#c9e5b4' : '#cba26b', 2);
+      if (room.index === 4) { rect(c, p.x - 1, p.y - 3, 2, 6, '#bbd8ce'); rect(c, p.x - 3, p.y - 1, 6, 2, '#bbd8ce'); }
+      if (room.index === 7) rect(c, p.x - 3, p.y - 3, 6, 6, run.unloaded ? '#d1deb1' : '#9ca983');
+    }
+    for (const [id, index] of Object.entries(state.playerRooms || {})) {
+      const actor = state.players?.[id], node = points.get(index);
+      if (!actor || !node || index === state.room.index) continue;
+      const color = actor.downed ? '#e4a681' : actor.color || '#8bc9bd';
+      const rim = [[node.x, node.y - 10], [node.x + 10, node.y], [node.x, node.y + 10], [node.x - 10, node.y], [node.x, node.y - 10]];
+      path(c, rim, '#10272d', 4); path(c, rim, color, 1.5);
+      if (actor.downed) { rect(c, node.x - 1, node.y - 4, 2, 8, color); rect(c, node.x - 4, node.y - 1, 8, 2, color); }
+    }
+    mapRailAlly(c, state, points);
+    const p = points.get(car.roomIndex), ratio = Math.max(0, Math.min(1, num(car.hp) / Math.max(1, num(car.maxHp, 14))));
+    if (p) {
+      rect(c, p.x - 8, p.y - 23, 16, 9, '#0c232b'); rect(c, p.x - 6, p.y - 22, 12, 6, ratio < .3 ? '#e1a27d' : '#d9c38a');
+      rect(c, p.x - 5, p.y - 16, 3, 3, '#b8c8ac'); rect(c, p.x + 2, p.y - 16, 3, 3, '#b8c8ac');
+      if (car.moving) path(c, [[p.x + 9, p.y - 21], [p.x + 12, p.y - 18], [p.x + 9, p.y - 15]], '#d9d8ad', 1.5);
+    }
+    const healthColor = ratio < .3 ? '#e7a17c' : ratio < .6 ? '#dfba7f' : '#bfd5ae';
+    label(c, '车体 ' + Math.ceil(Math.max(0, num(car.hp))) + ' / ' + num(car.maxHp, 14), left + 12, top + 128, healthColor, 9, 'left');
+    bar(c, left + 149, top + 128, 48, ratio, healthColor, 4);
+    const roomName = rooms.find(room => room.index === car.roomIndex)?.name || '旧线';
+    const status = run.unloaded ? '伤员已进入避风车库' : run.coolingLeft > 0 ? '冷却 ' + num(run.coolingLeft).toFixed(1) + 's · 留神追兵' :
+      '救援车 · ' + roomName;
+    label(c, status, left + 12, top + 148, '#c1cbb0', 8, 'left');
+    label(c, '补修 ' + num(run.repairsLeft) + ' 次', left + 12, top + 166, '#99b2a1', 8, 'left');
+    label(c, state.railAlly?.downed ? '阿禾待救' : car.moving ? '行进' : '停车', left + width - 12, top + 166,
+      state.railAlly?.downed ? '#e4a480' : '#bac8ab', 8, 'right');
     c.restore();
   }
   function minimap(c, state) {
@@ -3572,7 +3822,7 @@
     if (!c || !state) { if (c) preview(c); return; }
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const ending = chapterEndingScene(state, options);
-    const coreRoom = chapterCoreRoom(state), rail = railChapter(state), route = routeChapter(state);
+    const coreRoom = chapterCoreRoom(state), rail = railChapter(state), route = routeChapter(state), train = trainChapter(state);
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom, route);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     const enemies = values(state.enemies);
@@ -3611,12 +3861,14 @@
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...(route && state.room.index === 0 ? [{ y: 255, draw: () => railInteractable(c,
         { kind: 'rail-car', x: 705, y: 255, active: false, used: true }, enemyTime, state, localId, still) }] : []),
+      ...(train && state.chapter.cart?.roomIndex === state.room.index ? [{ y: num(state.chapter.cart.y) + 9,
+        draw: () => trainCar(c, state, enemyTime, localId, still, viewTop) }] : []),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
       ...enemies.map(e => ({ y: e.y, draw: () => rail && e.railGuard === true
         ? railGuard(c, e, state, enemyPoses.get(e.id), viewTop, still)
-        : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail) })),
-      ...((rail || route) && railAllyInRoom(state) ? [{
+        : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail || train) })),
+      ...((rail || route || train) && railAllyInRoom(state) ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
       ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
