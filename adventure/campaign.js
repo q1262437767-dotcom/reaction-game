@@ -15,11 +15,11 @@
     Object.freeze({ id: 2, name: '险境', description: '三盏灯全部点亮后开放；敌人更强，带回更多星屑。', bonus: 20 })
   ]);
   var CHAPTERS = Object.freeze([
-    Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。进入苔火工坊寻找备用火种。', goal: '稳定炉心，带火种回营地点亮归途灯', reward: 40 }),
-    Object.freeze({ id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', description: '旧木场的求援灯还在闪。挪开木车，救出被困的维修工。', goal: '救出维修工，停下吊木守卫，再回信号岗接应撤离', reward: 50 }),
-    Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '救援车沿西边旧线走了。循着车辙，去找维修匠陶铆。', goal: '找到陶铆，打通配电廊和拨道场，接应载着伤员的救援车', reward: 60 }),
-    Object.freeze({ id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', description: '前面的轨道塌了。绕过断轨，去调度室查清那张回收令，给救援车开路。', goal: '选择路线穿过断轨，查阅回收令，打开主轨闸并点亮冷却站信号', reward: 70 }),
-    Object.freeze({ id: 'chapter1_5', name: '第一章 · 第五节 · 末班车', description: '通路和信号都已准备好。护送载着伤员的救援车，穿过还没停工的旧线。', goal: '护住救援车，打开道闸、接水冷却，把伤员送进避风车库', reward: 70 })
+    Object.freeze({ id: 'chapter1', name: '第一章 · 第一节 · 借火归营', description: '归途灯熄灭，采集队迟迟未归。苔火工坊还有一簇备用火，得先让过热的炉子冷下来。', goal: '疏通进水栅，稳定炉心，再带火种回营点灯', reward: 40 }),
+    Object.freeze({ id: 'chapter1_2', name: '第一章 · 第二节 · 木场求援', description: '采集队刚回来，旧木场就打出了求援灯讯。塌棚下有人，吊机却还在运转。', goal: '救出维修工，拉下制动，再停下吊木守卫并接应撤离', reward: 50 }),
+    Object.freeze({ id: 'chapter1_3', name: '第一章 · 第三节 · 借走的主芯', description: '木场工人见过一辆沿西线离开的重车。去找陶铆，问清楚他带走了什么。', goal: '找到陶铆，切换配电旁路，打通拨道场接应救援车', reward: 60 }),
+    Object.freeze({ id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', description: '救援车停在断轨前，追兵却还沿着旧线找来。绕到调度室，看看它们究竟在找什么。', goal: '升桥或引怪破墙，查阅回收令，开闸并点亮冷却站信号', reward: 70 }),
+    Object.freeze({ id: 'chapter1_5', name: '第一章 · 第五节 · 末班车', description: '趁追兵还没赶上来，把救援车开到避风车库。等伤员下了车，再处理那盏紧跟主芯的红灯。', goal: '护送伤员，截停归炉者，让归途灯重新亮起来', reward: 70 })
   ]);
   var BADGES = Object.freeze([
     Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
@@ -175,15 +175,15 @@
 
   function validRailChapter(chapter, status) {
     var c = object(chapter);
-    var keys = ['id', 'version', 'phase', 'clues', 'repairerMet', 'bossDefeated', 'reachedCar', 'railPower', 'railCooldown'];
+    var keys = ['id', 'version', 'phase', 'clues', 'repairerMet', 'feederRouted', 'bossDefeated', 'reachedCar', 'railPower', 'railCooldown'];
     if (c.id !== 'chapter1_3' || c.version !== 1 || Object.keys(c).length !== keys.length ||
         !keys.every(function (key) { return Object.prototype.hasOwnProperty.call(c, key); }) ||
-        !['repairerMet', 'bossDefeated', 'reachedCar'].every(function (key) { return typeof c[key] === 'boolean'; }) ||
+        !['repairerMet', 'feederRouted', 'bossDefeated', 'reachedCar'].every(function (key) { return typeof c[key] === 'boolean'; }) ||
         !Array.isArray(c.clues) || c.clues.length > 2 || new Set(c.clues).size !== c.clues.length ||
         c.clues.some(function (key) { return !['rail-tracks', 'rail-order'].includes(key); }) ||
         !Number.isFinite(c.railPower) || c.railPower < 0 || c.railPower > 3 ||
         !Number.isFinite(c.railCooldown) || c.railCooldown < c.railPower || c.railCooldown > 5 ||
-        c.bossDefeated && !c.repairerMet || c.reachedCar && !c.bossDefeated) return false;
+        c.feederRouted && !c.repairerMet || c.bossDefeated && !c.feederRouted || c.reachedCar && !c.bossDefeated) return false;
     if (status === 'won') return c.phase === 'complete' && c.reachedCar;
     if (status === 'lost') return c.phase === 'failed' && !c.reachedCar;
     return status === 'playing' && !c.reachedCar &&
@@ -196,13 +196,14 @@
 
   function validRouteChapter(chapter, status) {
     var c = object(chapter);
-    var keys = ['id', 'version', 'phase', 'clues', 'bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'];
+    var keys = ['id', 'version', 'phase', 'clues', 'pinTaken', 'bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'];
     if (c.id !== 'chapter1_4' || c.version !== 1 || Object.keys(c).length !== keys.length ||
         !keys.every(function (key) { return Object.prototype.hasOwnProperty.call(c, key); }) ||
-        !['bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'].every(function (key) { return typeof c[key] === 'boolean'; }) ||
+        !['pinTaken', 'bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'].every(function (key) { return typeof c[key] === 'boolean'; }) ||
         !Array.isArray(c.clues) || c.clues.length > 2 || new Set(c.clues).size !== c.clues.length ||
         c.clues.some(function (key) { return !['route-shift', 'route-order'].includes(key); }) ||
-        c.gateOpened && (!c.clues.includes('route-order') || !c.bridgeRaised && !c.wallBreached) ||
+        c.bridgeRaised && !c.pinTaken || c.clues.includes('route-order') && !c.bridgeRaised && !c.wallBreached ||
+        c.gateOpened && !c.clues.includes('route-order') ||
         c.signalLit && !c.gateOpened) return false;
     if (status === 'won') return c.phase === 'complete' && c.signalLit;
     if (status === 'lost') return c.phase === 'failed' && !c.signalLit;
@@ -212,8 +213,8 @@
   }
 
   function validTrainChapter(chapter, status) {
-    var c = object(chapter), cart = object(c.cart);
-    var keys = ['id', 'version', 'phase', 'clues', 'started', 'gateOpened', 'coolingStarted', 'coolingLeft', 'cooled', 'arrived', 'unloaded', 'repairsLeft', 'cart'];
+    var c = object(chapter), cart = object(c.cart), ending = object(c.ending);
+    var keys = ['id', 'version', 'phase', 'clues', 'started', 'gateOpened', 'coolingStarted', 'coolingLeft', 'cooled', 'arrived', 'unloaded', 'repairsLeft', 'cart', 'ending'];
     var cartKeys = ['roomIndex', 'x', 'y', 'hp', 'maxHp', 'moving', 'hitCd'];
     if (c.id !== 'chapter1_5' || c.version !== 1 || Object.keys(c).length !== keys.length ||
         !keys.every(function (key) { return Object.prototype.hasOwnProperty.call(c, key); }) ||
@@ -226,18 +227,24 @@
         !Number.isInteger(cart.roomIndex) || ![0, 1, 2, 4, 5, 6, 7].includes(cart.roomIndex) ||
         !Number.isFinite(cart.x) || cart.x < 180 || cart.x > 780 || cart.y !== 300 ||
         !Number.isInteger(cart.hp) || cart.hp < 0 || cart.hp > 14 || cart.maxHp !== 14 || typeof cart.moving !== 'boolean' ||
-        !Number.isFinite(cart.hitCd) || cart.hitCd < 0 || cart.hitCd > .8) return false;
+        !Number.isFinite(cart.hitCd) || cart.hitCd < 0 || cart.hitCd > .8 ||
+        Object.keys(ending).length !== 4 ||
+        !['diverted', 'stopped', 'lampLit'].every(function (key) { return typeof ending[key] === 'boolean'; }) ||
+        !Number.isFinite(ending.ventLeft) || ending.ventLeft < 0 || ending.ventLeft > 7 ||
+        ending.diverted && !c.unloaded || ending.stopped && !ending.diverted || ending.lampLit && !ending.stopped ||
+        ending.ventLeft > 0 && (!ending.diverted || ending.stopped)) return false;
     if (!c.started && (cart.roomIndex !== 0 || cart.x !== 180 || cart.hp !== 14 || cart.moving || c.gateOpened || c.coolingStarted || c.arrived) ||
         !c.coolingStarted && (c.coolingLeft !== 0 || c.cooled) ||
         c.coolingStarted && (!c.started || cart.roomIndex < 4) ||
         c.cooled && c.coolingLeft !== 0 || cart.roomIndex >= 4 && !c.gateOpened ||
         cart.roomIndex > 4 && !c.cooled ||
         c.arrived && (!c.started || !c.gateOpened || !c.cooled || cart.roomIndex !== 7 || cart.x !== 680 || cart.moving) ||
-        c.unloaded && !c.arrived || cart.moving && (!c.started || c.arrived || cart.hp <= 0 || c.coolingStarted && !c.cooled)) return false;
-    if (status === 'won') return c.phase === 'complete' && c.unloaded && c.arrived && cart.hp > 0;
-    if (status === 'lost') return c.phase === 'failed' && !c.unloaded;
-    if (status !== 'playing' || c.unloaded || cart.hp <= 0) return false;
-    var phase = !c.started ? 'board' : c.arrived ? 'unload' : c.coolingStarted && !c.cooled ? 'cooling' :
+        c.unloaded && (!c.arrived || cart.hp <= 0) || cart.moving && (!c.started || c.arrived || cart.hp <= 0 || c.coolingStarted && !c.cooled)) return false;
+    if (status === 'won') return c.phase === 'complete' && ending.lampLit;
+    if (status === 'lost') return c.phase === 'failed' && !ending.lampLit;
+    if (status !== 'playing' || ending.lampLit || cart.hp <= 0) return false;
+    var phase = c.unloaded ? !ending.diverted ? 'divert' : !ending.stopped ? 'returner' : 'relight' :
+      !c.started ? 'board' : c.arrived ? 'unload' : c.coolingStarted && !c.cooled ? 'cooling' :
       cart.roomIndex === 2 && cart.x >= 600 && !c.gateOpened ? 'gate' :
       cart.roomIndex === 4 && cart.x >= 480 && !c.coolingStarted ? 'water' : 'escort';
     return c.phase === phase && (!['gate', 'water', 'cooling'].includes(phase) || !cart.moving);
@@ -256,7 +263,7 @@
     if (state.mode === 'chapter' && ['chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'].includes(missionId)) {
       var rail = missionId === 'chapter1_3', route = missionId === 'chapter1_4', train = missionId === 'chapter1_5';
       var timber = object(state.chapter), sectionWon = state.status === 'won', cart = object(timber.cart);
-      var timberKeys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
+      var timberKeys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'brakeSet', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
       if (difficulty !== 1) return result;
       if (train) {
         if (!validTrainChapter(state.chapter, state.status)) return result;
@@ -266,12 +273,12 @@
         if (!validRailChapter(state.chapter, state.status)) return result;
       } else if (timber.id !== 'chapter1_2' || timber.version !== 1 ||
           Object.keys(timber).length !== timberKeys.length || !timberKeys.every(function (key) { return Object.prototype.hasOwnProperty.call(timber, key); }) ||
-          !['workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'].every(function (key) { return typeof timber[key] === 'boolean'; }) ||
+          !['workerFreed', 'brakeSet', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'].every(function (key) { return typeof timber[key] === 'boolean'; }) ||
           !Array.isArray(timber.clues) || timber.clues.length > 2 || new Set(timber.clues).size !== timber.clues.length ||
           timber.clues.some(function (clue) { return !['timber-tracks', 'timber-bandage'].includes(clue); }) ||
           Object.keys(cart).length !== 2 || !Object.prototype.hasOwnProperty.call(cart, 'position') || !Object.prototype.hasOwnProperty.call(cart, 'target') ||
           !Number.isFinite(cart.position) || cart.position < 0 || cart.position > 1 || ![0, 1].includes(cart.target) ||
-          timber.shortcutOpen !== timber.workerFreed || timber.bossDefeated && !timber.workerFreed ||
+          timber.shortcutOpen !== timber.workerFreed || timber.brakeSet && !timber.workerFreed || timber.bossDefeated && !timber.brakeSet ||
           timber.evacuated !== sectionWon || sectionWon && (!timber.workerFreed || !timber.bossDefeated) ||
           timber.phase !== (sectionWon ? 'complete' : 'failed')) return result;
       p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80); p.runs = Math.min(LIMIT, p.runs + 1);
@@ -291,7 +298,7 @@
         }
         if (object(state.stats).damage === 0) earn('flawless');
         if (sectionRecord.clears === 1) {
-          if (train) unlocks.push('第五节完成 · 伤员已送进避风车库');
+          if (train) unlocks.push('第一章《归途灯》完成 · 归炉者已停机');
           else if (route) unlocks.push('第四节完成 · 冷却站信号已亮', '第五节解锁 · 末班车');
           else if (rail) unlocks.push('第三节完成 · 找到救援车', '第四节解锁 · 断轨开路');
           else unlocks.push('第二节完成 · 维修工回营', '第三节解锁 · 借走的主芯');
@@ -302,8 +309,8 @@
     if (state.mode === 'chapter') {
       var chapter = object(state.chapter), won = state.status === 'won';
       if (missionId !== 'chapter1' || difficulty !== 1 || chapter.id !== 'chapter1' || chapter.version !== 1 ||
-          !['sluiceOpen', 'bossDefeated', 'fireTaken', 'lampLit', 'suppliesTaken', 'beaconLit'].every(function (key) { return typeof chapter[key] === 'boolean'; }) ||
-          chapter.lampLit !== won || chapter.fireTaken && !chapter.bossDefeated || chapter.bossDefeated && !chapter.sluiceOpen ||
+          !['intakeOpen', 'sluiceOpen', 'bossDefeated', 'fireTaken', 'lampLit', 'suppliesTaken', 'beaconLit'].every(function (key) { return typeof chapter[key] === 'boolean'; }) ||
+          chapter.sluiceOpen && !chapter.intakeOpen || chapter.lampLit !== won || chapter.fireTaken && !chapter.bossDefeated || chapter.bossDefeated && !chapter.sluiceOpen ||
           chapter.lampLit && !chapter.fireTaken || chapter.phase !== (won ? 'complete' : 'failed')) return result;
       p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80); p.runs = Math.min(LIMIT, p.runs + 1);
       (Array.isArray(state.runBuffs) ? state.runBuffs : []).forEach(function (buff) {

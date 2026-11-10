@@ -9,15 +9,15 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>遗迹小队</title>
   <meta name="description" content="遗迹小队：探索苔火遗迹，与朋友一起带火归营。">
-  <link rel="stylesheet" href="style.css?v=53">
-  <script defer src="engine.js?v=53"></script>
-  <script defer src="renderer.js?v=53"></script>
-  <script defer src="net.js?v=53"></script>
-  <script defer src="campaign.js?v=53"></script>
-  <script defer src="cloud-config.js?v=53"></script>
-  <script defer src="cloud.js?v=53"></script>
-  <script defer src="account.js?v=53"></script>
-  <script defer src="app.js?v=53"></script>
+  <link rel="stylesheet" href="style.css?v=54">
+  <script defer src="engine.js?v=54"></script>
+  <script defer src="renderer.js?v=54"></script>
+  <script defer src="net.js?v=54"></script>
+  <script defer src="campaign.js?v=54"></script>
+  <script defer src="cloud-config.js?v=54"></script>
+  <script defer src="cloud.js?v=54"></script>
+  <script defer src="account.js?v=54"></script>
+  <script defer src="app.js?v=54"></script>
 </head>
 <body>
   <div id="safe-probe" aria-hidden="true"></div>
@@ -67,7 +67,7 @@
             <button id="menu-modes-back" class="menu-back" type="button"><span aria-hidden="true">←</span> 主菜单</button>
             <h2 id="mode-menu-title" class="menu-heading">开始游戏</h2>
             <div class="mode-list">
-              <button id="mode-chapter" class="mode-choice mode-choice-featured" type="button"><span class="mode-index">01</span><span><strong>故事章节</strong><small>第一章 · 第一节 · 借火归营</small></span><span class="mode-arrow" aria-hidden="true">→</span></button>
+              <button id="mode-chapter" class="mode-choice mode-choice-featured" type="button"><span class="mode-index">01</span><span><strong>故事章节</strong><small>第一章 · 归途灯 · 共五节</small></span><span class="mode-arrow" aria-hidden="true">→</span></button>
               <button id="mode-random" class="mode-choice mode-choice-featured" type="button"><span class="mode-index">∞</span><span><strong>随机远征</strong><small>探索迷雾，挑战炉心守卫</small></span><span class="mode-arrow" aria-hidden="true">→</span></button>
               <button id="mode-challenges" class="mode-choice" type="button"><span class="mode-index">◇</span><span><strong>挑战</strong><small>猎场、夺宝与任务</small></span><span class="mode-arrow" aria-hidden="true">→</span></button>
               <button id="mode-training" class="mode-choice" type="button"><span class="mode-index">✧</span><span><strong>训练</strong><small>招架试炼</small></span><span class="mode-arrow" aria-hidden="true">→</span></button>
@@ -94,7 +94,7 @@
               <p id="mission-lock" class="mission-lock">自由选择路线</p>
             </div>
             <div class="mission-picker">
-              <div class="mode-select-field" hidden><label for="mode-select">探险模式</label><select id="mode-select"><option value="random" selected>随机探索</option><option value="chapter">第一章 · 第一节 · 借火归营</option><option value="relay">接力夺宝</option><option value="hunt">苔火猎场</option><option value="story">旧版任务</option></select></div>
+              <div class="mode-select-field" hidden><label for="mode-select">探险模式</label><select id="mode-select"><option value="random" selected>随机探索</option><option value="chapter">第一章 · 归途灯</option><option value="relay">接力夺宝</option><option value="hunt">苔火猎场</option><option value="story">旧版任务</option></select></div>
               <div id="chapter-mission-field" class="mission-select-field" hidden><label for="chapter-select">故事小节</label><select id="chapter-select"><option value="chapter1" selected>第一节 · 借火归营</option><option value="chapter1_2" disabled>第二节 · 木场求援 · 待解锁</option><option value="chapter1_3" disabled>第三节 · 借走的主芯 · 待解锁</option><option value="chapter1_4" disabled>第四节 · 断轨开路 · 待解锁</option><option value="chapter1_5" disabled>第五节 · 末班车 · 待解锁</option></select></div>
               <div id="story-mission-field" class="mission-select-field" hidden><label for="mission-select">营地委托</label><select id="mission-select"><option value="ember">01 · 熄灭炉心</option><option value="salvage" disabled>02 · 物资回收 · 待解锁</option><option value="holdout" disabled>03 · 信标守夜 · 待解锁</option></select></div>
               <div class="difficulty-select-field"><label for="difficulty-select">难度</label><select id="difficulty-select"><option value="1">普通</option><option value="2" disabled>险境 · 待解锁</option></select></div>

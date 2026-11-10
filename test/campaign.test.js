@@ -53,7 +53,7 @@ test('practice, chapter, hunt, and relay stay inside the cloud coin caps', () =>
     status: 'won', mode: 'chapter', difficulty: 1, mission: { id: 'chapter1' },
     chapter: {
       id: 'chapter1', version: 1, phase: 'complete',
-      sluiceOpen: true, bossDefeated: true, fireTaken: true, lampLit: true,
+      intakeOpen: true, sluiceOpen: true, bossDefeated: true, fireTaken: true, lampLit: true,
       suppliesTaken: false, beaconLit: false
     },
     reward: { coins: 500 }, elapsed: 40, stats: { damage: 1 }, runBuffs: []
@@ -110,7 +110,7 @@ test('the third section unlocks from old saves and settles its own record once',
     mode: 'chapter', mission: { id: 'chapter1_3' },
     chapter: {
       id: 'chapter1_3', version: 1, phase: 'complete', clues: ['rail-tracks'],
-      repairerMet: true, bossDefeated: true, reachedCar: true, railPower: 0, railCooldown: 0
+      repairerMet: true, feederRouted: true, bossDefeated: true, reachedCar: true, railPower: 0, railCooldown: 0
     }
   });
   const clear = C.applyResult(old, rail, 'rail-win');
@@ -129,7 +129,7 @@ test('the third section unlocks from old saves and settles its own record once',
 
 function routeChapter(extra) {
   return Object.assign({ id: 'chapter1_4', version: 1, phase: 'complete', clues: ['route-order'],
-    bridgeRaised: true, wallBreached: false, gateOpened: true, signalLit: true }, extra);
+    pinTaken: true, bridgeRaised: true, wallBreached: false, gateOpened: true, signalLit: true }, extra);
 }
 
 test('the fourth section unlocks after the third and records a bounded 70-coin clear', () => {
@@ -190,10 +190,14 @@ function trainChapter(extra = {}) {
     started: true, gateOpened: true, coolingStarted: true, coolingLeft: 0, cooled: true, arrived: true,
     unloaded: true, repairsLeft: 1 }, extra, { cart: Object.assign({
       roomIndex: 7, x: 680, y: 300, hp: 10, maxHp: 14, moving: false, hitCd: 0
-    }, extra.cart) });
+    }, extra.cart), ending: Object.assign({
+      diverted: true, stopped: true, lampLit: true, ventLeft: 0
+    }, extra.ending) });
 }
 
-test('the fifth section unlocks after the fourth and settles only an unloaded living rescue car', () => {
+const trainUnfinished = { diverted: false, stopped: false, lampLit: false, ventLeft: 0 };
+
+test('the fifth section unlocks after the fourth and settles only after the final lamp', () => {
   const old = { v: 2, missions: { chapter1_4: { clears: 1, hardClears: 0, bestTime: 80 } } };
   assert.equal(C.CHAPTERS[4].id, 'chapter1_5');
   assert.equal(C.CHAPTERS[4].reward, 70);
@@ -214,7 +218,7 @@ test('the fifth section unlocks after the fourth and settles only an unloaded li
   assert.equal(C.applyResult(result.profile, state, 'train-win').duplicate, true);
   assert.equal(C.applyResult(null, state, 'train-guest-win').profile.missions.chapter1_5.clears, 1);
   assert.equal(C.applyResult(old, { ...state, mode: 'story' }, 'train-as-story').profile.runs, 1);
-  const loss = { ...state, status: 'lost', chapter: trainChapter({ phase: 'failed', unloaded: false, cart: { hp: 0 } }) };
+  const loss = { ...state, status: 'lost', chapter: trainChapter({ phase: 'failed', unloaded: false, cart: { hp: 0 }, ending: trainUnfinished }) };
   assert.equal(C.applyResult(old, loss, 'train-loss').reward, 0);
   assert.equal(C.applyResult(old, loss, 'train-loss').profile.runs, 2);
   assert.equal(C.applyResult(old, loss, 'train-loss').profile.missions.chapter1_5.clears, 0);
@@ -223,7 +227,7 @@ test('the fifth section unlocks after the fourth and settles only an unloaded li
 test('train chapter validation follows physical stops and rejects premature or malformed completion', () => {
   const board = trainChapter({ phase: 'board', clues: [], started: false, gateOpened: false,
     coolingStarted: false, coolingLeft: 0, cooled: false, arrived: false, unloaded: false, repairsLeft: 2,
-    cart: { roomIndex: 0, x: 180, hp: 14 } });
+    cart: { roomIndex: 0, x: 180, hp: 14 }, ending: trainUnfinished });
   assert(C.validTrainChapter(board, 'playing'));
   const moving = { ...board, started: true, phase: 'escort', cart: { ...board.cart, roomIndex: 1, x: 480, moving: true } };
   assert(C.validTrainChapter(moving, 'playing'));
@@ -234,7 +238,11 @@ test('train chapter validation follows physical stops and rejects premature or m
   const cooling = { ...water, phase: 'cooling', coolingStarted: true, coolingLeft: 10 };
   assert(C.validTrainChapter(cooling, 'playing'));
   assert(C.validTrainChapter({ ...cooling, coolingLeft: 0 }, 'playing'), 'compact snapshots may round sub-0.005 seconds to zero');
-  assert(C.validTrainChapter(trainChapter({ phase: 'unload', unloaded: false }), 'playing'));
+  assert(C.validTrainChapter(trainChapter({ phase: 'unload', unloaded: false, ending: trainUnfinished }), 'playing'));
+  assert(C.validTrainChapter(trainChapter({ phase: 'divert', ending: trainUnfinished }), 'playing'));
+  assert(C.validTrainChapter(trainChapter({ phase: 'returner', ending: { diverted: true, stopped: false, lampLit: false, ventLeft: 3.6 } }), 'playing'));
+  assert(C.validTrainChapter(trainChapter({ phase: 'relight', ending: { lampLit: false } }), 'playing'));
+  assert(C.validTrainChapter(trainChapter({ phase: 'failed', ending: { stopped: false, lampLit: false } }), 'lost'));
   const invalids = [trainChapter({ unloaded: false }), trainChapter({ arrived: false }),
     trainChapter({ gateOpened: false }), trainChapter({ cooled: false }),
     trainChapter({ cart: { hp: 0 } }), trainChapter({ cart: { x: 679 } }),
@@ -243,7 +251,9 @@ test('train chapter validation follows physical stops and rejects premature or m
     trainChapter({ repairsLeft: 3 }), trainChapter({ extra: true }),
     trainChapter({ cart: { extra: true } }), trainChapter({ version: 2 }),
     trainChapter({ clues: ['train-passengers', 'train-passengers'] }),
-    trainChapter({ clues: ['other'] })];
+    trainChapter({ clues: ['other'] }), trainChapter({ ending: trainUnfinished }),
+    trainChapter({ ending: { diverted: false } }), trainChapter({ ending: { stopped: false } }),
+    trainChapter({ ending: { lampLit: false } })];
   for (const chapter of invalids) {
     assert.equal(C.validTrainChapter(chapter, 'won'), false);
     const result = C.applyResult(null, storyWin({ mode: 'chapter', mission: { id: 'chapter1_5' }, chapter }), 'invalid-train');

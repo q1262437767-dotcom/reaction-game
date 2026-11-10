@@ -30,10 +30,10 @@ function safeRoute(s) {
   // Route and timing fixture: remove defenders, leaving real vehicle motion,
   // player interactions, room ownership, gates and result settlement intact.
   s.enemies = [];
-  Object.values(s.roomData).forEach(data => { data.enemies = []; });
+  Object.entries(s.roomData).forEach(([index, data]) => { if (index !== '8') data.enemies = []; });
 }
 
-test('the real vehicle visits both staffed stops and only a player can unload the passengers', () => {
+test('the escort ends only after unloading, stopping the Returner and relighting the lamp', () => {
   const s = party(); safeRoute(s);
   const parked = [s.players.p1.x, s.players.p1.y, s.players.p1.hp];
   E.step(s, {}, 1);
@@ -66,6 +66,37 @@ test('the real vehicle visits both staffed stops and only a player can unload th
   assert.equal(s.chapter.cart.roomIndex, 7); assert.equal(s.chapter.cart.x, 680);
   assert.deepEqual([s.players.p1.x, s.players.p1.y, s.players.p1.hp], parked);
   assert(use(s, 'train-unload', 7));
+  assert.equal(s.status, 'playing'); assert.equal(s.chapter.phase, 'divert');
+  assert.equal(s.rewardGranted, false);
+  assert.equal(E.enterRoom(s, 8, false, 'p2'), false, 'the furnace is closed before the core diversion');
+  assert.equal(use(s, 'train-lamp'), false, 'safe passengers alone do not complete the chapter');
+  assert.equal(use(s, 'train-cart'), false, 'the parked vehicle is no longer operable');
+  assert(use(s, 'train-divert'));
+  assert(E.enterRoom(s, 8, false, 'p2'));
+  assert(E.enterRoom(s, 7, true, 'p1'));
+  const findBoss = () => view(s).enemies.find(e => e.trainReturner);
+  const boss = findBoss();
+  assert.equal(boss.hp, 144);
+  assert(use(s, 'train-vent'));
+  assert.equal(findBoss().hp, 132);
+  assert(findBoss().weakTime > 0, 'the pressure release creates a real weakpoint');
+  assert.equal(use(s, 'train-vent'), false, 'the valve needs to recover');
+
+  // Keep the aiming fixture alive while real projectiles resolve the boss
+  // fight. The authored boss, HP, attacks and other rooms keep simulating.
+  Object.assign(s.players.p2, { x: 446, y: 346, invuln: 90 });
+  for (let n = 0; n < 1200 && !s.chapter.ending.stopped; n++) {
+    const target = findBoss();
+    E.step(s, { p2: { shoot: true, aimX: target.x, aimY: target.y } }, dt);
+  }
+  assert(s.chapter.ending.stopped, 'the Returner can be stopped by combat');
+  assert.equal(s.status, 'playing'); assert.equal(s.chapter.phase, 'relight');
+  assert.equal(s.chapter.ending.ventLeft, 0);
+  assert.equal(s.playerRooms.p2, 8, 'winning the fight never drags the player back');
+  assert(view(s, 'p1').interactables.find(item => item.kind === 'train-lamp').active,
+    'the separated teammate sees the lamp immediately');
+  Object.assign(s.players.p1, { x: 540, y: 365 });
+  assert(E.interact(s, 'p1'));
   assert.equal(s.status, 'won'); assert.equal(s.reward.coins, 70);
   for (const id of ['p1', 'p2']) {
     const state = clone(E.snapshot(view(s, id), true));

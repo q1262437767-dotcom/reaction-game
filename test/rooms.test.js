@@ -121,6 +121,7 @@ test('one player leaving does not drop their partner’s carried prop', () => {
 test('a shared story completion settles once from either player’s view', () => {
   const state = E.create({ mode: 'chapter', mission: 'chapter1_3', seed: 52, players: 2 });
   state.chapter.repairerMet = true;
+  state.chapter.feederRouted = true;
   state.chapter.bossDefeated = true;
   state.rooms[6].cleared = true;
   E.enterRoom(state, 4, true, 'p2');

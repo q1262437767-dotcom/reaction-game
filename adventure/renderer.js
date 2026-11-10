@@ -101,8 +101,94 @@
   function trainChapter(state) {
     return state?.mode === 'chapter' && state.chapter?.id === 'chapter1_5';
   }
-  function trainFloor(c, state, time, still) {
+  function furnacePressureFloor(c, state, still) {
+    const ending = state.chapter.ending, x = 660, y = 300, radius = 180;
+    rect(c, 29, 29, 902, 542, '#2b3538');
+    for (let row = 0; row < 11; row++) for (let col = 0; col < 15; col++) {
+      const tx = 38 + col * 59, ty = 41 + row * 47;
+      rect(c, tx, ty, 56, 43, (row + col) % 3 === 0 ? '#404c4b' : '#384548');
+      rect(c, tx + 2, ty + 1, 51, 1, '#87978a25');
+      rect(c, tx + 4, ty + 37, 5, 2, '#151f27');
+      rect(c, tx + 48, ty + 5, 4, 2, '#73827a66');
+    }
+    for (const ty of [90, 500]) {
+      rect(c, 52, ty, 855, 14, '#192932');
+      rect(c, 55, ty + 2, 849, 8, '#435b60');
+      rect(c, 56, ty + 2, 847, 2, '#728c844d');
+      for (let tx = 78; tx < 900; tx += 58) {
+        rect(c, tx, ty - 4, 7, 21, '#263d46');
+        rect(c, tx + 1, ty - 3, 2, 17, '#829b9066');
+      }
+    }
+    rect(c, 576, 53, 168, 89, '#1b282d');
+    rect(c, 583, 55, 154, 10, '#827c64');
+    rect(c, 583, 67, 154, 69, '#4f5654');
+    rect(c, 601, 75, 118, 56, '#242c30');
+    for (let tx = 606; tx < 714; tx += 17) {
+      rect(c, tx, 77, 7, 52, '#68706a');
+      rect(c, tx + 1, 77, 2, 48, '#a29374');
+    }
+    if (ending?.diverted) {
+      const hot = !ending.stopped;
+      glow(c, x, 108, 134, hot ? '#ea965b43' : '#9db69f18');
+      rect(c, 608, 111, 105, 7, hot ? '#c89255' : '#596c61');
+      rect(c, 617, 112, 87, 3, hot ? '#e6bb76' : '#7b8b74');
+    }
+    path(c, [[x, 137], [x, y], [445, y], [445, 405]], '#243840', 10);
+    path(c, [[x, 137], [x, y], [445, y], [445, 405]], '#7f9c9174', 3);
+    const vent = Math.max(0, num(ending?.ventLeft)), burst = Math.max(0, Math.min(1, (vent - 6.2) / .8));
+    c.save();
+    c.strokeStyle = burst ? '#c9eadbb3' : '#95bdb37a';
+    c.lineWidth = burst ? 3 : 2; c.setLineDash([10, 8]);
+    c.beginPath(); c.arc(x, y, radius, 0, Math.PI * 2); c.stroke();
+    c.setLineDash([]);
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, dx = Math.cos(a), dy = Math.sin(a);
+      path(c, [[x + dx * (radius - 8), y + dy * (radius - 8)], [x + dx * (radius + 7), y + dy * (radius + 7)]], '#a4c4b3a0', 3);
+    }
+    if (burst > 0) alpha(c, (still ? .13 : burst * .28), () => {
+      ellipse(c, x, y, radius, radius, '#bdddcf');
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4, reach = still ? 111 : 52 + (1 - burst) * 105;
+        const sx = x + Math.cos(a) * reach, sy = y + Math.sin(a) * reach;
+        ellipse(c, sx, sy, 23 + 21 * (1 - burst), 11 + 15 * (1 - burst), '#e0f6e8');
+      }
+    });
+    c.restore();
+  }
+  function garageDistantLight(c, ending, time, still, age) {
+    c.save(); c.translate(605, 208); c.scale(1, .68);
+    rect(c, 0, 0, 143, 87, '#1e3034');
+    rect(c, 5, 4, 133, 78, '#76806b');
+    rect(c, 10, 10, 123, 66, '#1a303d');
+    path(c, [[11, 55], [37, 39], [61, 52], [87, 33], [131, 52]], '#314853', 3);
+    path(c, [[11, 70], [42, 53], [70, 71], [109, 47], [131, 60]], '#263a44', 4);
+    rect(c, 69, 9, 4, 68, '#59695e');
+    rect(c, 7, 82, 130, 5, '#a19470');
+    if (ending.lampLit && age >= 4) {
+      const pulse = still ? 1 : .88 + Math.sin(time * .002) * .12;
+      alpha(c, pulse * Math.min(1, (age - 4) / .75), () => {
+        glow(c, 104, 35, 31, '#70bdda6a');
+        rect(c, 102, 33, 4, 5, '#89d5ed');
+        rect(c, 103, 33, 2, 2, '#e3f9f6');
+      });
+    }
+    c.restore();
+  }
+  function trainGarageTao(age) {
+    const path = [[0, 749, 311], [1.4, 739, 232], [5.3, 352, 216], [6.6, 286, 176]];
+    for (let i = 1; i < path.length; i++) {
+      const [end, x, y] = path[i];
+      if (age < end) {
+        const [start, fromX, fromY] = path[i - 1], t = (age - start) / (end - start);
+        return { x: fromX + (x - fromX) * t, y: fromY + (y - fromY) * t, gait: Math.sin(age * 10) };
+      }
+    }
+    return { x: 286, y: 176, gait: 0 };
+  }
+  function trainFloor(c, state, time, still, endingAge) {
     const index = state.room.index, run = state.chapter, cool = index === 0 || index === 4, safe = index === 7;
+    if (index === 8) { furnacePressureFloor(c, state, still); return; }
     rect(c, 29, 29, 902, 542, safe ? '#3d4039' : cool ? '#293e45' : index === 5 ? '#3a3735' : '#303b3d');
     for (let y = 42; y < 570; y += 40) for (let x = 40 + (y % 80 ? 0 : 28); x < 922; x += 58) {
       rect(c, x, y, 55, 37, safe ? '#79705714' : '#7180790b');
@@ -144,6 +230,8 @@
         }
         for (let x = 145; x < 821; x += 43) { rect(c, x, 446, 27, 3, '#8e7a4c42'); rect(c, x + 8, 450, 13, 1, '#bdac7961'); }
         if (run.arrived) glow(c, 425, 160, 160, '#e3b76f18');
+        if (run.ending) garageDistantLight(c, run.ending, time, still, endingAge);
+        if (run.ending?.lampLit) glow(c, 540, 328, 260, '#e8ca8327');
       }
     } else if (index === 1) {
       for (let x = 130; x < 860; x += 71) {
@@ -221,14 +309,21 @@
     rect(c, x - 69, y - 1, 98, 7, '#a18258');
     rect(c, x + 29, y - 36, 29, 44, '#253b3f'); rect(c, x + 32, y - 35, 23, 37, '#9c784b');
     rect(c, x + 35, y - 31, 17, 25, '#394d49');
-    glow(c, x + 43, y - 21, 59, '#efbf6b42'); crystal(c, x + 43, y - 21, 1.3, '#eac07c');
+    if (!run.ending?.diverted) {
+      glow(c, x + 43, y - 21, 59, '#efbf6b42'); crystal(c, x + 43, y - 21, 1.3, '#eac07c');
+    } else {
+      rect(c, x + 38, y - 25, 11, 8, '#202f32');
+      rect(c, x + 39, y - 17, 9, 2, '#77826a');
+    }
     path(c, [[x + 43, y - 8], [x + 43, y + 4], [x + 9, y + 4]], '#b99a62', 3);
     // A seated driver and a slatted front guard make the moving rescue car
     // recognizable without inventing a second collision footprint.
-    rect(c, x + 59, y - 7, 15, 15, '#705a41'); rect(c, x + 61, y - 17, 11, 13, '#bb9a6c');
-    rect(c, x + 59, y - 19, 15, 5, '#626e61'); rect(c, x + 61, y - 21, 10, 3, '#b1ad84');
-    rect(c, x + 69, y - 11, 3, 3, '#273737');
-    path(c, [[x + 66, y - 1], [x + 73, y + 3], [x + 79, y]], '#c9ac7b', 3);
+    if (!run.ending?.lampLit) {
+      rect(c, x + 59, y - 7, 15, 15, '#705a41'); rect(c, x + 61, y - 17, 11, 13, '#bb9a6c');
+      rect(c, x + 59, y - 19, 15, 5, '#626e61'); rect(c, x + 61, y - 21, 10, 3, '#b1ad84');
+      rect(c, x + 69, y - 11, 3, 3, '#273737');
+      path(c, [[x + 66, y - 1], [x + 73, y + 3], [x + 79, y]], '#c9ac7b', 3);
+    }
     for (const dx of [-61, -41, -20, 2, 22, 65]) { rect(c, x + dx, y + 5, 4, 11, '#3e4e46'); rect(c, x + dx, y + 5, 3, 2, '#d2b77f'); }
     if (ratio < .55) for (const [dx, dy] of [[-48, 7], [-11, 10], [61, 10]]) path(c,
       [[x + dx - 6, y + dy - 4], [x + dx + 1, y + dy], [x + dx - 3, y + dy + 5]], '#233936', 2);
@@ -238,6 +333,7 @@
       const p = (num(state.time) * .8 + i * .31) % 1;
       rect(c, x - 73 - p * 19, y + 25 + i % 2 * 4, 5 - p * 3, 2, '#b8b18942');
     }
+    if (run.ending && run.unloaded) return;
     const top = Math.max(viewTop + 22, y - 76), color = ratio < .3 ? '#e3a17c' : ratio < .6 ? '#e4bd80' : '#bdd7b1';
     label(c, '救援车', x, top - 13, '#e3cca1', 10); bar(c, x, top + 1, 96, ratio, color, 5);
     label(c, Math.ceil(Math.max(0, num(car.hp))) + ' / ' + num(car.maxHp, 14), x + 58, top + 2, color, 9, 'left');
@@ -248,7 +344,41 @@
     const active = item.active !== false && !item.used;
     const focused = p && values(state.interactables).filter(q => q.active !== false && !q.used && /^train-/.test(q.kind))
       .sort((a, b) => Math.hypot(num(p.x) - num(a.x), num(p.y) - num(a.y)) - Math.hypot(num(p.x) - num(b.x), num(p.y) - num(b.y)))[0]?.id === item.id;
-    if (/repair/.test(kind)) {
+    if (kind === 'train-divert') {
+      shadow(c, x, y, 34, .39);
+      rect(c, x - 33, y - 10, 66, 20, '#26373a'); rect(c, x - 30, y - 14, 60, 19, '#747864');
+      rect(c, x - 29, y - 14, 56, 3, '#b1a47f');
+      for (const side of [-1, 1]) {
+        const sx = x + side * 19;
+        rect(c, sx - 6, y + 6, 13, 7, '#172d33'); rect(c, sx - 4, y + 8, 9, 3, '#6c7772');
+        rect(c, sx - 4, y - 21, 9, 18, '#40544e'); rect(c, sx - 2, y - 21, 3, 15, '#a2aa8b');
+      }
+      rect(c, x - 11, y - 11, 22, 10, '#2e4343');
+      rect(c, x - 5, y - 8, 10, 4, item.used ? '#b6d6a2' : active ? '#dfab70' : '#778477');
+      path(c, [[x - 34, y + 4], [x - 52, y + 4], [x - 66, y - 16]], '#212f36', 4);
+    } else if (kind === 'train-lamp') {
+      const lit = run.ending?.lampLit;
+      shadow(c, x, y, 29, .33);
+      rect(c, x - 24, y - 3, 48, 15, '#243638'); rect(c, x - 22, y - 5, 44, 8, '#9b926d');
+      rect(c, x - 7, y - 63, 14, 60, '#314746'); rect(c, x - 5, y - 63, 4, 59, '#a99b71');
+      rect(c, x - 17, y - 76, 34, 24, '#263c3b'); rect(c, x - 14, y - 74, 28, 20, '#62726b');
+      rect(c, x - 9, y - 72, 18, 16, lit ? '#f4d887' : '#4a5852');
+      rect(c, x - 3, y - 71, 6, 12, lit ? '#ffefb9' : '#6e7864');
+      rect(c, x - 21, y - 79, 42, 4, '#b1a17b');
+      if (lit || active) glow(c, x, y - 64, lit ? 136 : 47, lit ? '#efc77968' : '#d4b77937');
+    } else if (kind === 'train-vent') {
+      const vent = Math.max(0, num(run.ending?.ventLeft)), color = active ? '#b8dac0' : '#808e7e';
+      shadow(c, x, y, 29, .36);
+      rect(c, x - 30, y - 11, 60, 24, '#263a42'); rect(c, x - 27, y - 14, 54, 22, '#647d7a');
+      rect(c, x - 25, y - 13, 50, 3, '#a1b29a');
+      rect(c, x - 21, y - 5, 14, 7, '#283d43'); rect(c, x - 19, y - 4, 10, 3, color);
+      rect(c, x + 6, y - 24, 7, 21, '#344d4e');
+      c.strokeStyle = '#a89a70'; c.lineWidth = 3; c.beginPath(); c.arc(x + 9, y - 25, 10, 0, Math.PI * 2); c.stroke();
+      path(c, [[x + 2, y - 25], [x + 16, y - 25]], '#d1c08c', 2);
+      path(c, [[x + 9, y - 33], [x + 9, y - 17]], '#d1c08c', 2);
+      if (active) glow(c, x - 15, y - 4, 39, '#bce6c042');
+      if (nearby && vent > 0 && !run.ending?.stopped) label(c, '泄压冷却 ' + Math.ceil(vent) + 's', x, y + 31, '#a8c0b5', 10);
+    } else if (/repair/.test(kind)) {
       if (!active) return;
       shadow(c, x, y, 15, .3); rect(c, x - 13, y - 8, 27, 18, '#35504b'); rect(c, x - 11, y - 9, 23, 4, '#a4b796');
       path(c, [[x - 7, y + 5], [x + 5, y - 7]], '#d3c89d', 4);
@@ -273,6 +403,51 @@
       rect(c, x - 13, y - 13, 7, 20, '#d6d0a2'); rect(c, x - 19, y - 6, 19, 7, '#d6d0a2');
     }
     if (nearby && active && focused) label(c, 'E · ' + item.label, x, y + (/cart|car|depart|stop/.test(kind) ? 51 : 31), '#ead8ad', 10);
+  }
+  function storyMechanism(c, item, state, localId) {
+    const x = num(item.x), y = num(item.y), kind = item.kind;
+    const active = item.active !== false && !item.used, used = item.used === true;
+    const p = state.players?.[localId];
+    const nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 92;
+    shadow(c, x, y, 27, .35);
+    if (kind === 'chapter-intake') {
+      rect(c, x - 38, y - 17, 76, 34, '#20363b');
+      rect(c, x - 35, y - 14, 70, 28, used ? '#41656b' : '#354447');
+      rect(c, x - 35, y - 14, 70, 3, '#9da391');
+      for (let dx = -30; dx <= 25; dx += 11) {
+        rect(c, x + dx, y - (used ? 15 : 11), 6, used ? 9 : 23, '#546b66');
+        rect(c, x + dx, y - (used ? 15 : 11), 2, used ? 9 : 23, '#9aa896');
+      }
+      if (used) for (const [dx, dy] of [[-21, 4], [-4, 8], [13, 2]]) {
+        rect(c, x + dx, y + dy, 11, 2, '#a7cbbb8c');
+      } else for (const [dx, dy] of [[-17, -2], [-5, 2], [8, -4]]) {
+        rect(c, x + dx, y + dy, 14, 5, '#7b7756'); rect(c, x + dx, y + dy, 13, 1, '#a49968');
+      }
+    } else if (kind === 'timber-brake') {
+      rect(c, x - 25, y - 1, 50, 14, '#314039'); rect(c, x - 22, y - 6, 44, 12, '#766c4f');
+      rect(c, x - 8, y - 30, 16, 31, '#52614d'); rect(c, x - 7, y - 30, 3, 29, '#a6aa80');
+      const handleX = x + (used ? 16 : -17), handleY = y - (used ? 11 : 34);
+      path(c, [[x, y - 16], [handleX, handleY]], '#283a36', 8);
+      path(c, [[x, y - 16], [handleX, handleY]], '#c1a674', 3);
+      rect(c, handleX - 6, handleY - 3, 12, 6, used ? '#9fc29c' : '#bd8e57');
+      rect(c, x + 9, y + 1, 10, 4, used ? '#bad399' : '#a18662');
+    } else if (kind === 'rail-route') {
+      rect(c, x - 24, y - 24, 48, 31, '#273b45'); rect(c, x - 21, y - 24, 42, 24, '#52727a');
+      rect(c, x - 20, y - 24, 40, 3, '#99aca1');
+      path(c, [[x - 13, y - 10], [x - 2, y - 10], [x + 3, y - 14], [x + 13, y - 14]], used ? '#b6daca' : '#78948e', 2);
+      path(c, [[x - 2, y - 10], [x + 4, y - 5], [x + 13, y - 5]], '#92aaa4', 2);
+      rect(c, x - 18, y - 14, 5, 8, active ? '#c5e9ce' : '#7b9992');
+      if (active) glow(c, x - 15, y - 11, 36, '#bae6d739');
+    } else if (kind === 'route-pin') {
+      rect(c, x - 25, y - 8, 50, 20, '#26383a'); rect(c, x - 23, y - 11, 46, 17, '#63736d');
+      rect(c, x - 20, y - 9, 40, 12, '#394b4d');
+      if (!used) {
+        rect(c, x - 17, y - 6, 33, 6, '#ba9464'); rect(c, x - 16, y - 6, 31, 2, '#f0c889');
+        rect(c, x - 14, y - 9, 6, 11, '#dfb780'); rect(c, x + 9, y - 6, 4, 6, '#9e815d');
+        if (active) glow(c, x, y - 5, 31, '#ebc57c3f');
+      }
+    }
+    if (nearby && active) label(c, 'E · ' + item.label, x, y + 28, '#e8d6a3', 10);
   }
   function routeTrack(c, start, end, y, broken = false) {
     for (let x = start + 6; x < end - 3; x += 24) {
@@ -475,9 +650,9 @@
       }
     }
   }
-  function chapterFloor(c, state, time, still) {
+  function chapterFloor(c, state, time, still, endingAge) {
     if (state.mode !== 'chapter') return;
-    if (trainChapter(state)) { trainFloor(c, state, time, still); return; }
+    if (trainChapter(state)) { trainFloor(c, state, time, still, endingAge); return; }
     if (routeChapter(state)) { routeFloor(c, state, time, still); return; }
     if (railChapter(state)) { railFloor(c, state, time, still); return; }
     const index = num(state.room && state.room.index), run = state.chapter || {};
@@ -961,6 +1136,9 @@
     }
   }
   function interactable(c, item, time, state, localId, still = false) {
+    if (state.mode === 'chapter' && ['chapter-intake', 'rail-route', 'route-pin'].includes(item.kind)) {
+      storyMechanism(c, item, state, localId); return;
+    }
     if (trainChapter(state) && /^train-/.test(item.kind)) { trainInteractable(c, item, time, state, localId, still); return; }
     if (!item || (item.kind === 'relic' && item.used)) return;
     if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
@@ -2549,6 +2727,72 @@
     label(c, e.name || '旧线守卫', x, readout.name, '#e0c499', 10);
     if (stalled) label(c, shorted ? '短路停机' : '失衡', x, readout.stagger, shorted ? '#c3f3da' : '#ebd49a', 10);
   }
+  function trainReturner(c, e, pose, viewTop, still) {
+    if (e.hp <= 0 || e.dead) return;
+    pose = pose || enemyPose(e, {}, still);
+    const x = num(e.x), y = num(e.y), r = num(e.r, 47), readout = mechanicalReadout(y, viewTop);
+    const open = num(e.weakTime) > 0, stagger = num(e.stagger) > 0 || num(e.stun) > 0;
+    const winding = pose.phase === 'windup', active = pose.phase === 'active';
+    const angle = num(pose.weaponAngle, num(e.facing)), step = num(pose.step), reach = num(pose.reach);
+    const hot = winding || active, light = open ? '#bcead3' : hot ? '#ffd68c' : '#e7a176';
+    shadow(c, x, y + 8, r + 9, .53);
+    c.save(); c.translate(Math.round(x), Math.round(y));
+    c.translate(0, num(pose.bob)); c.rotate(num(pose.tilt)); c.scale(r / 47, r / 47);
+    // Both articulated limbs stay visible between attacks. Their reach and
+    // sweep follow the authoritative wind-up pose rather than a new blade.
+    c.save(); c.rotate(angle);
+    for (const side of [-1, 1]) {
+      const lift = num(pose.lift) * 17, handX = 56 + reach + (side > 0 ? 8 : 0);
+      const handY = side * (29 + num(pose.brace) * 6) - lift;
+      const arm = [[20, side * 26], [35, side * 38], [handX - 9, handY]];
+      path(c, arm, '#1b2a30', 19); path(c, arm, '#637377', 12);
+      path(c, [[26, side * 30], [35, side * 38], [handX - 9, handY]], '#a18f6e', 4);
+      rect(c, 31, side * 38 - 5, 9, 10, '#b1a47d');
+      rect(c, handX - 13, handY - 8, 21, 16, '#293e46');
+      rect(c, handX - 9, handY - 9, 13, 5, '#aa9670');
+      for (const jaw of [-1, 1]) {
+        path(c, [[handX, handY + jaw * 5], [handX + 13, handY + jaw * 9], [handX + 17, handY + jaw * 4]], '#293840', 7);
+        path(c, [[handX + 1, handY + jaw * 5], [handX + 13, handY + jaw * 9], [handX + 17, handY + jaw * 4]], '#b5a17b', 3);
+      }
+    }
+    c.restore();
+    // Heavy feet and overhead lifting frame establish the silhouette first.
+    for (const side of [-1, 1]) {
+      const lx = side * 34, ly = 18 + side * step;
+      rect(c, lx - 17, ly - 23, 34, 40, '#20333e'); rect(c, lx - 14, ly - 21, 28, 32, '#536772');
+      rect(c, lx - 15, ly + 9, 30, 9, '#334953'); rect(c, lx - 12, ly + 9, 24, 3, '#869084');
+      for (let dx = -10; dx < 13; dx += 8) rect(c, lx + dx, ly + 13, 4, 5, '#283940');
+      path(c, [[lx, ly - 19], [side * 30, -51], [side * 20, -65]], '#23343d', 10);
+      path(c, [[lx, ly - 19], [side * 30, -51], [side * 20, -65]], '#8d8d76', 4);
+      rect(c, lx - 4, ly - 9, 8, 8, '#b4a27e');
+    }
+    rect(c, -32, -66, 64, 10, '#30424d'); rect(c, -29, -66, 58, 3, '#a39374');
+    rect(c, -43, -51, 86, 62, '#1a2c37'); rect(c, -39, -49, 78, 55, '#586a72');
+    rect(c, -36, -51, 72, 9, '#84938d'); rect(c, -33, -50, 66, 2, '#bca581');
+    rect(c, -29, -38, 58, 35, '#364c58'); rect(c, -24, -35, 48, 26, '#263c47');
+    for (const side of [-1, 1]) {
+      const tx = side * 29;
+      rect(c, tx - 7, -39, 14, 27, '#283f48');
+      for (const ty of [-35, -28, -21]) rect(c, tx - 4, ty, 8, 2, '#a39275');
+      rect(c, tx - 3, 0, 6, 4, '#ad9673');
+    }
+    rect(c, -15, -33, 30, 17, '#1f3440'); rect(c, -11, -30, 22, 8, light);
+    rect(c, -4, -29, 8, 5, open ? '#e8fff1' : '#ffe3a9');
+    glow(c, 0, -26, hot || open ? 39 : 23, open ? '#9de7cc58' : '#eba36850');
+    rect(c, -13, -11, 26, 14, '#405560');
+    if (open) {
+      rect(c, -17, -13, 34, 18, '#1b3540'); rect(c, -15, -8, 30, 7, '#7ebcac');
+      for (const tx of [-10, -1, 8]) rect(c, tx, -8, 3, 7, '#c9efd7');
+      if (!still) for (const side of [-1, 1]) path(c,
+        [[side * 26, -33], [side * 38, -40], [side * 34, -32], [side * 44, -34]], '#b9f1cf', 2);
+    }
+    if (hot) for (const side of [-1, 1]) rect(c, side * 37 - 3, -46, 6, 6, light);
+    c.restore();
+    bar(c, x, readout.health, 95, num(e.hp) / Math.max(1, num(e.maxHp, 1)), '#e2af80', 6);
+    if (num(e.posture) > 0) bar(c, x, readout.posture + 2, 95, num(e.posture) / Math.max(1, num(e.maxPosture, 1)), '#d7a775', 3);
+    label(c, e.name || '归炉者', x, readout.name, '#f0cd9f', 11);
+    if (open || stagger) label(c, open ? '破绽' : '失衡', x, readout.stagger, open ? '#c4f0d5' : '#efd4a6', 11);
+  }
   const rhythmColors = { combo: '#efc485', thrust: '#e8aa8e', sweep: '#a9d1cd', quake: '#dcba7b', rush: '#e9b37c', fireball: '#eab475', hook: '#c9d5a0' };
   function furnaceRushLane(c, radius, halfWidth, progress, color) {
     rect(c, 0, -halfWidth, radius, halfWidth * 2, color + '1a');
@@ -2571,11 +2815,12 @@
     const active = r.phase === 'active';
     const mechanicalCore = e.kind === 'boss' && !e.timber && chapterCoreRoom(state);
     const mechanicalRail = e.railGuard === true && railChapter(state);
+    const returner = e.trainReturner === true && trainChapter(state);
     const lineRush = r.type === 'rush' && (mechanicalRail || mechanicalCore && r.opening === true);
     // The pinned warning ends at the original target. Painting from the
     // moving body would incorrectly slide the warning beyond its old bounds.
     if (lineRush && active) return;
-    const readout = mechanicalCore || mechanicalRail ? mechanicalReadout(y, viewTop) : null;
+    const readout = mechanicalCore || mechanicalRail || returner ? mechanicalReadout(y, viewTop) : null;
     const pairedQuake = e.kind === 'boss' && e.stage >= 2 && r.type === 'quake' && num(r.beats) === 2;
     const chapterQuake = pairedQuake && chapterCoreRoom(state);
     const doubleQuake = pairedQuake && (state?.mode === 'random' || chapterQuake);
@@ -2653,7 +2898,7 @@
     }
     c.restore();
     if (!active) {
-      const glyph = { combo: mechanicalCore ? '拳' : mechanicalRail ? '砸' : '刃',
+      const glyph = { combo: mechanicalCore ? '拳' : mechanicalRail || returner ? '砸' : '刃',
         thrust: '突', sweep: '扫', quake: '震', rush: '冲', fireball: '炎', hook: '钩' }[r.type];
       const gy = readout?.cue ?? y - (e.kind === 'boss' ? 108 : 103);
       c.save(); c.translate(x, gy); c.rotate(Math.PI / 4); rect(c,-10,-10,20,20,'#142c2be8'); c.strokeStyle=color;c.lineWidth=2;c.strokeRect(-10,-10,20,20);c.restore();
@@ -3192,6 +3437,7 @@
     if (!rooms.length) return;
     const run = state.chapter, rail = railChapter(state), current = state.room && state.room.index;
     const feeder = rail && rooms.find(room => room.index === 6);
+    const feederBlocked = !!feeder && !(run.feederRouted ?? feeder.cleared);
     const visible = rooms.filter(room => room.visited || room.discovered || teammateInRoom(state, room.index));
     const left = 752, top = 18, width = 190, height = 162;
     const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
@@ -3201,7 +3447,7 @@
       y: top + 79 + (room.gy - (minY + maxY) / 2) * spacing }]));
     c.save(); rect(c, left, top, width, height, '#102523e8'); c.strokeStyle = '#a0845e80'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
     label(c, rail ? '第三节 · 借走的主芯' : '第一节 · 借火归营', left + 12, top + 15, '#e1c08a', 9, 'left');
-    const phases = rail ? { arrive: '启程', track: '沿轨追查', guard: feeder && !feeder.cleared ? '配电廊' : '拨道场', car: '前往救援车', complete: '已会合', failed: '探险中断' } :
+    const phases = rail ? { arrive: '启程', track: '沿轨追查', guard: feederBlocked ? '配电廊' : '拨道场', car: '前往救援车', complete: '已会合', failed: '探险中断' } :
       { depart: '启程', workshop: '探查工坊', core: '前往炉心', return: '带火归营', complete: '归火已成', failed: '探险中断' };
     label(c, phases[run.phase] || (rail ? '第三节' : '第一节'), left + width - 12, top + 15, run.lampLit || run.reachedCar ? '#dce3b0' : '#bda98b', 8, 'right');
     for (const room of visible) {
@@ -3211,7 +3457,7 @@
         const next = points.get(nextIndex); if (!next) continue;
         const a = Math.min(room.index, nextIndex), b = Math.max(room.index, nextIndex);
         const blocked = rail && (a === 2 && b === 6 && !run.repairerMet ||
-          a === 3 && b === 6 && !feeder.cleared || a === 3 && b === 4 && !run.bossDefeated);
+          a === 3 && b === 6 && feederBlocked || a === 3 && b === 4 && !run.bossDefeated);
         if (blocked) c.setLineDash([3, 4]);
         path(c, [[point.x, point.y], [next.x, next.y]], blocked ? '#b392657a' : run.fireTaken && next.room.visited ? '#c69b6380' : next.room.visited ? '#82937899' : '#63785e66', 2);
         if (blocked) c.setLineDash([]);
@@ -3227,7 +3473,7 @@
         if (room.index === 3) path(c, [[point.x + 2, point.y - 5], [point.x - 3, point.y], [point.x + 2, point.y], [point.x - 2, point.y + 5]], run.bossDefeated ? '#bbdbb0' : '#d8b877', 1.5);
         if (room.index === 4) { rect(c, point.x - 4, point.y - 3, 8, 5, run.reachedCar ? '#f7d18a' : '#c0bc92'); rect(c, point.x - 3, point.y + 3, 6, 2, '#a29573'); }
         if (room.index === 6) {
-          for (const x of [point.x - 3, point.x + 2]) rect(c, x, point.y - 4, 2, 8, room.cleared ? '#b9d3ab' : '#c9a972');
+          for (const x of [point.x - 3, point.x + 2]) rect(c, x, point.y - 4, 2, 8, feederBlocked ? '#c9a972' : '#b9d3ab');
         }
       } else if (room.index === 0) {
         rect(c, point.x - 2, point.y - 6, 4, 11, run.lampLit ? '#f7ce7c' : '#9ba783');
@@ -3238,13 +3484,18 @@
         path(c, [[point.x - 4, point.y], [point.x - 1, point.y + 2], [point.x + 3, point.y]], run.sluiceOpen ? '#a5d3c2' : '#6e9c96', 2);
       } else if (room.visited && (room.index === 5 || room.index === 6)) {
         rect(c, point.x - 2, point.y - 2, 4, 4, (room.index === 5 ? run.suppliesTaken : run.beaconLit) ? '#f0ca83' : '#b0b394');
+        if (room.index === 5 && typeof run.intakeOpen === 'boolean') {
+          path(c, [[point.x - 4, point.y + 3], [point.x - 2, point.y + 1], [point.x + 2, point.y + 3], [point.x + 4, point.y + 1]],
+            run.intakeOpen ? '#afddd0' : '#c8a573', 1.5);
+        }
       }
     }
     mapTeammates(c, state, points);
     if (rail) mapRailAlly(c, state, points);
     const objective = rail ? run.reachedCar ? '已与救援车会合' : run.bossDefeated ? '前往救援车' :
-      run.repairerMet ? feeder && !feeder.cleared ? '清理配电廊' : '拨道场守卫挡路' : '循车辙寻找陶铆' :
-      run.lampLit ? '第一盏归途灯已点亮' : run.fireTaken ? '火种同行 · 返回哨站' : '循着回收队的痕迹';
+      run.repairerMet ? feederBlocked ? run.feederRouted === false ? '接通拨道旁路' : '清理配电廊' : '拨道场守卫挡路' : '循车辙寻找陶铆' :
+      run.lampLit ? '第一盏归途灯已点亮' : run.fireTaken ? '火种同行 · 返回哨站' :
+      run.intakeOpen === true && !run.sluiceOpen ? '进水已通 · 打开冷却水闸' : run.intakeOpen === false && current !== 0 ? '寻找进水栅' : '循着回收队的痕迹';
     const ally = rail && state.railAlly;
     const allyTask = ally && { investigate: '工棚调查', rendezvous: '站台会合', feeder: '支援配电廊', guard: '支援拨道场', rescue: '接应伤员', done: '任务完成' }[ally.task];
     const mission = allyTask && `${ally.name || '阿禾'} · ${ally.downed ? '倒地待救' : allyTask}`;
@@ -3286,7 +3537,9 @@
       rect(c, p.x - size / 2, p.y - size / 2, size, size, active ? '#e3d9ac' : room.visited ? '#79988a' : '#354f55');
       c.strokeStyle = active ? '#f1e2b2' : '#a7b49b80'; c.lineWidth = active ? 2 : 1;
       c.strokeRect(Math.round(p.x - size / 2) + .5, Math.round(p.y - size / 2) + .5, size, size);
-      if (room.index === 3) {
+      if (room.index === 2 && room.visited && run.pinTaken === false) {
+        path(c, [[p.x - 4, p.y + 3], [p.x + 3, p.y - 3]], '#d4ac72', 2);
+      } else if (room.index === 3) {
         c.strokeStyle = run.bridgeRaised ? '#c8e0b7' : '#d3ac70'; c.lineWidth = 1.5; c.beginPath(); c.arc(p.x, p.y, 4, 0, Math.PI * 2); c.stroke();
         path(c, [[p.x - 3, p.y + 3], [p.x + 3, p.y - 3]], c.strokeStyle, 1);
       } else if (room.index === 5) {
@@ -3300,7 +3553,7 @@
     mapTeammates(c, state, points); mapRailAlly(c, state, points);
     const orderRead = values(run.clues).includes('route-order');
     const objective = run.signalLit ? '通往冷却站的路已打通' : run.gateOpened ? '前往冷却站点亮信号' : orderRead ? '打开主轨闸' :
-      run.bridgeRaised || run.wallBreached ? '前往旧线调度室' : '寻找通往调度室的路';
+      run.bridgeRaised || run.wallBreached ? '前往旧线调度室' : run.pinTaken === false && (current === 2 || current === 3) ? '栈桥绞盘缺制动销' : '寻找通往调度室的路';
     const rescue = state.railAlly?.downed;
     label(c, rescue ? '阿禾倒地 · 前往接应' : objective, left + 12, top + height - 33, rescue ? '#e4ac85' : '#bdc9ad', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / 2`, left + 12, top + height - 13, '#a8b9a7', 8, 'left');
@@ -3310,13 +3563,14 @@
   function trainMap(c, state) {
     const rooms = values(state.rooms).filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy)), run = state.chapter, car = run.cart;
     if (!rooms.length || !car) return;
-    const left = 752, top = 18, width = 190, height = 179, spacing = 24;
+    const final = run.ending, left = 752, top = 18, width = 190, height = 179, spacing = final ? 20 : 24;
     const visible = rooms.filter(room => room.visited || room.discovered || room.index === car.roomIndex || teammateInRoom(state, room.index));
     const points = new Map(visible.map(room => [room.index, { room, x: left + 23 + room.gx * spacing, y: top + 83 + room.gy * 32 }]));
     c.save(); rect(c, left, top, width, height, '#10262deb'); c.strokeStyle = '#9ba98b80'; c.lineWidth = 1;
     c.strokeRect(left + .5, top + .5, width - 1, height - 1);
     label(c, '第五节 · 末班车', left + 12, top + 15, '#dfc895', 9, 'left');
-    const phases = { board: '准备发车', escort: '护送中', gate: '交汇道闸', water: '等待接水', cooling: '冷却中', unload: '安置伤员', complete: '安全抵达', failed: '护送中断' };
+    const phases = { board: '准备发车', escort: '护送中', gate: '交汇道闸', water: '等待接水', cooling: '冷却中',
+      unload: '安置伤员', divert: '转移主芯', returner: '归炉者来袭', relight: '点亮归途灯', complete: final ? '第一章完' : '安全抵达', failed: '撤离中断' };
     label(c, phases[run.phase] || '护送中', left + width - 12, top + 15, run.unloaded ? '#cbe4b4' : '#aabdab', 8, 'right');
     const linked = new Set();
     for (const room of visible) {
@@ -3324,7 +3578,7 @@
       for (const nextIndex of values(room.neighbors)) {
         const b = points.get(nextIndex), key = [Math.min(room.index, nextIndex), Math.max(room.index, nextIndex)].join(':');
         if (!b || linked.has(key)) continue; linked.add(key);
-        const blocked = key === '2:4' && !run.gateOpened;
+        const blocked = key === '2:4' && !run.gateOpened || final && (key === '4:5' && !run.cooled || key === '7:8' && !final.diverted);
         if (blocked) c.setLineDash([3, 3]);
         path(c, [[a.x, a.y], [b.x, b.y]], blocked ? '#d3aa6c70' : '#93ab938a', 2); c.setLineDash([]);
       }
@@ -3338,6 +3592,10 @@
       if (room.index === 3) path(c, [[p.x - 3, p.y + 2], [p.x + 3, p.y - 3]], run.gateOpened ? '#c9e5b4' : '#cba26b', 2);
       if (room.index === 4) { rect(c, p.x - 1, p.y - 3, 2, 6, '#bbd8ce'); rect(c, p.x - 3, p.y - 1, 6, 2, '#bbd8ce'); }
       if (room.index === 7) rect(c, p.x - 3, p.y - 3, 6, 6, run.unloaded ? '#d1deb1' : '#9ca983');
+      if (room.index === 8) {
+        const color = final?.stopped ? '#b9d7b6' : '#d79e7b';
+        path(c, [[p.x - 4, p.y], [p.x, p.y - 4], [p.x + 4, p.y], [p.x, p.y + 4], [p.x - 4, p.y]], color, 2);
+      }
     }
     for (const [id, index] of Object.entries(state.playerRooms || {})) {
       const actor = state.players?.[id], node = points.get(index);
@@ -3355,15 +3613,20 @@
       if (car.moving) path(c, [[p.x + 9, p.y - 21], [p.x + 12, p.y - 18], [p.x + 9, p.y - 15]], '#d9d8ad', 1.5);
     }
     const healthColor = ratio < .3 ? '#e7a17c' : ratio < .6 ? '#dfba7f' : '#bfd5ae';
-    label(c, '车体 ' + Math.ceil(Math.max(0, num(car.hp))) + ' / ' + num(car.maxHp, 14), left + 12, top + 128, healthColor, 9, 'left');
-    bar(c, left + 149, top + 128, 48, ratio, healthColor, 4);
+    if (final && run.unloaded) {
+      label(c, '伤员已安置', left + 12, top + 128, '#bed6b0', 9, 'left');
+    } else {
+      label(c, '车体 ' + Math.ceil(Math.max(0, num(car.hp))) + ' / ' + num(car.maxHp, 14), left + 12, top + 128, healthColor, 9, 'left');
+      bar(c, left + 149, top + 128, 48, ratio, healthColor, 4);
+    }
     const roomName = rooms.find(room => room.index === car.roomIndex)?.name || '旧线';
-    const status = run.unloaded ? '伤员已进入避风车库' : run.coolingLeft > 0 ? '冷却 ' + num(run.coolingLeft).toFixed(1) + 's · 留神追兵' :
-      '救援车 · ' + roomName;
+    const status = final && run.unloaded ? final.lampLit ? '归途灯已亮' : final.stopped ? '归炉者已停机' :
+      final.diverted ? '主芯已引至隔离炉' : '主芯仍在车上' : run.unloaded ? '伤员已进入避风车库' :
+      run.coolingLeft > 0 ? '冷却 ' + num(run.coolingLeft).toFixed(1) + 's · 留神追兵' : '救援车 · ' + roomName;
     label(c, status, left + 12, top + 148, '#c1cbb0', 8, 'left');
-    label(c, '补修 ' + num(run.repairsLeft) + ' 次', left + 12, top + 166, '#99b2a1', 8, 'left');
-    label(c, state.railAlly?.downed ? '阿禾待救' : car.moving ? '行进' : '停车', left + width - 12, top + 166,
-      state.railAlly?.downed ? '#e4a480' : '#bac8ab', 8, 'right');
+    if (!final || !run.unloaded) label(c, '补修 ' + num(run.repairsLeft) + ' 次', left + 12, top + 166, '#99b2a1', 8, 'left');
+    if (!final || !run.unloaded || state.railAlly?.downed) label(c, state.railAlly?.downed ? '阿禾待救' : car.moving ? '行进' : '停车',
+      left + width - 12, top + 166, state.railAlly?.downed ? '#e4a480' : '#bac8ab', 8, 'right');
     c.restore();
   }
   function minimap(c, state) {
@@ -3614,6 +3877,7 @@
     if (moving) for (const sx of [-32, 31]) { rect(c, x + sx, y + 26, 3, 4, '#dec48f72'); rect(c, x + sx + 4, y + 28, 2, 2, '#bda66e66'); }
   }
   function timberInteractable(c, item, time, state, localId, still) {
+    if (item.kind === 'timber-brake') { storyMechanism(c, item, state, localId); return; }
     if (item.kind === 'chapter-note' || !/^timber-/.test(item.kind || '')) { interactable(c, item, time, state, localId, still); return; }
     const x = num(item.x), y = num(item.y), run = state.chapter, active = item.active !== false && !item.used;
     const p = state.players && state.players[localId], nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 105;
@@ -3725,10 +3989,14 @@
       rect(c, point.x - size / 2 - 2, point.y - size / 2 - 2, size + 4, size + 4, '#172e25');
       rect(c, point.x - size / 2, point.y - size / 2, size, size, active ? '#e8d7a0' : room.visited ? '#8c9774' : '#405947');
       if (room.index === 3) { rect(c, point.x - 1, point.y - 3, 3, 7, run.workerFreed ? '#c9dfa8' : '#caac78'); rect(c, point.x - 3, point.y - 1, 7, 3, run.workerFreed ? '#c9dfa8' : '#caac78'); }
+      if (room.index === 4 && room.visited && typeof run.brakeSet === 'boolean') {
+        path(c, [[point.x - 4, point.y + 3], [point.x - 1, point.y - 3], [point.x + 3, point.y - 3]], run.brakeSet ? '#b9d5a3' : '#d0aa74', 2);
+      }
       if (room.index === 5) path(c, [[point.x - 3, point.y - 3], [point.x + 3, point.y - 3], [point.x + 3, point.y + 2], [point.x, point.y + 4], [point.x - 3, point.y + 2]], run.bossDefeated ? '#c9dfa8' : '#d5b276', 1.5);
     }
     mapTeammates(c, state, points);
-    const objective = run.evacuated ? '工人已接应' : run.bossDefeated ? '回信号岗接应' : run.workerFreed ? '出库口有吊装守卫' : run.cart.position >= .999 ? '侧门已打开' : '寻找绞盘，移开木车';
+    const objective = run.evacuated ? '工人已接应' : run.bossDefeated ? '回信号岗接应' :
+      run.workerFreed ? run.brakeSet === false ? '落下吊机的保险卡' : '出库口有吊装守卫' : run.cart.position >= .999 ? '侧门已打开' : '寻找绞盘，移开木车';
     label(c, objective, left + 10, top + height - 30, '#d2c08e', 8, 'left');
     label(c, `线索 ${values(run.clues).length} / 2`, left + 10, top + height - 13, '#aab89c', 8, 'left');
     label(c, `${rooms.filter(r => r.visited).length} / ${rooms.length}`, left + width - 10, top + height - 13, '#9aa98c', 8, 'right'); c.restore();
@@ -3823,6 +4091,8 @@
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const ending = chapterEndingScene(state, options);
     const coreRoom = chapterCoreRoom(state), rail = railChapter(state), route = routeChapter(state), train = trainChapter(state);
+    const trainEndingAge = options.reducedMotion ? 7 : Math.max(0, Math.min(7, num(options.chapterEndingAge, 7)));
+    const tao = train && state.room.index === 7 && state.chapter.ending?.lampLit ? trainGarageTao(trainEndingAge) : null;
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom, route);
     const enemyPoses = enemyMotionFrame(c, state, options), enemyTime = num(state.time) * 1000;
     const enemies = values(state.enemies);
@@ -3834,7 +4104,7 @@
     openWorld(c, options.view);
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
-    chapterFloor(c, state, time, still);
+    chapterFloor(c, state, time, still, trainEndingAge);
     expeditionFloor(c, state, time, still);
     lanternAuras(c, state);
     values(state.walls).forEach(w => wall(c, w, coreRoom && w.id === 'core-pillar-west'));
@@ -3863,11 +4133,15 @@
         { kind: 'rail-car', x: 705, y: 255, active: false, used: true }, enemyTime, state, localId, still) }] : []),
       ...(train && state.chapter.cart?.roomIndex === state.room.index ? [{ y: num(state.chapter.cart.y) + 9,
         draw: () => trainCar(c, state, enemyTime, localId, still, viewTop) }] : []),
+      ...(tao ? [{ y: tao.y, draw: () => chapterEndingCivilian(c, tao.x, tao.y, 'helper', tao.gait) }] : []),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
-      ...enemies.map(e => ({ y: e.y, draw: () => rail && e.railGuard === true
-        ? railGuard(c, e, state, enemyPoses.get(e.id), viewTop, still)
-        : enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', enemyPoses.get(e.id), coreRoom, viewTop, rail || train) })),
+      ...enemies.map(e => ({ y: e.y, draw: () => {
+        const pose = enemyPoses.get(e.id);
+        if (train && e.trainReturner === true) trainReturner(c, e, pose, viewTop, still);
+        else if (rail && e.railGuard === true) railGuard(c, e, state, pose, viewTop, still);
+        else enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', pose, coreRoom, viewTop, rail || train);
+      } })),
       ...((rail || route || train) && railAllyInRoom(state) ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),

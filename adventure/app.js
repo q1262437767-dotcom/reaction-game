@@ -68,7 +68,7 @@
     $('game-wrap').setAttribute('data-chapter-ending', 'false');
   }
   function chapterEndingActive() {
-    return !!(chapterEnding && chapterEnding.runId === runId && state && state.mode === 'chapter' && state.chapter.id === 'chapter1' && state.status === 'won');
+    return !!(chapterEnding && chapterEnding.runId === runId && state && state.mode === 'chapter' && ['chapter1', 'chapter1_5'].includes(state.chapter.id) && state.status === 'won');
   }
   function presentResults() {
     $('end-screen').hidden = false;
@@ -77,14 +77,15 @@
   }
   function chapterEndingCaption() {
     const age = chapterEnding.age;
-    $('chapter-ending-line').textContent = age < 1.5 ? '灯亮了，东边传来了脚步声。' : age < 6.5 ? '阿禾：老岑！我们回来了！他腿伤了，快搭把手。' : age < 9 ? '老岑：哎，来了！先扶他坐下。' : '阿禾：等等……旧木场那边，是不是有人在打灯？';
+    const line = state.chapter.id === 'chapter1_5' ? (age < 2 ? '陶铆：人都进来了。主芯也稳住了。' : age < 4.5 ? '老岑：看见灯了！慢慢走，营地这边有人接。' : '阿禾：灯路接上了。等等，北边那盏蓝灯是谁点的？') : age < 1.5 ? '灯亮了，东边传来了脚步声。' : age < 6.5 ? '阿禾：老岑！我们回来了！他腿伤了，快搭把手。' : age < 9 ? '老岑：哎，来了！先扶他坐下。' : '阿禾：等等……旧木场那边，是不是有人在打灯？';
+    if ($('chapter-ending-line').textContent !== line) $('chapter-ending-line').textContent = line;
   }
   function finishChapterEnding() {
     if (!chapterEndingActive()) return;
     clearChapterEnding(); clearInput(); presentResults();
   }
   function beginChapterEnding() {
-    chapterEnding = { runId, age: 0, last: 0 };
+    chapterEnding = { runId, age: 0, last: 0, duration: state.chapter.id === 'chapter1_5' ? 7 : 12 };
     clearTimeout(toastTimer); $('toast').hidden = true;
     $('interaction-hint').hidden = true; $('end-screen').hidden = true;
     $('chapter-ending').hidden = false;
@@ -97,10 +98,10 @@
       return;
     }
     if (paused || hasDialog() || document.hidden) { chapterEnding.last = 0; return; }
-    if (chapterEnding.last) chapterEnding.age = Math.min(12, chapterEnding.age + Math.max(0, Math.min(.1, (now - chapterEnding.last) / 1000)));
+    if (chapterEnding.last) chapterEnding.age = Math.min(chapterEnding.duration, chapterEnding.age + Math.max(0, Math.min(.1, (now - chapterEnding.last) / 1000)));
     chapterEnding.last = now;
     chapterEndingCaption();
-    if (chapterEnding.age >= 12) finishChapterEnding();
+    if (chapterEnding.age >= chapterEnding.duration) finishChapterEnding();
   }
   function readTouchPreference() {
     try { const value = localStorage.getItem(TOUCH_STORE); return ['auto', 'show', 'hide'].includes(value) ? value : 'auto'; }
@@ -600,6 +601,7 @@
   }
   function resetSounds() { stopSounds(); heardEvents.clear(); soundAt.clear(); chapterNotesSeen.clear(); chapterMomentsSeen.clear(); soundLast = 0; }
   const chapterMoments = {
+    intakeOpen: '老岑：“进水口通了！沿管子去水闸那头，开了闸炉子才能凉下来。”',
     sluiceOpen: '水通了，没刚才那么烫了。东边还响着备用炉心的轰鸣。',
     bossDefeated: '总算停下来了。备用火还在，带回去就行。',
     suppliesTaken: '药还能用。大家缓了口气，继续找火种。',
@@ -609,13 +611,16 @@
   const timberMoments = {
     shortcutOpen: '通往绞盘棚的侧门打开了，回去能少绕一段。',
     workerFreed: '工人：谢了！我先躲这儿。出库口那台吊机还在动，小心它的钩子。',
-    bossDefeated: '阿禾：停了！叫上人，咱们从信号岗撤。'
+    brakeSet: '工人：“刹车咬住了！吊机转得慢了，你们有机会靠近。”',
+    bossDefeated: '阿禾：“停了！我去扶人，咱们从信号岗回营。”'
   };
   const railMoments = {
-    repairerMet: '陶铆：“是我拆的主芯。车上有人快冻僵了。走，先把转车台那家伙停下来。”',
+    repairerMet: '陶铆：“主芯是我拆的。备用火还能撑一夜，车里那几个人可撑不到。先接好旁路，我带你去看车。”',
+    feederRouted: '阿禾：“西线接通了。前面拨道场那家伙还在，过门先看看它的招。”',
     bossDefeated: '阿禾：它停了。走，去看看车上的人。'
   };
   const routeMoments = {
+    pinTaken: '阿禾：“找到销子了！装回绞盘，上面的桥就能升起来。”',
     bridgeRaised: '阿禾：“桥升起来了！上面能走，别挤到绞索边上。”',
     wallBreached: '阿禾：“通了！这家伙的力气总算用对地方了。”',
     gateOpened: '陶铆：“看见主轨闸的绿灯了。行，我再给这车缓一会儿。”'
@@ -623,10 +628,16 @@
   const trainMoments = {
     started: '陶铆：“坐稳了。阿禾，看着后面，别让它们挨到车！”',
     gateOpened: '陶铆：“道岔动了！回来吧，这边能走了。”',
-    cooled: '陶铆：“温度降下来了。再撑一段，前面就是避风站。”'
+    cooled: '陶铆：“温度降下来了。再撑一段，前面就是避风站。”',
+    unloaded: '陶铆：“人下车了。把主芯送进隔离炉，别让它跟着这边的灯进来。”',
+    diverted: '阿禾：“红灯拐进炉间了。它跟的是主芯，咱们在那儿截住它。”',
+    stopped: '陶铆：“它停了，主芯也稳住了。回车库点灯，让老岑知道人都到了。”'
   };
   function activeChapterMoments(id) {
     return id === 'chapter1_5' ? trainMoments : id === 'chapter1_4' ? routeMoments : id === 'chapter1_3' ? railMoments : id === 'chapter1_2' ? timberMoments : chapterMoments;
+  }
+  function chapterMomentReached(chapter, flag) {
+    return chapter[flag] === true || chapter.ending?.[flag] === true;
   }
   function primeChapterNarration() {
     if (!state || state.mode !== 'chapter') return;
@@ -634,7 +645,7 @@
     // Show its journal, but never present that old state as a fresh story event.
     const chapter = state.chapter;
     chapter.clues.forEach(clue => chapterNotesSeen.add(clue));
-    Object.keys(activeChapterMoments(chapter.id)).forEach(flag => { if (chapter[flag]) chapterMomentsSeen.add(chapter.id + ':' + flag); });
+    Object.keys(activeChapterMoments(chapter.id)).forEach(flag => { if (chapterMomentReached(chapter, flag)) chapterMomentsSeen.add(chapter.id + ':' + flag); });
     if (state.status !== 'playing' || state.elapsed >= 1) return;
     if (chapter.id === 'chapter1_5') toast('陶铆：“把车边的东西收拾一下。准备好了叫我，咱们把他们送进去。”', 6000);
     else if (chapter.id === 'chapter1_4') toast('陶铆：“你俩先去探路。我看着车，别让这些人再挨冻了。”', 6000);
@@ -642,8 +653,8 @@
       const line = state.railAlly ? '阿禾：“我去工棚查查，你先找陶铆。等会儿在站台碰头。”' : '阿禾：“车辙还新。沿西线找，车上那些人说不定还等着呢。”';
       toast(line, 6000);
     }
-    else if (chapter.id === 'chapter1_2') toast('阿禾：灯还在闪。进去看看，留神那些还在干活的机器。', 6000);
-    else if (chapter.phase === 'depart') toast('老岑：灯灭了，采集队到现在还没回来。你去苔火工坊借点火，我在这儿等他们。', 7000);
+    else if (chapter.id === 'chapter1_2') toast('阿禾：“长、长、短。那是木场求救的信号。那边还有人，快走。”', 6000);
+    else if (chapter.phase === 'depart') toast('老岑：“昨晚最后一次点名，阿禾他们还在东边。去工坊找簇火吧。灯一亮，他们就知道往哪儿走。”', 7000);
   }
   function chapterUpdates() {
     if (!state || state.mode !== 'chapter' || !state.chapter || state.status !== 'playing' || paused || hasDialog()) return;
@@ -657,7 +668,7 @@
     }
     for (const [flag, message] of Object.entries(activeChapterMoments(chapter.id))) {
       const key = chapter.id + ':' + flag;
-      if (chapter[flag] && !chapterMomentsSeen.has(key)) { chapterMomentsSeen.add(key); messages.push(message); }
+      if (chapterMomentReached(chapter, flag) && !chapterMomentsSeen.has(key)) { chapterMomentsSeen.add(key); messages.push(message); }
     }
     // Several actions may reach a guest in one snapshot. The latest objective
     // gets one short toast; discovered records remain available in the journal.
@@ -988,18 +999,18 @@
     $('title-camp-status').setAttribute('data-complete', String(chapterDone.completed));
     const completedChapters = C.CHAPTERS.filter(section => camp.missions[section.id].clears > 0);
     const latestChapter = completedChapters[completedChapters.length - 1];
-    $('campaign-status').textContent = chapter ? `第一章 · 已完成 ${completedChapters.length} / ${C.CHAPTERS.length} 节 · 星屑 ${camp.coins}` : random || relay || hunt ? `星屑 ${camp.coins} · 归来 ${camp.wins} 次${relay ? ' · 接力夺宝试玩' : hunt ? ' · 苔火猎场试玩' : ` · 遗物图鉴 ${progress.relicCount} / ${progress.relicTotal}`}` : `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
+    $('campaign-status').textContent = chapter ?  `第一章《归途灯》 · 已完成 ${completedChapters.length} / ${C.CHAPTERS.length} 节 · 星屑 ${camp.coins}` : random || relay || hunt ? `星屑 ${camp.coins} · 归来 ${camp.wins} 次${relay ? ' · 接力夺宝试玩' : hunt ? ' · 苔火猎场试玩' : ` · 遗物图鉴 ${progress.relicCount} / ${progress.relicTotal}`}` : `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
     const chapterHint = {
       chapter1: chapterDone.completed ? '第一节记录已保存 · 第二节木场求援已开放' : '借回火种，再回营地点灯',
       chapter1_2: chapterDone.secondCompleted ? '工人已经回营 · 第三节已开放' : '移动木车，救人，再从信号岗撤离',
       chapter1_3: chapterDone.thirdCompleted ? '救援车已经找到 · 第四节已开放' : '追踪车辙，找到陶铆和救援车',
       chapter1_4: chapterDone.fourthCompleted ? '通路已经打通 · 第五节已开放' : '穿过断轨，打开主轨闸，再点亮信号',
-      chapter1_5: chapterDone.fifthCompleted ? '伤员已经安置 · 可重玩第五节' : '护送救援车，抵达避风车库'
+      chapter1_5: chapterDone.fifthCompleted ? '第五节已有通关记录 · 可重玩' : '护送救援车，接住追来的回收守卫'
     };
     $('mission-progress').textContent = chapter ? chapterHint[selectedMission()] : random ? '每局一张新地图' : relay ? '取回炉芯，原路撤离' : hunt ? '追踪、诱敌、伏击' : `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
     $('chapter-camp-status').textContent = latestChapter ? `${latestChapter.name} · 已完成 ${camp.missions[latestChapter.id].clears} 次` : '第一章 · 第一节 · 借火归营 · 归途灯尚未点亮';
     $('chapter-camp-status').setAttribute('data-complete', String(chapterDone.completed));
-    $('chapter-camp-copy').textContent = chapterDone.fifthCompleted ? '伤员总算进了避风站。门外那盏高高的红灯还在靠近，它追的是车上的主芯。' : chapterDone.fourthCompleted ? '第五节《末班车》已开放。回去接上陶铆和救援车，把伤员送进避风站。' : chapterDone.thirdCompleted ? '找到了载着伤员的救援车。第四节《断轨开路》已开放，和阿禾先去断桥那头探路。' : chapterDone.secondCompleted ? '木场工人已经安顿下来。第三节《借走的主芯》已开放，沿西边旧线追那辆重车。' : chapterDone.completed ? '采集队已经回营。第二节《木场求援》已开放，可以去回应旧木场的求援灯讯。' : '进入苔火工坊借回火种，回营点亮归途灯。本节通关记录可随账号保存。';
+    $('chapter-camp-copy').textContent = chapterDone.fifthCompleted ? '第五节记录已保存。可以重玩《末班车》，从救援车启程走到归途灯重新亮起。' : chapterDone.fourthCompleted ? '第五节《末班车》已开放。回去接上陶铆和救援车，把伤员送进避风站。' : chapterDone.thirdCompleted ? '找到了载着伤员的救援车。第四节《断轨开路》已开放，和阿禾先去断桥那头探路。' : chapterDone.secondCompleted ? '木场工人已经安顿下来。第三节《借走的主芯》已开放，沿西边旧线追那辆重车。' : chapterDone.completed ? '采集队已经回营。第二节《木场求援》已开放，可以去回应旧木场的求援灯讯。' : '进入苔火工坊借回火种，回营点亮归途灯。本节通关记录可随账号保存。';
     $('camp-copy').textContent = `现有 ${camp.coins} 星屑。${chapterDone.completed ? '第一章第一节的归途灯已点亮。' : '第一章第一节等待你从工坊借回火种。'}旧版任务营灯 ${progress.lit} / 3，${progress.allCleared ? '险境任务已开放。' : '完成旧版三项任务可开启险境任务。'}${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
     $('camp-objectives').replaceChildren(...C.MISSIONS.map((mission, i) => {
       const complete = camp.missions[mission.id].clears > 0;
@@ -1169,7 +1180,7 @@
     state = E.create({ mode: gameMode, players: isCoop ? 2 : 1, loadout: 'blade', meleeLoadout: selectedMelee(), partnerMeleeLoadout: isCoop ? remoteMelee : 'blade', rangedLoadout: selectedWeapon(), seed: newSeed(), mission, difficulty, camp: C.departure(camp), partnerCamp: isCoop ? remoteCamp : undefined, companion: C.companionDeparture(camp), partnerCompanion: isCoop ? remoteCompanion : null, unlocks: { foxRescued: camp.camp.companion.rescued && (!isCoop || remoteFoxRescued) } });
     remoteTutorialPending = isCoop && ['relay', 'hunt'].includes(state.mode);
     if (state.players.p2) state.players.p2.weapons.ranged = remoteWeapon;
-    clearChapterEnding(); runId = newRunId(); chapterEndingEligible = gameMode === 'chapter' && mission === 'chapter1' ? runId : ''; finished = ''; paused = false; disconnected = false; accumulator = 0;
+    clearChapterEnding(); runId = newRunId(); chapterEndingEligible = gameMode === 'chapter' && ['chapter1', 'chapter1_5'].includes(mission) ? runId : ''; finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; remotePaused = false; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
     const partnerView = isCoop ? E.viewForPlayer(state, 'p2') : state;
@@ -1202,7 +1213,7 @@
       if (!C.chapterProgress(before).secondCompleted && C.chapterProgress(after).secondCompleted) changes.push('木场工人已回营 · 主炉芯线索已找到');
       if (!C.chapterProgress(before).thirdCompleted && C.chapterProgress(after).thirdCompleted) changes.push('找到救援车 · 主炉芯去向已确认');
       if (!C.chapterProgress(before).fourthCompleted && C.chapterProgress(after).fourthCompleted) changes.push('主轨闸已打开 · 冷却站信号已点亮');
-      if (!C.chapterProgress(before).fifthCompleted && C.chapterProgress(after).fifthCompleted) changes.push('末班车抵达 · 伤员已安置到避风站');
+      if (!C.chapterProgress(before).fifthCompleted && C.chapterProgress(after).fifthCompleted) changes.push('第一章《归途灯》完成 · 伤员平安');
       if (!C.canUseSpear(before) && C.canUseSpear(after)) changes.push('遗迹长枪已解锁');
       if (state.mode === 'story') C.MISSIONS.forEach((mission, index) => {
         if (!before.missions[mission.id].clears && after.missions[mission.id].clears) changes.push(`第 ${index + 1} 盏营灯已点亮`);
@@ -1215,6 +1226,7 @@
     else if (state.mode === 'chapter' && state.chapter.id === 'chapter1_2' && won && C.canPlay(after, 'chapter1_3', 1)) next = { kind: 'prepare', gameMode: 'chapter', mission: 'chapter1_3', label: '接下来', title: '第三节 · 借走的主芯', copy: '工人见过那辆重车。沿车辙去西边旧线，看看主炉芯被带到哪儿了。', action: '准备前往西线' };
     else if (state.mode === 'chapter' && state.chapter.id === 'chapter1_3' && won && C.canPlay(after, 'chapter1_4', 1)) next = { kind: 'prepare', gameMode: 'chapter', mission: 'chapter1_4', label: '接下来', title: '第四节 · 断轨开路', copy: '陶铆留下照顾救援车。和阿禾先到前面探路，看看断桥还能不能修。', action: '准备前往断轨' };
     else if (state.mode === 'chapter' && state.chapter.id === 'chapter1_4' && won && C.canPlay(after, 'chapter1_5', 1)) next = { kind: 'prepare', gameMode: 'chapter', mission: 'chapter1_5', label: '接下来', title: '第五节 · 末班车', copy: '路和信号都准备好了。回去接上救援车，这次把人送到。', action: '准备护送救援车' };
+    else if (state.mode === 'chapter' && state.chapter.id === 'chapter1_5' && won) next = { kind: 'home', label: '第一章完', title: '沿灯路回营', copy: '老岑已经带人来接。伤员有了去处，东边的灯也接上了。', action: '回营地' };
     else if (!after.scatter && after.coins >= 30) next = { kind: 'workshop', label: '工坊可用', title: '试试散射枪', copy: `现有 ${after.coins} 星屑，可用 30 星屑解锁散射枪。前往工坊后由你决定是否兑换。`, action: '前往工坊' };
     else if (campUpgrade) next = { kind: 'workshop', focusId: 'upgrade-' + campUpgrade.id, label: '星屑可用', title: '解锁' + campUpgrade.name, copy: `${state.mode === 'chapter' && won ? '本节通关记录已保留。 ' : ''}${campUpgrade.cost} 星屑 · ${campUpgrade.description} 前往营地后由你决定是否解锁。`, action: '前往营地整备' };
     else if (state.mode === 'chapter' && won) next = { kind: 'prepare', gameMode: 'random', label: '下一趟', title: '进入迷雾远征', copy: state.chapter.id === 'chapter1_5' ? '伤员已经进站。先回营整备，也可以再去迷雾里找找遗物。' : state.chapter.id === 'chapter1_4' ? '通路和信号都准备好了。回营整备，或再去迷雾里找找遗物。' : '车已经找到了，前面的断轨还得想办法。也可以先去迷雾里找精英和遗物。', action: '准备迷雾远征' };
@@ -1306,9 +1318,9 @@
       $('end-unlocks').textContent = won ? '阿禾：“听见没？那声音……不像是车。先回去接陶铆。”山谷另一头，一盏高得不像路灯的红光正慢慢靠近。' : '上路升桥，或在下路借重装守卫的力量破墙；到调度室开闸，再点亮信号。';
     }
     if (chapter && state.chapter.id === 'chapter1_5') {
-      $('end-title').textContent = won ? '人到了，这趟车没白开' : '车还没到，先稳住';
-      $('end-copy').textContent = won ? '伤员一个个被扶进车库。陶铆关掉车灯，刚想松口气，门外又传来那阵拖行声。' : '下次可以早一点停车处理追兵，把修理包留给真正撑不住的时候。陶铆还在等你。';
-      $('end-unlocks').textContent = won ? '阿禾：“它不是来找我们的……主芯还在车上。”车库外，巨大的红灯停了下来。' : '沿旧线护送救援车，打开道岔，在冷凝水站冷却主芯，再把伤员送进避风车库。';
+      $('end-title').textContent = won ? '归途灯亮了，人也回来了' : state.chapter.unloaded ? '伤员进站了，灯路还差最后一步' : '车还没到，先稳住';
+      $('end-copy').textContent = won ? '归炉者在隔离炉停了机。陶铆把主芯留在炉里，带着伤员循灯回营。老岑站在路口，挨个把人接了回来。' : state.chapter.unloaded ? '把归炉者引到炉口，再开泄压阀。它卸力的时候，才是反击的好机会。' : '有追兵贴到车边时，可以先停车应战。道闸和冷凝水站也有机会补修。';
+      $('end-unlocks').textContent = won ? '第一章《归途灯》完。夜色里，北方传来一闪一闪的蓝光。' : '送伤员进车库后，把主芯引向隔离炉。停下归炉者，再回去点灯。';
     }
     if (!C.canUseSpear(before) && C.canUseSpear(camp)) $('end-unlocks').textContent = '遗迹长枪已解锁，可在出发前选择。' + $('end-unlocks').textContent;
     $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
@@ -1331,10 +1343,10 @@
       switchWeapon: raw.switchWeapon === true, switchPulse: raw.switchPulse === true };
   }
   function validTimberState(s, bounded) {
-    const c = s.chapter, keys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
+    const c = s.chapter, keys = ['id', 'version', 'phase', 'clues', 'cart', 'workerFreed', 'brakeSet', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'];
     if (!c || typeof c !== 'object' || Array.isArray(c) || Object.keys(c).length !== keys.length || !keys.every(key => Object.prototype.hasOwnProperty.call(c, key)) || c.id !== 'chapter1_2' || c.version !== 1 || s.difficulty !== 1 || s.rooms.length !== 6 || !['arrive', 'rescue', 'yard', 'return', 'complete', 'failed'].includes(c.phase)) return false;
     if (!Array.isArray(c.clues) || c.clues.length > 2 || new Set(c.clues).size !== c.clues.length || c.clues.some(id => !['timber-tracks', 'timber-bandage'].includes(id))) return false;
-    if (!['workerFreed', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'].every(key => typeof c[key] === 'boolean') || c.shortcutOpen !== c.workerFreed || c.bossDefeated && !c.workerFreed || c.evacuated !== (s.status === 'won') || c.evacuated && (!c.workerFreed || !c.bossDefeated || s.room.index !== 0) || (c.phase === 'complete') !== (s.status === 'won') || (c.phase === 'failed') !== (s.status === 'lost')) return false;
+    if (!['workerFreed', 'brakeSet', 'bossDefeated', 'evacuated', 'suppliesTaken', 'shortcutOpen'].every(key => typeof c[key] === 'boolean') || c.shortcutOpen !== c.workerFreed || c.brakeSet && !c.workerFreed || c.bossDefeated && !c.brakeSet || c.evacuated !== (s.status === 'won') || c.evacuated && (!c.bossDefeated || s.room.index !== 0) || (c.phase === 'complete') !== (s.status === 'won') || (c.phase === 'failed') !== (s.status === 'lost')) return false;
     if (!c.cart || typeof c.cart !== 'object' || Array.isArray(c.cart) || Object.keys(c.cart).length !== 2 || !bounded(c.cart.position, 1) || ![0, 1].includes(c.cart.target)) return false;
     const layout = [[0, 0], [1, 0], [2, 0], [2, 1], [3, 1], [3, 0]], graph = [[1], [0, 2], [1, 3, 5], [2, 4], [3, 5], [2, 4]];
     if (s.rooms.some((room, index) => !room || room.index !== index || room.id !== 'chapter1_2-' + index || room.gx !== layout[index][0] || room.gy !== layout[index][1] || !Array.isArray(room.neighbors) || room.neighbors.length !== graph[index].length || graph[index].some(next => !room.neighbors.includes(next)))) return false;
@@ -1342,15 +1354,17 @@
     if (s.portals.some(gate => !graph[s.room.index]?.includes(gate.target) || gate.active !== gateOpen(gate.target))) return false;
     const carts = s.walls.filter(wall => wall.timberCart !== undefined);
     if (carts.length !== (s.room.index === 5 ? 1 : 0) || carts.some(wall => wall.timberCart !== true || wall.id !== 'timber-cart' || wall.x !== 438 || Math.abs(wall.y - (417 - 145 * c.cart.position)) > .001 || wall.w !== 84 || wall.h !== 56)) return false;
-    const itemRooms = { 'timber-extraction': 0, 'timber-worker': 3, 'timber-supplies': 4, 'timber-winch': 5 };
+    const itemRooms = { 'timber-extraction': 0, 'timber-worker': 3, 'timber-supplies': 4, 'timber-brake': 4, 'timber-winch': 5 };
     for (const item of s.interactables) {
       if (item.kind === 'chapter-note') {
         if (!['timber-tracks', 'timber-bandage'].includes(item.clueId) || typeof item.title !== 'string' || item.title.length > 40 || typeof item.text !== 'string' || item.text.length > 240) return false;
       } else if (typeof item.kind === 'string' && item.kind.startsWith('chapter-')) return false;
       if (typeof item.kind === 'string' && item.kind.startsWith('timber-') && (itemRooms[item.kind] !== s.room.index || typeof item.active !== 'boolean' || typeof item.used !== 'boolean' || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50))) return false;
+      if (item.kind === 'timber-brake' && (item.id !== 'timber-brake' || item.x !== 520 || item.y !== 325 || item.used !== c.brakeSet || item.active !== (c.workerFreed && !c.brakeSet))) return false;
     }
     const bosses = s.enemies.filter(enemy => enemy.timber !== undefined);
-    if (bosses.length > 1 || bosses.length && (!c.workerFreed || c.bossDefeated)) return false;
+    if (bosses.length > 1 || bosses.length && (!c.brakeSet || c.bossDefeated) ||
+        s.interactables.filter(item => item.kind === 'timber-brake').length !== Number(s.room.index === 4)) return false;
     return true;
   }
   function furnaceArena(s) {
@@ -1367,18 +1381,20 @@
   }
   function validTrainState(s, bounded) {
     const c = s.chapter, room = s.room.index;
-    if (!C.validTrainChapter(c, s.status) || s.difficulty !== 1 || s.rooms.length !== 8 ||
-        s.mission.total !== 1 || s.mission.progress !== Number(c.unloaded) || s.mission.phase !== c.phase) return false;
-    const layout = [[0, 0], [1, 0], [2, 0], [2, -1], [3, 0], [4, 0], [5, 0], [6, 0]];
-    const graph = [[1], [0, 2], [1, 3, 4], [2], [2, 5], [4, 6], [5, 7], [6]];
+    if (!C.validTrainChapter(c, s.status) || s.difficulty !== 1 || s.rooms.length !== 9 ||
+        s.mission.total !== 1 || s.mission.progress !== Number(c.ending.lampLit) || s.mission.phase !== c.phase) return false;
+    const layout = [[0, 0], [1, 0], [2, 0], [2, -1], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0]];
+    const graph = [[1], [0, 2], [1, 3, 4], [2], [2, 5], [4, 6], [5, 7], [6, 8], [7]];
     if (s.rooms.some((r, index) => !r || r.index !== index || r.id !== 'chapter1_5-' + index ||
         r.gx !== layout[index][0] || r.gy !== layout[index][1] || !Array.isArray(r.neighbors) ||
         r.neighbors.length !== graph[index].length || graph[index].some(next => !r.neighbors.includes(next)))) return false;
     const gateOpen = to => room === 2 && to === 4 || room === 4 && to === 2 ? c.gateOpened :
-      room === 4 && to === 5 || room === 5 && to === 4 ? c.cooled : true;
+      room === 4 && to === 5 || room === 5 && to === 4 ? c.cooled :
+      room === 7 && to === 8 || room === 8 && to === 7 ? c.ending.diverted : true;
     if (s.portals.length !== graph[room].length || new Set(s.portals.map(portal => portal.target)).size !== graph[room].length ||
         s.portals.some(portal => !graph[room].includes(portal.target) || portal.active !== gateOpen(portal.target))) return false;
-    const fixed = { 'train-switch': [3, 650, 300], 'train-pump': [4, 480, 390], 'train-unload': [7, 680, 390] };
+    const fixed = { 'train-switch': [3, 650, 300], 'train-pump': [4, 480, 390], 'train-unload': [7, 680, 390],
+      'train-divert': [7, 780, 390], 'train-lamp': [7, 540, 365], 'train-vent': [8, 445, 405] };
     const noteRooms = { 'train-passengers': 0, 'train-refuge': 6 }, cart = c.cart;
     const localCart = cart.roomIndex === room;
     for (const item of s.interactables) {
@@ -1398,17 +1414,24 @@
       } else if (item.kind === 'train-repair') {
         if (!localCart || Math.abs(item.x - (cart.x - 35)) > .011 || item.y !== 384) return false;
         used = c.repairsLeft === 0;
-        active = c.started && !cart.moving && cart.hp > 0 && cart.hp < 14 && c.repairsLeft > 0;
+        active = !c.unloaded && c.started && !cart.moving && cart.hp > 0 && cart.hp < 14 && c.repairsLeft > 0;
       } else {
         const spec = fixed[item.kind];
         if (!spec || room !== spec[0] || item.x !== spec[1] || item.y !== spec[2]) return false;
         if (item.kind === 'train-switch') { used = c.gateOpened; active = c.started && !used; }
         else if (item.kind === 'train-pump') { used = c.coolingStarted; active = cart.roomIndex === 4 && cart.x === 480 && !used; }
-        else { used = c.unloaded; active = c.arrived && !used; }
+        else if (item.kind === 'train-unload') { used = c.unloaded; active = c.arrived && !used; }
+        else if (item.kind === 'train-divert') { used = c.ending.diverted; active = c.unloaded && !used; }
+        else if (item.kind === 'train-lamp') { used = c.ending.lampLit; active = c.ending.stopped && !used; }
+        else { used = false; active = c.ending.diverted && !c.ending.stopped && c.ending.ventLeft === 0; }
       }
       if (s.status !== 'playing') active = false;
       if (item.active !== active || item.used !== used) return false;
     }
+    const returners = s.enemies.filter(enemy => enemy.kind === 'boss' || enemy.trainReturner !== undefined);
+    if (returners.some(enemy => room !== 8 || enemy.kind !== 'boss' || enemy.trainReturner !== true ||
+        enemy.r !== 47 || ![112, 144].includes(enemy.maxHp)) || returners.length > 1 ||
+        returners.filter(enemy => enemy.hp > 0).length !== Number(room === 8 && c.ending.diverted && !c.ending.stopped)) return false;
     return ['train-cart', 'train-repair'].every(kind => s.interactables.filter(item => item.kind === kind).length === Number(localCart)) &&
       Object.entries(fixed).every(([kind, spec]) => s.interactables.filter(item => item.kind === kind).length === Number(spec[0] === room)) &&
       s.interactables.filter(item => item.kind === 'chapter-note').length === Number(room === 0 || room === 6);
@@ -1437,7 +1460,7 @@
       if (walls.length !== Number(room === spec.room && spec.exists) || walls.some(wall => wall[key] !== true ||
           wall.id !== spec.id || ['x', 'y', 'w', 'h'].some(field => wall[field] !== spec[field]))) return false;
     }
-    const itemRooms = { 'route-repairer': 0, 'route-winch': 3, 'route-gate': 6, 'route-signal': 7, 'route-supplies': 2 };
+    const itemRooms = { 'route-repairer': 0, 'route-winch': 3, 'route-gate': 6, 'route-signal': 7, 'route-supplies': 2, 'route-pin': 2 };
     const noteRooms = { 'route-shift': 2, 'route-order': 6 };
     for (const item of s.interactables) {
       if (item.kind === 'chapter-note') {
@@ -1448,8 +1471,9 @@
       if (typeof item.kind !== 'string' || !item.kind.startsWith('route-')) continue;
       if (itemRooms[item.kind] !== room || item.id !== item.kind || typeof item.active !== 'boolean' ||
           typeof item.used !== 'boolean' || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50)) return false;
-      const flag = { 'route-winch': 'bridgeRaised', 'route-gate': 'gateOpened', 'route-signal': 'signalLit' }[item.kind];
-      const enabled = item.kind === 'route-gate' ? c.clues.includes('route-order') : item.kind === 'route-signal' ? c.gateOpened : true;
+      const flag = { 'route-winch': 'bridgeRaised', 'route-gate': 'gateOpened', 'route-signal': 'signalLit', 'route-pin': 'pinTaken' }[item.kind];
+      const enabled = item.kind === 'route-winch' ? c.pinTaken : item.kind === 'route-gate' ? c.clues.includes('route-order') : item.kind === 'route-signal' ? c.gateOpened : true;
+      if (item.kind === 'route-pin' && (item.x !== 490 || item.y !== 178)) return false;
       if (flag && item.used !== c[flag] || item.active !== (!item.used && enabled)) return false;
     }
     if (!Object.keys(itemRooms).every(kind => s.interactables.filter(item => item.kind === kind).length === Number(itemRooms[kind] === room)) ||
@@ -1488,7 +1512,7 @@
     if (!s.mission || !C.validRailChapter(c, s.status) || s.difficulty !== 1 || s.rooms.length !== 7) return false;
     const feederCleared = s.rooms[6]?.cleared;
     if (typeof feederCleared !== 'boolean' || (!railArena(s) || room === 3 && c.bossDefeated || room === 6 && feederCleared) && (c.railPower > 0 || c.railCooldown > 0) ||
-        [3, 4, 6].includes(room) && !c.repairerMet || [3, 4].includes(room) && !feederCleared ||
+        [3, 4, 6].includes(room) && !c.repairerMet || [3, 4].includes(room) && !c.feederRouted ||
         room === 4 && !c.bossDefeated || c.reachedCar && room !== 4) return false;
     const layout = [[0, 0], [1, 0], [2, 0], [4, 0], [5, 0], [1, -1], [3, 0]];
     const graph = [[1], [0, 2, 5], [1, 6], [6, 4], [3], [1], [2, 3]];
@@ -1498,13 +1522,13 @@
     if ((c.phase === 'arrive' && s.rooms[1].visited) || (c.phase === 'track' && !s.rooms[1].visited) ||
         s.mission.phase !== c.phase || s.mission.progress !== Number(c.reachedCar)) return false;
     const gateOpen = to => room === 2 && to === 6 ? c.repairerMet :
-      room === 6 && to === 3 ? feederCleared : room === 3 && to === 4 ? c.bossDefeated : true;
+      room === 6 && to === 3 ? c.feederRouted : room === 3 && to === 4 ? c.bossDefeated : true;
     if (s.portals.length !== graph[room].length || new Set(s.portals.map(portal => portal.target)).size !== graph[room].length ||
         s.portals.some(portal => !graph[room].includes(portal.target) || portal.active !== gateOpen(portal.target))) return false;
     const bosses = s.enemies.filter(enemy => enemy.kind === 'boss');
     if (bosses.some(enemy => enemy.railGuard !== true || enemy.maxHp !== 285 && enemy.maxHp !== 200) ||
         bosses.filter(enemy => enemy.hp > 0).length !== (room === 3 && !c.bossDefeated ? 1 : 0)) return false;
-    const itemRooms = { 'rail-repairer': [2], 'rail-switch': [3, 6], 'rail-car': [4], 'rail-supplies': [5] };
+    const itemRooms = { 'rail-repairer': [2], 'rail-switch': [3, 6], 'rail-car': [4], 'rail-supplies': [5], 'rail-route': [6] };
     const noteRooms = { 'rail-tracks': 1, 'rail-order': 5 };
     for (const item of s.interactables) {
       if (item.kind === 'chapter-note') {
@@ -1516,7 +1540,9 @@
           typeof item.used !== 'boolean' || !bounded(item.x, 960) || !bounded(item.y, 600) || !bounded(item.r, 50)) return false;
       if (item.kind === 'rail-repairer' && (item.used !== c.repairerMet || item.active === item.used) ||
           item.kind === 'rail-switch' && (item.used || item.active === (room === 3 ? c.bossDefeated : feederCleared)) ||
-          item.kind === 'rail-car' && (item.used !== c.reachedCar || item.active !== (c.bossDefeated && !item.used))) return false;
+          item.kind === 'rail-car' && (item.used !== c.reachedCar || item.active !== (c.bossDefeated && !item.used)) ||
+          item.kind === 'rail-route' && (item.x !== 400 || item.y !== 215 || item.used !== c.feederRouted ||
+            item.active !== (c.repairerMet && !c.feederRouted && (c.railPower > 0 || feederCleared)))) return false;
     }
     return Object.keys(itemRooms).every(kind => s.interactables.filter(item => item.kind === kind).length === Number(itemRooms[kind].includes(room)));
   }
@@ -1571,10 +1597,12 @@
       if (p.relayBoost != null && !bounded(p.relayBoost, 3)) return false;
     }
     for (const enemy of s.enemies) {
-      if (!enemy || !validIntercept(enemy, furnaceRoom) || !validRailBoss(enemy, s) || enemy.routeBreaker !== undefined && !routeSection(s)) return false;
+      if (!enemy || !validIntercept(enemy, furnaceRoom) || !validRailBoss(enemy, s) ||
+          enemy.routeBreaker !== undefined && !routeSection(s) || enemy.trainReturner !== undefined && !trainSection(s)) return false;
       const furnaceBoss = furnaceRoom && enemy.kind === 'boss' && enemy.timber === undefined && enemy.stage === 1;
       if (enemy.coreExposed !== undefined && (!furnaceBoss || enemy.coreExposed !== true || enemy.rhythm != null)) return false;
-      if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, enemy.coreExposed ? 3.5 : 1.6) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
+      const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : 1.6;
+      if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, maxWeakTime) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
       if (enemy.pursuit !== undefined) {
         const pursuit = enemy.pursuit;
         if (s.practice || enemy.timber !== undefined || !['chapter', 'random'].includes(s.mode) || enemy.kind !== 'boss' || !pursuit || typeof pursuit !== 'object' || Array.isArray(pursuit) || Object.keys(pursuit).length !== 3 || !['time', 'cooldown', 'targetId'].every(key => Object.prototype.hasOwnProperty.call(pursuit, key)) || !bounded(pursuit.time, 1.6) || !bounded(pursuit.cooldown, 7.5) || ![null, 'p1', 'p2'].includes(pursuit.targetId) || pursuit.time > 0 && pursuit.targetId === null) return false;
@@ -1703,14 +1731,17 @@
       const chapter = s.chapter;
       if (!chapter || typeof chapter !== 'object' || Array.isArray(chapter) || chapter.id !== 'chapter1' || chapter.version !== 1 || s.difficulty !== 1 || s.rooms.length !== 7 || !['depart', 'workshop', 'core', 'return', 'complete', 'failed'].includes(chapter.phase)) return false;
       if (!Array.isArray(chapter.clues) || chapter.clues.length > 3 || new Set(chapter.clues).size !== chapter.clues.length || chapter.clues.some(id => !['trail', 'cooling', 'missing-core'].includes(id))) return false;
-      if (!['sluiceOpen', 'bossDefeated', 'fireTaken', 'lampLit', 'suppliesTaken', 'beaconLit'].every(key => typeof chapter[key] === 'boolean')) return false;
-      if (chapter.lampLit !== (s.status === 'won') || (chapter.phase === 'complete') !== (s.status === 'won') || (chapter.phase === 'failed') !== (s.status === 'lost') || chapter.lampLit && !chapter.fireTaken || chapter.fireTaken && !chapter.bossDefeated || chapter.bossDefeated && !chapter.sluiceOpen) return false;
+      if (!['intakeOpen', 'sluiceOpen', 'bossDefeated', 'fireTaken', 'lampLit', 'suppliesTaken', 'beaconLit'].every(key => typeof chapter[key] === 'boolean')) return false;
+      if (chapter.lampLit !== (s.status === 'won') || (chapter.phase === 'complete') !== (s.status === 'won') || (chapter.phase === 'failed') !== (s.status === 'lost') || chapter.lampLit && !chapter.fireTaken || chapter.fireTaken && !chapter.bossDefeated || chapter.bossDefeated && !chapter.sluiceOpen || chapter.sluiceOpen && !chapter.intakeOpen) return false;
       const layout = [[0, 0], [1, 0], [2, 0], [2, 1], [3, 1], [2, -1], [1, -1]], graph = [[1], [0, 2, 6], [1, 3, 5], [2, 4], [3], [2, 6], [1, 5]];
       if (s.rooms.some((room, index) => !room || room.gx !== layout[index][0] || room.gy !== layout[index][1] || !Array.isArray(room.neighbors) || room.neighbors.length !== graph[index].length || graph[index].some(next => !room.neighbors.includes(next)))) return false;
       for (const item of s.interactables) {
         if (item.kind === 'chapter-note' && (!['trail', 'cooling', 'missing-core'].includes(item.clueId) || typeof item.title !== 'string' || item.title.length > 40 || typeof item.text !== 'string' || item.text.length > 240)) return false;
-        if (typeof item.kind === 'string' && item.kind.startsWith('chapter-') && !['chapter-note', 'chapter-sluice', 'chapter-fire', 'chapter-lamp', 'chapter-supplies', 'chapter-beacon'].includes(item.kind)) return false;
+        if (typeof item.kind === 'string' && item.kind.startsWith('chapter-') && !['chapter-note', 'chapter-intake', 'chapter-sluice', 'chapter-fire', 'chapter-lamp', 'chapter-supplies', 'chapter-beacon'].includes(item.kind)) return false;
+        if (item.kind === 'chapter-intake' && (s.room.index !== 5 || item.id !== 'chapter1-intake' || item.x !== 465 || item.y !== 235 || item.used !== chapter.intakeOpen || item.active !== !item.used)) return false;
+        if (item.kind === 'chapter-sluice' && (s.room.index !== 3 || item.used !== chapter.sluiceOpen || item.active !== (chapter.intakeOpen && !item.used))) return false;
       }
+      if (s.interactables.filter(item => item.kind === 'chapter-intake').length !== Number(s.room.index === 5)) return false;
     }
     if (s.mode === 'relay') {
       const relay = s.relay;
@@ -1877,7 +1908,7 @@
       if (msg.runId === runId && state) return;
       clearChapterEnding();
       mode = 'guest'; state = msg.state; runId = msg.runId; netRev = msg.rev; lastSend = 0; lastInputKey = ''; finished = ''; paused = false; disconnected = false; remotePaused = false;
-      chapterEndingEligible = state.mode === 'chapter' && state.chapter.id === 'chapter1' && state.status === 'playing' ? runId : '';
+      chapterEndingEligible = state.mode === 'chapter' && ['chapter1', 'chapter1_5'].includes(state.chapter.id) && state.status === 'playing' ? runId : '';
       if (state.mode === 'chapter') $('chapter-select').value = state.mission.id;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
       clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing');
@@ -2094,7 +2125,8 @@
   $('chapter-ending-skip').onclick = finishChapterEnding;
   $('end-next-action').onclick = () => {
     if (!resultNext || resultNext.kind === 'wait') return;
-    if (resultNext.kind === 'practice') beginPractice();
+    if (resultNext.kind === 'home') home();
+    else if (resultNext.kind === 'practice') beginPractice();
     else if (resultNext.kind === 'workshop') { const focusId = resultNext.focusId || 'unlock-scatter'; updateCamp(); openDialog('camp-dialog'); $(focusId).focus(); }
     else prepareResultMode(resultNext.gameMode, resultNext.mission);
   };
@@ -2323,7 +2355,7 @@
     $('hud-health').textContent = p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6';
     $('hud-dash').textContent = p && p.railStun > 0 ? `电晕 ${p.railStun.toFixed(1)}s` : p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
     const train = trainSection(state) ? state.chapter : null;
-    $('hud-loot').textContent = train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 修×${train.repairsLeft}` : `${camp.coins} 星屑`;
+    $('hud-loot').textContent = train?.unloaded ? '伤员已安置' : train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 修×${train.repairsLeft}` : `${camp.coins} 星屑`;
     $('hud-loot-symbol').textContent = train ? '▣' : '◆';
     const ally = state?.railAlly;
     const partnerId = localId() === 'p1' ? 'p2' : 'p1';
@@ -2331,7 +2363,7 @@
     const separated = Number.isInteger(partnerRoom) && partnerRoom !== state.room.index;
     const allyTasks = { investigate: '调查工棚', rendezvous: '站台会合', feeder: '打通配电廊', guard: '支援拨道场', rescue: '接应救援车', route: '一起探路', dispatch: '赶往调度室', signal: '前往冷却站', done: '任务完成' };
     const allyRoom = ally && Number.isInteger(ally.roomIndex) ? state.rooms[ally.roomIndex]?.name : '';
-    const allyTask = ally?.taskReturn ? '赶去救你' : train ? '守护救援车' : allyTasks[ally?.task] || '同行';
+    const allyTask = ally?.taskReturn ? '赶去救你' : train?.unloaded ? '隔离炉支援' : train ? '守护救援车' : allyTasks[ally?.task] || '同行';
     $('hud-team').textContent = ally ? (ally.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
       `阿禾 ${ally.hp} / ${ally.maxHp}${ally.task ? ' · ' + allyTask : ''}`) :
       separated ? `搭档 · ${state.rooms[partnerRoom].name}` :
@@ -2353,7 +2385,10 @@
     if (chapter && state.chapter.id === 'chapter1_2') $('route-progress').textContent = `第二节 · 木场求援 · 记录 ${state.chapter.clues.length} / 2${state.chapter.workerFreed ? ' · 工人已脱困' : ''}`;
     if (chapter && state.chapter.id === 'chapter1_3') $('route-progress').textContent = `第三节 · 借走的主芯 · 记录 ${state.chapter.clues.length} / 2${state.chapter.bossDefeated ? ' · 转车台已打通' : ''}`;
     if (chapter && state.chapter.id === 'chapter1_4') $('route-progress').textContent = `第四节 · 断轨开路 · 记录 ${state.chapter.clues.length} / 2${state.chapter.gateOpened ? ' · 主轨闸已开' : ''}`;
-    if (train) $('route-progress').textContent = `第五节 · 末班车 · ${state.rooms[train.cart.roomIndex].name}${train.phase === 'cooling' ? ' · 冷却 ' + Math.ceil(train.coolingLeft) + 's' : train.cart.moving ? ' · 行驶中' : ' · 停车'}`;
+    if (train?.unloaded) {
+      const beat = { divert: '主芯分流', returner: '隔离炉 · 归炉者', relight: '返回车库点灯', complete: '归途灯已亮' }[train.phase];
+      $('route-progress').textContent = beat ? '第五节 · ' + beat : '第五节 · 末班车';
+    } else if (train) $('route-progress').textContent = `第五节 · 末班车 · ${state.rooms[train.cart.roomIndex].name}${train.phase === 'cooling' ? ' · 冷却 ' + Math.ceil(train.coolingLeft) + 's' : train.cart.moving ? ' · 行驶中' : ' · 停车'}`;
     if (random && styleNames(state).length) $('route-progress').textContent = '流派 · ' + styleNames(state).join(' / ') + (state.difficulty === 2 ? ' · 险境' : '');
     $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';

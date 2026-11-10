@@ -71,6 +71,10 @@ test('upper route raises the physical bridge, opens a return shortcut and settle
   cross(s, 2); cross(s, 3);
   assert(view(s).walls.some(w => w.routeGap));
   assert.equal(E.enterRoom(s, 6, false, 'p2'), false, 'the broken bridge blocks both route APIs');
+  assert.equal(use(s, 'route-winch'), false, 'the exposed winch cannot lift the bridge without its pin');
+  cross(s, 2);
+  assert(use(s, 'route-pin'));
+  cross(s, 3);
   assert(use(s, 'route-winch'));
   sharedViews(s);
   assert(!view(s).walls.some(w => w.routeGap));
@@ -118,7 +122,9 @@ test('killing the lower-route heavy cannot soft-lock the expedition', () => {
   }
   assert(dead, 'normal weapon fire can defeat the heavy');
   assert.equal(s.chapter.wallBreached, false, 'killing it does not grant a fake breach');
-  cross(s, 4); cross(s, 1); cross(s, 2); cross(s, 3);
+  cross(s, 4); cross(s, 1); cross(s, 2);
+  assert(use(s, 'route-pin'));
+  cross(s, 3);
   assert(use(s, 'route-winch'));
   cross(s, 6);
   finishFromDispatch(s);
@@ -147,7 +153,9 @@ test('the solo ally follows the player and leaves route controls and the breaker
 test('a distant junction projects a newly opened main gate immediately without stepping its occupant', () => {
   const s = party();
   cross(s, 1, 'p1');
-  cross(s, 1); cross(s, 2); cross(s, 3);
+  cross(s, 1); cross(s, 2);
+  assert(use(s, 'route-pin'));
+  cross(s, 3);
   assert(use(s, 'route-winch'));
   cross(s, 6);
   assert(use(s, 'chapter-note', 'p2', 'route-order'));
