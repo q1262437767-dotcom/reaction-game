@@ -169,6 +169,22 @@ rollback;
 
 第三节不开放险境，`hardClears` 必须为零。已有存档的每次新增第三节通关可解释最多 60 星屑，其他胜场仍按原有上限校验。更新前后的专用用例随 `test/sql/progress-guard.sql` 运行。
 
+### 已有项目升级到第一章徽章
+
+发布把营地记录改成第一章五节的网页前，由现有函数所有者执行 **upgrade-chapter-badges.sql**。新项目直接执行最新 **schema.sql**。这仍是一份独立部署 SQL，不是 Supabase CLI 的迁移历史。它只替换 `ruins_private.reject_ruins_progress_jump(jsonb,jsonb)` 和 `ruins_private.save_ruins_profile_impl(jsonb,bigint)`。不改存档行、表、RLS、公开 RPC、函数所有者或已有执行权限。重复执行不重置进度。不要在这次之后再跑旧版升级，否则会把第五节和新徽章校验覆盖掉。
+
+档案仍为 **v2**。这一版同时补上客户端已经在写、旧函数却会拒绝的 `chapter1_5`：
+
+| 项目 | 规则 |
+| --- | --- |
+| `missions.chapter1_5` | 可选。旧客户端省略时，服务端在原 CAS 更新里保留该账号已有记录 |
+| 第五节 `hardClears` | 必须为 0 |
+| 第五节新增通关 | 每次最多解释 70 星屑，和其他胜场分开计算 |
+| 徽章 | 原有 5 个 id 都还接受。新增 `wayhome`（归途已明）、`steady`（稳稳送到）。最多 7 个，不能重复，不能删掉已有的 |
+| `wayhome` | 若旧档五节通关都已经大于 0，可以在不增加探险次数的保存里补上这一枚。其他新徽章仍要伴随至少 1 次新探险 |
+
+线上合并后需要执行这份 SQL，游戏网页才会把新徽章和第五节记录写入云存档。未执行时，本地营地仍然显示正确记录，云端保存会被拒绝，云端旧档不变。不要对线上库直接试写；部署后用会回滚的事务核对形状即可。
+
 ## 4. 填写公开配置并发布
 
 从项目 Connect / API Keys 中取得 **Project URL** 和 **publishable key**，填写 `coop-adventure/cloud-config.js`：

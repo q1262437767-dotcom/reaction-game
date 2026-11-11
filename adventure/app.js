@@ -995,11 +995,10 @@
       option.disabled = !C.canPlay(camp, chapter.id, 1);
       option.textContent = chapter.name.replace('第一章 · ', '') + (option.disabled ? ' · 待解锁' : camp.missions[chapter.id].clears ? ' · 已完成' : '');
     }
-    $('title-camp-status').textContent = chapterDone.fifthCompleted ? '伤员已入站 · 末班车已抵达' : chapterDone.fourthCompleted ? '断轨已打通 · 冷却站信号已亮' : chapterDone.thirdCompleted ? '西线已抵达 · 找到救援车' : chapterDone.secondCompleted ? '归途灯已亮 · 木场工人已回营' : chapterDone.completed ? '归途灯已亮 · 采集队已回营' : '归途灯尚未点亮';
-    $('title-camp-status').setAttribute('data-complete', String(chapterDone.completed));
-    const completedChapters = C.CHAPTERS.filter(section => camp.missions[section.id].clears > 0);
-    const latestChapter = completedChapters[completedChapters.length - 1];
-    $('campaign-status').textContent = chapter ?  `第一章《归途灯》 · 已完成 ${completedChapters.length} / ${C.CHAPTERS.length} 节 · 星屑 ${camp.coins}` : random || relay || hunt ? `星屑 ${camp.coins} · 归来 ${camp.wins} 次${relay ? ' · 接力夺宝试玩' : hunt ? ' · 苔火猎场试玩' : ` · 遗物图鉴 ${progress.relicCount} / ${progress.relicTotal}`}` : `营灯 ${progress.lit} / 3 · 星屑 ${camp.coins} · ${progress.allCleared ? '险境任务已开启' : '完成任务，点亮营地的三盏灯'}`;
+    $('title-camp-status').textContent = chapterDone.fifthCompleted ? '第一章完 · 归途灯已重新点亮' : chapterDone.fourthCompleted ? '断轨已打通 · 冷却站信号已亮' : chapterDone.thirdCompleted ? '西线已抵达 · 找到救援车' : chapterDone.secondCompleted ? '采集队已回营 · 木场工人已安顿' : chapterDone.completed ? '第一节已完成 · 归途灯还要再走' : '归途灯尚未点亮';
+    const journal = C.journalView(camp);
+    $('title-camp-status').setAttribute('data-complete', String(journal.allCleared));
+    $('campaign-status').textContent = `第一章《归途灯》 · ${journal.allCleared ? '五节已完' : `已走 ${journal.cleared} / ${journal.total} 节`} · 星屑 ${camp.coins}`;
     const chapterHint = {
       chapter1: chapterDone.completed ? '第一节记录已保存 · 第二节木场求援已开放' : '借回火种，再回营地点灯',
       chapter1_2: chapterDone.secondCompleted ? '工人已经回营 · 第三节已开放' : '移动木车，救人，再从信号岗撤离',
@@ -1008,29 +1007,39 @@
       chapter1_5: chapterDone.fifthCompleted ? '第五节已有通关记录 · 可重玩' : '护送救援车，接住追来的回收守卫'
     };
     $('mission-progress').textContent = chapter ? chapterHint[selectedMission()] : random ? '每局一张新地图' : relay ? '取回炉芯，原路撤离' : hunt ? '追踪、诱敌、伏击' : `营灯 ${progress.lit} / 3${progress.allCleared ? ` · 险境 ${progress.hardLit} / 3` : ''}`;
-    $('chapter-camp-status').textContent = latestChapter ? `${latestChapter.name} · 已完成 ${camp.missions[latestChapter.id].clears} 次` : '第一章 · 第一节 · 借火归营 · 归途灯尚未点亮';
-    $('chapter-camp-status').setAttribute('data-complete', String(chapterDone.completed));
-    $('chapter-camp-copy').textContent = chapterDone.fifthCompleted ? '第五节记录已保存。可以重玩《末班车》，从救援车启程走到归途灯重新亮起。' : chapterDone.fourthCompleted ? '第五节《末班车》已开放。回去接上陶铆和救援车，把伤员送进避风站。' : chapterDone.thirdCompleted ? '找到了载着伤员的救援车。第四节《断轨开路》已开放，和阿禾先去断桥那头探路。' : chapterDone.secondCompleted ? '木场工人已经安顿下来。第三节《借走的主芯》已开放，沿西边旧线追那辆重车。' : chapterDone.completed ? '采集队已经回营。第二节《木场求援》已开放，可以去回应旧木场的求援灯讯。' : '进入苔火工坊借回火种，回营点亮归途灯。本节通关记录可随账号保存。';
-    $('camp-copy').textContent = `现有 ${camp.coins} 星屑。${chapterDone.completed ? '第一章第一节的归途灯已点亮。' : '第一章第一节等待你从工坊借回火种。'}旧版任务营灯 ${progress.lit} / 3，${progress.allCleared ? '险境任务已开放。' : '完成旧版三项任务可开启险境任务。'}${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
-    $('camp-objectives').replaceChildren(...C.MISSIONS.map((mission, i) => {
-      const complete = camp.missions[mission.id].clears > 0;
-      const lamp = el('div', 'camp-lamp' + (complete ? ' lit' : ''));
-      lamp.setAttribute('data-complete', String(complete));
-      lamp.append(el('i'), el('strong', '', '第 ' + (i + 1) + ' 盏营灯'), el('span', '', mission.name + ' · ' + (complete ? '已点亮' : '等待修复')));
+    $('chapter-camp-status').textContent = journal.allCleared ? '第一章《归途灯》· 五节已完' : `第一章《归途灯》· 已走 ${journal.cleared} / ${journal.total} 节`;
+    $('chapter-camp-status').setAttribute('data-complete', String(journal.allCleared));
+    $('chapter-camp-copy').textContent = chapterDone.fifthCompleted ? '伤员进了站，归炉者也停下了。归途灯重新亮着，五节都可以再走。' : chapterDone.fourthCompleted ? '第五节《末班车》已开放。回去接上陶铆和救援车，把伤员送进避风站。' : chapterDone.thirdCompleted ? '找到了载着伤员的救援车。第四节《断轨开路》已开放，和阿禾先去断桥那头探路。' : chapterDone.secondCompleted ? '木场工人已经安顿下来。第三节《借走的主芯》已开放，沿西边旧线追那辆重车。' : chapterDone.completed ? '采集队已经回营。第二节《木场求援》已开放，可以去回应旧木场的求援灯讯。' : '先进入苔火工坊借回火种。五节走完，归途灯才会重新亮起。';
+    $('camp-copy').textContent = `现有 ${camp.coins} 星屑。${journal.allCleared ? '第一章《归途灯》五节已完，灯还亮着。' : `第一章《归途灯》已走 ${journal.cleared} / ${journal.total} 节。`}${account ? account.status : storageOK ? '进度保存在当前浏览器。' : '浏览器未允许保存，刷新后进度可能丢失。'}`;
+    $('chapter-sections').replaceChildren(...journal.sections.map((section, index) => {
+      const row = el('div', 'chapter-section');
+      row.setAttribute('data-complete', String(section.done));
+      const mark = el('span', 'chapter-mark', String(index + 1));
+      mark.setAttribute('aria-hidden', 'true');
+      row.append(mark, el('strong', '', section.name), el('span', '', section.done ? `已完成 ${section.clears} 次` : '尚未完成'));
+      return row;
+    }));
+    $('camp-objectives').replaceChildren(...journal.lamps.map((mission, i) => {
+      const lamp = el('div', 'camp-lamp' + (mission.lit ? ' lit' : ''));
+      lamp.setAttribute('data-complete', String(mission.lit));
+      lamp.append(el('i'), el('strong', '', '第 ' + (i + 1) + ' 盏营灯'), el('span', '', mission.name + ' · ' + (mission.lit ? '已点亮' : '等待修复')));
       lamp.firstElementChild.setAttribute('aria-hidden', 'true');
       return lamp;
     }));
-    $('journal-list').replaceChildren(...C.BADGES.map(badge => {
-      const earned = camp.badges.includes(badge.id);
-      const item = el('div', 'journal-item' + (earned ? ' earned' : ''));
+    const badgeItem = badge => {
+      const item = el('div', 'journal-item' + (badge.earned ? ' earned' : ''));
       const icon = el('span', 'journal-icon');
       icon.setAttribute('aria-hidden', 'true');
-      icon.append(el('span', '', earned ? '◆' : '◇'));
+      icon.append(el('span', '', badge.earned ? '◆' : '◇'));
       const copy = el('div');
       copy.append(el('strong', '', badge.name), el('p', '', badge.description));
-      item.append(icon, copy, el('span', 'journal-status', earned ? '已达成' : '未达成'));
+      item.append(icon, copy, el('span', 'journal-status', badge.earned ? '已达成' : '未达成'));
       return item;
-    }));
+    };
+    const storyEarned = journal.storyBadges.filter(badge => badge.earned).length;
+    $('story-badge-count').textContent = `已达成 ${storyEarned} / ${journal.storyBadges.length}`;
+    $('journal-list').replaceChildren(...journal.storyBadges.map(badgeItem));
+    $('legacy-journal').replaceChildren(...journal.legacyBadges.map(badgeItem));
     $('relic-journal').replaceChildren(...C.RELICS.map(id => {
       const relic = E.BUFFS[id] || { label: id, description: '' }, found = camp.relics.includes(id);
       const item = el('div', 'journal-item' + (found ? ' earned' : ''));

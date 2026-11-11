@@ -55,7 +55,8 @@
         var upgrade = C.CAMP_UPGRADES.find(function (item) { return item.id === id; });
         return upgrade ? upgrade.name : id;
       });
-      return '星屑 ' + p.coins + ' · 营灯 ' + C.progress(p).lit + '/3 · 探险 ' + p.runs + ' 次' +
+      var chapter = C.chapterProgress(p);
+      return '星屑 ' + p.coins + ' · 归途灯 ' + chapter.cleared + '/' + chapter.total + ' · 挑战营灯 ' + C.progress(p).lit + '/3 · 探险 ' + p.runs + ' 次' +
         ' · 营地强化 ' + upgrades.length + '/3' + (upgrades.length ? '（' + upgrades.join('、') + '）' : '') +
         ' · 出发遗物：' + (relicNames[p.camp.startingRelic] || '未装备') +
         ' · 营地伙伴：' + (p.camp.companion.rescued ? p.camp.companion.name + (p.camp.companion.equipped ? '（同行）' : '（留营）') : '未救出');

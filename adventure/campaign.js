@@ -21,12 +21,15 @@
     Object.freeze({ id: 'chapter1_4', name: '第一章 · 第四节 · 断轨开路', description: '救援车停在断轨前，追兵却还沿着旧线找来。绕到调度室，看看它们究竟在找什么。', goal: '升桥或引怪破墙，查阅回收令，开闸并点亮冷却站信号', reward: 70 }),
     Object.freeze({ id: 'chapter1_5', name: '第一章 · 第五节 · 末班车', description: '趁追兵还没赶上来，把救援车开到避风车库。等伤员下了车，再处理那盏紧跟主芯的红灯。', goal: '护送伤员，截停归炉者，让归途灯重新亮起来', reward: 70 })
   ]);
+  var STEADY_CART_HP = 10;
   var BADGES = Object.freeze([
-    Object.freeze({ id: 'flawless', name: '无伤归来', description: '整场探险没有受到伤害，并成功完成任务。' }),
-    Object.freeze({ id: 'explorer', name: '秘径寻光', description: '完成一次隐藏房间的探索。' }),
-    Object.freeze({ id: 'lamplighter', name: '三灯重明', description: '完成三个不同的任务，点亮营地三盏灯。' }),
-    Object.freeze({ id: 'collector', name: '遗物收藏家', description: '在探险中发现全部六件遗物。' }),
-    Object.freeze({ id: 'veteran', name: '险境踏破', description: '在险境难度完成全部三个任务。' })
+    Object.freeze({ id: 'wayhome', name: '归途已明', description: '走完第一章五节，让归途灯重新亮起来。' }),
+    Object.freeze({ id: 'steady', name: '稳稳送到', description: '末班车进站时，救援车还剩至少 ' + STEADY_CART_HP + ' 点耐久。' }),
+    Object.freeze({ id: 'flawless', name: '无伤归来', description: '一整局没有受伤，并成功完成章节或任务。' }),
+    Object.freeze({ id: 'explorer', name: '秘径寻光', description: '在远征或旧版任务里，走完一间隐藏房间。' }),
+    Object.freeze({ id: 'collector', name: '遗物收藏家', description: '发现全部六件遗物。' }),
+    Object.freeze({ id: 'lamplighter', legacy: true, name: '三灯重明', description: '在挑战的旧版任务里完成三项，点亮三盏营灯。' }),
+    Object.freeze({ id: 'veteran', legacy: true, name: '险境踏破', description: '在险境难度完成全部三个旧版任务。' })
   ]);
   var RELICS = Object.freeze(['pierce', 'swift', 'vigor', 'resonance', 'riposte', 'decoy']);
   var CAMP_UPGRADES = Object.freeze([
@@ -66,6 +69,10 @@
     var wins = Math.max(count(raw.wins), MISSIONS.concat(CHAPTERS).reduce(function (sum, mission) { return sum + missions[mission.id].clears; }, 0));
     var badgeIds = BADGES.map(function (badge) { return badge.id; });
     var badges = unique((Array.isArray(raw.badges) ? raw.badges : []).filter(function (id) { return badgeIds.includes(id); }));
+    // A finished chapter already satisfies the story badge. Grant it here so an
+    // older save shows the record without another run, and never drop a badge
+    // the player already earned.
+    if (CHAPTERS.every(function (chapter) { return missions[chapter.id].clears > 0; }) && !badges.includes('wayhome')) badges.push('wayhome');
     var relics = unique((Array.isArray(raw.relics) ? raw.relics : []).filter(function (id) { return RELICS.includes(id); }));
     var campRaw = object(raw.camp), upgrades = CAMP_UPGRADES.map(function (upgrade) { return upgrade.id; }).filter(function (id) {
       return Array.isArray(campRaw.upgrades) && campRaw.upgrades.includes(id);
@@ -162,12 +169,14 @@
   function chapterProgress(profile) {
     var normalized = normalize(profile), record = normalized.missions.chapter1, second = normalized.missions.chapter1_2,
       third = normalized.missions.chapter1_3, fourth = normalized.missions.chapter1_4, fifth = normalized.missions.chapter1_5;
+    var cleared = [record, second, third, fourth, fifth].filter(function (entry) { return entry.clears > 0; }).length;
     return { completed: record.clears > 0, clears: record.clears, hardClears: record.hardClears,
       bestTime: record.bestTime, secondCompleted: second.clears > 0, secondClears: second.clears,
       secondBestTime: second.bestTime, thirdCompleted: third.clears > 0, thirdClears: third.clears,
       thirdBestTime: third.bestTime, fourthCompleted: fourth.clears > 0, fourthClears: fourth.clears,
       fourthBestTime: fourth.bestTime, fifthCompleted: fifth.clears > 0, fifthClears: fifth.clears,
-      fifthBestTime: fifth.bestTime, nextChapter: fourth.clears > 0 && fifth.clears === 0 ? 'chapter1_5' :
+      fifthBestTime: fifth.bestTime, cleared: cleared, total: CHAPTERS.length, allCleared: cleared === CHAPTERS.length,
+      nextChapter: fourth.clears > 0 && fifth.clears === 0 ? 'chapter1_5' :
         third.clears > 0 && fourth.clears === 0 ? 'chapter1_4' :
         second.clears > 0 && third.clears === 0 ? 'chapter1_3' :
         record.clears > 0 && second.clears === 0 ? 'chapter1_2' : null };
@@ -296,7 +305,7 @@
           var sectionTime = Math.min(86400, Math.round(state.elapsed * 10) / 10);
           sectionRecord.bestTime = sectionRecord.bestTime === null ? sectionTime : Math.min(sectionRecord.bestTime, sectionTime);
         }
-        if (object(state.stats).damage === 0) earn('flawless');
+        grantChapterBadges();
         if (sectionRecord.clears === 1) {
           if (train) unlocks.push('第一章《归途灯》完成 · 归炉者已停机');
           else if (route) unlocks.push('第四节完成 · 冷却站信号已亮', '第五节解锁 · 末班车');
@@ -327,7 +336,7 @@
           var chapterTime = Math.min(86400, Math.round(state.elapsed * 10) / 10);
           chapterRecord.bestTime = chapterRecord.bestTime === null ? chapterTime : Math.min(chapterRecord.bestTime, chapterTime);
         }
-        if (object(state.stats).damage === 0) earn('flawless');
+        grantChapterBadges();
         if (!chapterProgress(profile).completed) {
           unlocks.push('第一节完成 · 归途灯重明', '武器解锁 · 遗迹长枪', '第二节解锁 · 木场求援');
         }
@@ -399,11 +408,36 @@
     function earn(id) {
       if (!p.badges.includes(id)) { p.badges.push(id); newBadges.push(id); }
     }
+    function grantChapterBadges() {
+      if (object(state.stats).damage === 0) earn('flawless');
+      if ((object(state.mission).id) === 'chapter1_5' && object(object(state.chapter).cart).hp >= STEADY_CART_HP) earn('steady');
+      if (CHAPTERS.every(function (chapter) { return p.missions[chapter.id].clears > 0; })) earn('wayhome');
+    }
+  }
+
+  function journalView(profile) {
+    var p = normalize(profile), chapter = chapterProgress(p);
+    var present = function (badge) {
+      return { id: badge.id, name: badge.name, description: badge.description, earned: p.badges.includes(badge.id) };
+    };
+    return {
+      cleared: chapter.cleared, total: chapter.total, allCleared: chapter.allCleared,
+      sections: CHAPTERS.map(function (section) {
+        var record = p.missions[section.id];
+        return { id: section.id, name: section.name.replace(/^第一章 · /, ''), clears: record.clears, done: record.clears > 0 };
+      }),
+      storyBadges: BADGES.filter(function (badge) { return badge.legacy !== true; }).map(present),
+      legacyBadges: BADGES.filter(function (badge) { return badge.legacy === true; }).map(present),
+      lamps: MISSIONS.map(function (mission) {
+        var record = p.missions[mission.id];
+        return { id: mission.id, name: mission.name, lit: record.clears > 0, clears: record.clears };
+      })
+    };
   }
 
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    chapterProgress: chapterProgress, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    chapterProgress: chapterProgress, journalView: journalView, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
     validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });
