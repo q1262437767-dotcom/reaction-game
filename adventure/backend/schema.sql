@@ -79,6 +79,7 @@ declare
   v_clear_sum numeric := 0;
   v_third_clear_delta numeric := 0;
   v_fourth_clear_delta numeric := 0;
+  v_fifth_clear_delta numeric := 0;
   v_bad_window boolean;
   v_old_upgrades jsonb;
   v_new_upgrades jsonb;
@@ -90,13 +91,16 @@ begin
   --   ember 40, salvage 30, holdout 35
   --   story hard +20, one cleared secret +12
   --   richest story win = 40 + 20 + 12 = 72
-  --   chapter1 earns 40, chapter1_2 earns 50, chapter1_3 earns 60, chapter1_4 earns 70
+  --   chapter1 earns 40, chapter1_2 earns 50, chapter1_3 earns 60, chapter1_4 earns 70, chapter1_5 earns 70
+  --   chapters 2–4 earn 55, 60 and 65; chapter 5 earns 70, 70 and 40; the hidden line earns 45
+  --   those later payouts stay inside the existing 72 ceiling and do not add a new coin term
   --   hunt 32, relay 24
   --   a loss or the practice arena adds no coins
   -- So each new win explains at most 72 coins. New wins cannot exceed new runs.
   --
   -- Unlocks are paid from coins in the same save that first records them:
   --   scatter 30, ward 40, stride 60, relicCase 80
+  --   lampOil 50, quietSole 60, railGlove 70, dispatch 80
   -- With no new win, the balance must fall by exactly that cost.
   -- With wins, it must sit in [old - cost, old + wins * 72 - cost].
   --
@@ -172,12 +176,24 @@ begin
   if (v_new_upgrades ? 'relicCase') and not (v_old_upgrades ? 'relicCase') then
     v_spend := v_spend + 80;
   end if;
+  if (v_new_upgrades ? 'lampOil') and not (v_old_upgrades ? 'lampOil') then
+    v_spend := v_spend + 50;
+  end if;
+  if (v_new_upgrades ? 'quietSole') and not (v_old_upgrades ? 'quietSole') then
+    v_spend := v_spend + 60;
+  end if;
+  if (v_new_upgrades ? 'railGlove') and not (v_old_upgrades ? 'railGlove') then
+    v_spend := v_spend + 70;
+  end if;
+  if (v_new_upgrades ? 'dispatch') and not (v_old_upgrades ? 'dispatch') then
+    v_spend := v_spend + 80;
+  end if;
 
   if v_new_coins < v_old_coins - v_spend then
     raise exception using errcode = '22023', message = 'progress_rejected';
   end if;
 
-  foreach v_key in array array['ember','salvage','holdout','chapter1','chapter1_2','chapter1_3','chapter1_4'] loop
+  foreach v_key in array array['ember','salvage','holdout','chapter1','chapter1_2','chapter1_3','chapter1_4','chapter1_5','chapter2','chapter2_2','chapter2_3','chapter2_4','chapter3','chapter3_2','chapter3_3','chapter3_4','chapter4','chapter4_2','chapter4_3','chapter4_4','chapter5','chapter5_2','chapter5_3','secret_unlisted'] loop
     v_old_mission := p_old->'missions'->v_key;
     v_new_mission := p_new->'missions'->v_key;
     if v_old_mission is null then
@@ -219,7 +235,7 @@ begin
     v_clear_delta := v_new_clears - v_old_clears;
     -- Chapter sections have no hard mode. Story hard clears cannot outrun
     -- that mission's new clears, and cannot fall.
-    if v_key in ('chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4') then
+    if v_key not in ('ember', 'salvage', 'holdout') then
       if v_new_hard <> v_old_hard then
         raise exception using errcode = '22023', message = 'progress_rejected';
       end if;
@@ -246,15 +262,18 @@ begin
       v_third_clear_delta := v_clear_delta;
     elsif v_key = 'chapter1_4' then
       v_fourth_clear_delta := v_clear_delta;
+    elsif v_key = 'chapter1_5' then
+      v_fifth_clear_delta := v_clear_delta;
     end if;
   end loop;
   -- Hunt and relay wins do not increment a mission clear, so clears may lag wins.
-  -- Third/fourth-section clears explain 60/70 coins each; other wins retain the
-  -- existing global ceiling of 72 (ember + hard + secret).
+  -- Third-section clears explain 60 coins; fourth and fifth explain 70 each.
+  -- Other wins retain the existing global ceiling of 72 (ember + hard + secret).
   if v_clear_sum > v_win_delta
      or v_new_coins > v_old_coins + v_third_clear_delta * 60
                     + v_fourth_clear_delta * 70
-                    + (v_win_delta - v_third_clear_delta - v_fourth_clear_delta) * 72 - v_spend then
+                    + v_fifth_clear_delta * 70
+                    + (v_win_delta - v_third_clear_delta - v_fourth_clear_delta - v_fifth_clear_delta) * 72 - v_spend then
     raise exception using errcode = '22023', message = 'progress_rejected';
   end if;
 
@@ -268,10 +287,20 @@ begin
     raise exception using errcode = '22023', message = 'progress_rejected';
   end if;
   -- Discoveries are written by applyResult on an expedition, not from camp.
+  -- wayhome is the exception: once all five chapter clears are already stored,
+  -- the camp may record that story badge without another run.
   if v_run_delta < 1 and (
     exists (
       select 1 from jsonb_array_elements_text(p_new->'badges') as item(id)
       where not (p_old->'badges' ? item.id)
+        and not (
+          item.id = 'wayhome'
+          and coalesce((p_old#>>'{missions,chapter1,clears}')::numeric, 0) > 0
+          and coalesce((p_old#>>'{missions,chapter1_2,clears}')::numeric, 0) > 0
+          and coalesce((p_old#>>'{missions,chapter1_3,clears}')::numeric, 0) > 0
+          and coalesce((p_old#>>'{missions,chapter1_4,clears}')::numeric, 0) > 0
+          and coalesce((p_old#>>'{missions,chapter1_5,clears}')::numeric, 0) > 0
+        )
     ) or exists (
       select 1 from jsonb_array_elements_text(p_new->'relics') as item(id)
       where not (p_old->'relics' ? item.id)
@@ -287,6 +316,22 @@ begin
   if coalesce(p_new#>'{camp,companion,rescued}', 'false'::jsonb) = 'true'::jsonb
      and coalesce(p_old#>'{camp,companion,rescued}', 'false'::jsonb) is distinct from 'true'::jsonb
      and v_run_delta < 1 then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if jsonb_typeof(coalesce(p_new#>'{camp,records}', '[]'::jsonb)) is distinct from 'array'
+     or jsonb_typeof(coalesce(p_old#>'{camp,records}', '[]'::jsonb)) is distinct from 'array' then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements_text(coalesce(p_old#>'{camp,records}', '[]'::jsonb)) as item(id)
+    where not (coalesce(p_new#>'{camp,records}', '[]'::jsonb) ? item.id)
+  ) then
+    raise exception using errcode = '22023', message = 'progress_rejected';
+  end if;
+  if v_run_delta < 1 and exists (
+    select 1 from jsonb_array_elements_text(coalesce(p_new#>'{camp,records}', '[]'::jsonb)) as item(id)
+    where not (coalesce(p_old#>'{camp,records}', '[]'::jsonb) ? item.id)
+  ) then
     raise exception using errcode = '22023', message = 'progress_rejected';
   end if;
 
@@ -363,6 +408,7 @@ declare
   v_count numeric;
   v_stored jsonb;
   v_effective jsonb;
+  v_kept jsonb;
 begin
   -- Identity comes from the verified JWT, never from a client-supplied user ID.
   if v_user_id is null then
@@ -423,9 +469,10 @@ begin
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   if not ((p_profile->'missions') ?& array['ember','salvage','holdout'])
-      or (select count(*) from jsonb_object_keys(p_profile->'missions')) not in (3, 4, 5, 6, 7)
+      or (select count(*) from jsonb_object_keys(p_profile->'missions')) < 3
+      or (select count(*) from jsonb_object_keys(p_profile->'missions')) > 24
       or exists (select 1 from jsonb_object_keys(p_profile->'missions') as keys(id)
-                 where id not in ('ember', 'salvage', 'holdout', 'chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4')) then
+                 where id not in ('ember', 'salvage', 'holdout', 'chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5', 'chapter2', 'chapter2_2', 'chapter2_3', 'chapter2_4', 'chapter3', 'chapter3_2', 'chapter3_3', 'chapter3_4', 'chapter4', 'chapter4_2', 'chapter4_3', 'chapter4_4', 'chapter5', 'chapter5_2', 'chapter5_3', 'secret_unlisted')) then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   for v_key in select jsonb_object_keys(p_profile->'missions') loop
@@ -448,7 +495,7 @@ begin
     v_count := (v_mission->>'hardClears')::numeric;
     if v_count < 0 or v_count > (v_mission->>'clears')::numeric
         or trunc(v_count) <> v_count
-        or (v_key in ('chapter1_3', 'chapter1_4') and v_count <> 0) then
+        or (v_key not in ('ember', 'salvage', 'holdout') and v_count <> 0) then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
     if v_mission->'bestTime' is distinct from 'null'::jsonb then
@@ -466,19 +513,19 @@ begin
       or jsonb_typeof(p_profile->'relics') is distinct from 'array' then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
-  if jsonb_array_length(p_profile->'badges') > 5
-      or jsonb_array_length(p_profile->'relics') > 6 then
+  if jsonb_array_length(p_profile->'badges') > 19
+      or jsonb_array_length(p_profile->'relics') > 10 then
     raise exception using errcode = '22023', message = 'invalid_profile';
   end if;
   for v_item in select value from jsonb_array_elements(p_profile->'badges') loop
     if jsonb_typeof(v_item) is distinct from 'string'
-        or (v_item #>> '{}') not in ('flawless','explorer','lamplighter','collector','veteran') then
+        or (v_item #>> '{}') not in ('flawless','explorer','lamplighter','collector','veteran','wayhome','steady','northlight','rethread','coresafe','sevenlamps','wellblue','archive','unlisted','letter','private','echo','hearth','ashlamp') then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
   end loop;
   for v_item in select value from jsonb_array_elements(p_profile->'relics') loop
     if jsonb_typeof(v_item) is distinct from 'string'
-        or (v_item #>> '{}') not in ('pierce','swift','vigor','resonance','riposte','decoy') then
+        or (v_item #>> '{}') not in ('pierce','swift','vigor','resonance','riposte','decoy','bluehood','moss','windfeather','pulsering') then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
   end loop;
@@ -495,18 +542,18 @@ begin
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
     if not (v_camp ?& array['upgrades','startingRelic'])
-        or (select count(*) from jsonb_object_keys(v_camp)) not in (2, 3)
+        or (select count(*) from jsonb_object_keys(v_camp)) not in (2, 3, 4)
         or exists (select 1 from jsonb_object_keys(v_camp) as keys(id)
-                   where id not in ('upgrades', 'startingRelic', 'companion'))
+                   where id not in ('upgrades', 'startingRelic', 'companion', 'records'))
         or jsonb_typeof(v_camp->'upgrades') is distinct from 'array' then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
-    if jsonb_array_length(v_camp->'upgrades') > 3 then
+    if jsonb_array_length(v_camp->'upgrades') > 7 then
       raise exception using errcode = '22023', message = 'invalid_profile';
     end if;
     for v_item in select value from jsonb_array_elements(v_camp->'upgrades') loop
       if jsonb_typeof(v_item) is distinct from 'string'
-          or (v_item #>> '{}') not in ('ward','stride','relicCase') then
+          or (v_item #>> '{}') not in ('ward','stride','relicCase','lampOil','quietSole','railGlove','dispatch') then
         raise exception using errcode = '22023', message = 'invalid_profile';
       end if;
     end loop;
@@ -545,6 +592,22 @@ begin
     end if;
   end if;
 
+  if p_profile ? 'camp' and (v_camp ? 'records') then
+    if jsonb_typeof(v_camp->'records') is distinct from 'array'
+        or jsonb_array_length(v_camp->'records') > 11 then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+    for v_item in select value from jsonb_array_elements(v_camp->'records') loop
+      if jsonb_typeof(v_item) is distinct from 'string'
+          or (v_item #>> '{}') not in ('trail','cooling','missing-core','timber-tracks','timber-bandage','rail-tracks','rail-order','route-shift','route-order','train-passengers','train-refuge') then
+        raise exception using errcode = '22023', message = 'invalid_profile';
+      end if;
+    end loop;
+    if (select count(*) <> count(distinct value) from jsonb_array_elements(v_camp->'records')) then
+      raise exception using errcode = '22023', message = 'invalid_profile';
+    end if;
+  end if;
+
   -- Each single statement is atomic. A racing initial insert cannot replace a
   -- save, and a stale update cannot pass its revision predicate after waiting.
   -- Revision 0 is the first insert and is not compared with an older profile.
@@ -564,26 +627,27 @@ begin
     end if;
     -- Missing fields in older clients must not erase newer same-owner records.
     -- Retain an equipped relic's discovery too, keeping the preserved camp valid.
-    v_effective := p_profile || jsonb_build_object('missions', (p_profile->'missions')
-                  || (case when not ((p_profile->'missions') ? 'chapter1') and ((v_stored->'missions') ? 'chapter1')
-                           then jsonb_build_object('chapter1', v_stored#>'{missions,chapter1}')
-                           else '{}'::jsonb end)
-                  || (case when not ((p_profile->'missions') ? 'chapter1_2') and ((v_stored->'missions') ? 'chapter1_2')
-                           then jsonb_build_object('chapter1_2', v_stored#>'{missions,chapter1_2}')
-                           else '{}'::jsonb end)
-                  || (case when not ((p_profile->'missions') ? 'chapter1_3') and ((v_stored->'missions') ? 'chapter1_3')
-                           then jsonb_build_object('chapter1_3', v_stored#>'{missions,chapter1_3}')
-                           else '{}'::jsonb end)
-                  || (case when not ((p_profile->'missions') ? 'chapter1_4') and ((v_stored->'missions') ? 'chapter1_4')
-                           then jsonb_build_object('chapter1_4', v_stored#>'{missions,chapter1_4}')
-                           else '{}'::jsonb end))
+    v_kept := '{}'::jsonb;
+    foreach v_key in array array['chapter1','chapter1_2','chapter1_3','chapter1_4','chapter1_5','chapter2','chapter2_2','chapter2_3','chapter2_4','chapter3','chapter3_2','chapter3_3','chapter3_4','chapter4','chapter4_2','chapter4_3','chapter4_4','chapter5','chapter5_2','chapter5_3','secret_unlisted'] loop
+      if not ((p_profile->'missions') ? v_key) and ((v_stored->'missions') ? v_key) then
+        v_kept := v_kept || jsonb_build_object(v_key, v_stored->'missions'->v_key);
+      end if;
+    end loop;
+    v_effective := p_profile || jsonb_build_object('missions', (p_profile->'missions') || v_kept)
                   || (case when not (p_profile ? 'camp') and (v_stored ? 'camp')
                            then jsonb_build_object('camp', v_stored->'camp')
                            else '{}'::jsonb end)
-                  || (case when p_profile ? 'camp' and not ((p_profile->'camp') ? 'companion')
-                                and (v_stored#>'{camp,companion}') is not null
-                           then jsonb_build_object('camp', (p_profile->'camp') ||
-                                jsonb_build_object('companion', v_stored#>'{camp,companion}'))
+                  || (case when p_profile ? 'camp' and (
+                                (not ((p_profile->'camp') ? 'companion') and (v_stored#>'{camp,companion}') is not null)
+                                or (not ((p_profile->'camp') ? 'records') and (v_stored#>'{camp,records}') is not null)
+                              )
+                           then jsonb_build_object('camp', (p_profile->'camp')
+                                || (case when not ((p_profile->'camp') ? 'companion') and (v_stored#>'{camp,companion}') is not null
+                                         then jsonb_build_object('companion', v_stored#>'{camp,companion}')
+                                         else '{}'::jsonb end)
+                                || (case when not ((p_profile->'camp') ? 'records') and (v_stored#>'{camp,records}') is not null
+                                         then jsonb_build_object('records', v_stored#>'{camp,records}')
+                                         else '{}'::jsonb end))
                            else '{}'::jsonb end)
                   || (case when not (p_profile ? 'camp') and (v_stored ? 'camp')
                                 and jsonb_typeof(v_stored#>'{camp,startingRelic}') = 'string'

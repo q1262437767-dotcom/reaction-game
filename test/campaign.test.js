@@ -266,3 +266,105 @@ test('train chapter validation follows physical stops and rejects premature or m
   assert.equal(C.validTrainChapter({ ...gate, cart: { ...gate.cart, moving: true } }, 'playing'), false);
   assert.equal(C.validTrainChapter({ ...water, cart: { ...water.cart, roomIndex: 5 } }, 'playing'), false);
 });
+
+function clearedChapters(ids) {
+  const missions = {};
+  for (const id of ids) missions[id] = { clears: 1, hardClears: 0, bestTime: 20 };
+  return { v: 2, missions };
+}
+
+test('chapter badges are earned from the five sections and a steady final cart', () => {
+  const ids = ['chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'];
+  assert.equal(C.chapterProgress(clearedChapters(ids.slice(0, 4))).cleared, 4);
+  assert.equal(C.chapterProgress(clearedChapters(ids.slice(0, 4))).allCleared, false);
+  assert.equal(C.normalize(clearedChapters(ids.slice(0, 4))).badges.includes('wayhome'), false);
+
+  const almost = clearedChapters(ids.slice(0, 4));
+  const shaky = C.applyResult(almost, storyWin({
+    mode: 'chapter', mission: { id: 'chapter1_5' }, stats: { damage: 1 },
+    chapter: trainChapter({ cart: { hp: 9 } })
+  }), 'train-shaky');
+  assert.equal(shaky.profile.missions.chapter1_5.clears, 1);
+  assert.deepEqual(shaky.newBadges, ['wayhome']);
+  assert.equal(shaky.profile.badges.includes('steady'), false);
+  assert.equal(C.chapterProgress(shaky.profile).allCleared, true);
+
+  const steady = C.applyResult(almost, storyWin({
+    mode: 'chapter', mission: { id: 'chapter1_5' }, stats: { damage: 0 },
+    chapter: trainChapter({ cart: { hp: 10 } })
+  }), 'train-steady');
+  assert.deepEqual(steady.newBadges, ['flawless', 'steady', 'wayhome']);
+  const again = C.applyResult(steady.profile, storyWin({
+    mode: 'chapter', mission: { id: 'chapter1_5' }, chapter: trainChapter({ cart: { hp: 14 } })
+  }), 'train-steady');
+  assert.equal(again.duplicate, true);
+  assert.equal(again.newBadges.length, 0);
+
+  const lost = C.applyResult(almost, storyWin({
+    status: 'lost', mode: 'chapter', mission: { id: 'chapter1_5' },
+    chapter: trainChapter({ phase: 'failed', unloaded: false, cart: { hp: 0 }, ending: trainUnfinished })
+  }), 'train-badge-loss');
+  assert.equal(lost.profile.badges.includes('wayhome'), false);
+  assert.equal(lost.profile.badges.includes('steady'), false);
+
+  const onlyFinal = C.applyResult(null, storyWin({
+    mode: 'chapter', mission: { id: 'chapter1_5' }, chapter: trainChapter({ cart: { hp: 14 } })
+  }), 'train-only');
+  assert.equal(onlyFinal.profile.badges.includes('steady'), true);
+  assert.equal(onlyFinal.profile.badges.includes('wayhome'), false);
+});
+
+test('finished chapter saves gain the story badge without losing older ones', () => {
+  const saved = C.normalize({
+    v: 2,
+    badges: ['veteran', 'lamplighter', 'flawless', 'explorer', 'collector', 'not-a-badge'],
+    relics: ['pierce', 'swift', 'vigor', 'resonance', 'riposte', 'decoy'],
+    missions: {
+      ember: { clears: 3, hardClears: 2, bestTime: 11 },
+      salvage: { clears: 1, hardClears: 1, bestTime: 12 },
+      holdout: { clears: 1, hardClears: 1, bestTime: 13 },
+      chapter1: { clears: 1, hardClears: 0, bestTime: 30 },
+      chapter1_2: { clears: 2, hardClears: 0, bestTime: 40 },
+      chapter1_3: { clears: 1, hardClears: 0, bestTime: 50 },
+      chapter1_4: { clears: 1, hardClears: 0, bestTime: 60 },
+      chapter1_5: { clears: 1, hardClears: 0, bestTime: 70 }
+    }
+  });
+  for (const id of ['veteran', 'lamplighter', 'flawless', 'explorer', 'collector', 'wayhome']) {
+    assert.ok(saved.badges.includes(id), id);
+  }
+  assert.equal(saved.badges.includes('not-a-badge'), false);
+  assert.equal(saved.badges.includes('steady'), false);
+  assert.equal(saved.badges.filter(id => id === 'wayhome').length, 1);
+  assert.equal(saved.v, 2);
+  assert.equal(C.normalize(saved).badges.includes('wayhome'), true);
+  for (const id of ['wayhome', 'steady', 'flawless', 'explorer', 'collector']) {
+    assert.equal(C.BADGES.find(badge => badge.id === id).legacy, undefined);
+  }
+  const journal = C.journalView(saved);
+  assert.equal(journal.allCleared, true);
+  assert.equal(journal.cleared, 5);
+  assert.equal(journal.total, 5);
+  assert.deepEqual(journal.sections.map(section => section.done), [true, true, true, true, true]);
+  assert.deepEqual(journal.storyBadges.map(badge => badge.id), ['wayhome', 'steady', 'northlight', 'rethread', 'coresafe', 'sevenlamps', 'flawless', 'explorer', 'collector']);
+  assert.equal(journal.storyBadges.find(badge => badge.id === 'wayhome').earned, true);
+  assert.equal(journal.storyBadges.find(badge => badge.id === 'steady').earned, false);
+  assert.deepEqual(journal.legacyBadges.map(badge => badge.id), ['lamplighter', 'veteran']);
+  assert.equal(journal.legacyBadges.every(badge => badge.earned), true);
+  assert.deepEqual(journal.lamps.map(lamp => lamp.lit), [true, true, true]);
+});
+
+test('old challenge lamps still award their badges and stay out of the story journal', () => {
+  let profile = null;
+  for (const id of ['ember', 'salvage', 'holdout']) {
+    profile = C.applyResult(profile, storyWin({ difficulty: 2, mission: { id } }), 'hard-' + id).profile;
+  }
+  assert.ok(profile.badges.includes('lamplighter'));
+  assert.ok(profile.badges.includes('veteran'));
+  assert.equal(profile.badges.includes('wayhome'), false);
+  const journal = C.journalView(profile);
+  assert.equal(journal.cleared, 0);
+  assert.equal(journal.legacyBadges.every(badge => badge.earned), true);
+  assert.equal(journal.storyBadges.find(badge => badge.id === 'wayhome').earned, false);
+  assert.equal(journal.lamps.every(lamp => lamp.lit), true);
+});

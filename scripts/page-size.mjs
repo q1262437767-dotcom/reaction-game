@@ -6,6 +6,7 @@ import zlib from 'node:zlib';
 export const PAGE_FILES = [
   'adventure/index.html',
   'adventure/style.css',
+  'adventure/story.js',
   'adventure/engine.js',
   'adventure/renderer.js',
   'adventure/net.js',

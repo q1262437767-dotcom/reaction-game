@@ -650,8 +650,78 @@
       }
     }
   }
+  function storyWash(c, state, time) {
+    const run = state.chapter || {}, id = String(run.id || '');
+    const cool = id.startsWith('chapter2') || id === 'secret_unlisted' ? '#12324655' : id.startsWith('chapter3') ? '#12383a44' : id.startsWith('chapter4') ? '#3a241844' : '#24304444';
+    rect(c, 0, 0, W, H, cool);
+    if (run.water > 0) {
+      const depth = run.water === 1 ? 150 : 250;
+      rect(c, 40, H - depth, W - 80, depth - 40, run.water === 2 ? '#1c6e8a55' : '#1c6e8a33');
+    }
+    if ((id === 'chapter4_2' || id === 'chapter4_4' || id === 'chapter5_2') && (Number(run.pulse) % 7) >= 4) {
+      alpha(c, .18 + Math.sin(time * .01) * .05, () => rect(c, 0, 0, W, H, '#ff6a3a'));
+    }
+  }
+  function storyDarkness(c, state) {
+    const room = state.room || {}, run = state.chapter || {};
+    const expeditionDark = state.mode === 'random' && room.mood === 'dark';
+    if (!room.dark && !expeditionDark) return;
+    const lights = [];
+    if (expeditionDark) values(state.players).forEach(p => lights.push([num(p.x), num(p.y), 120]));
+    if (run.lit && run.oil > 0) {
+      if (run.hung === room.index) {
+        const stand = values(state.interactables).find(item => item.kind === 'story-lantern' || item.kind === 'story-flame');
+        lights.push([stand ? num(stand.x) : 480, stand ? num(stand.y) : 180, 170]);
+      } else values(state.players).forEach(p => {
+        if (!run.bearer || p.id === run.bearer) lights.push([num(p.x), num(p.y), values(state.runBuffs).includes('bluehood') ? 210 : 158]);
+      });
+    }
+    values(state.interactables).filter(item => item.lamp).forEach(item => lights.push([num(item.x), num(item.y), 46]));
+    c.save();
+    c.beginPath(); c.rect(0, 0, W, H);
+    for (const [x, y, radius] of lights) { c.moveTo(x + radius, y); c.arc(x, y, radius, 0, Math.PI * 2, true); }
+    c.fillStyle = expeditionDark ? '#05080fe0' : '#04070eeb';
+    c.fill('evenodd');
+    c.restore();
+  }
+  function storyMap(c, state) {
+    const rooms = values(state.rooms).filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
+    if (!rooms.length || !state.chapter) return;
+    const run = state.chapter, current = state.room && state.room.index;
+    const visible = rooms.filter(room => room.visited || room.discovered || teammateInRoom(state, room.index));
+    const left = 752, top = 18, width = 190, height = 162;
+    const minX = Math.min(...rooms.map(room => room.gx)), maxX = Math.max(...rooms.map(room => room.gx));
+    const minY = Math.min(...rooms.map(room => room.gy)), maxY = Math.max(...rooms.map(room => room.gy));
+    const spacing = Math.min(34, 140 / Math.max(1, maxX - minX), 70 / Math.max(1, maxY - minY));
+    const points = new Map(visible.map(room => [room.index, { room, x: left + width / 2 + (room.gx - (minX + maxX) / 2) * spacing, y: top + 78 + (room.gy - (minY + maxY) / 2) * spacing }]));
+    c.save(); rect(c, left, top, width, height, '#102433ee'); c.strokeStyle = '#8eb4c880'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, String(state.mission && state.mission.name || '灯路').replace(/^第.章 · /, ''), left + 12, top + 15, '#d5ecff', 9, 'left');
+    const markDispatch = values(state.preparations && state.preparations.p1 && state.preparations.p1.upgrades).includes('dispatch') || values(state.preparations && state.preparations.p2 && state.preparations.p2.upgrades).includes('dispatch');
+    for (const room of visible) {
+      if (!room.visited) continue;
+      const point = points.get(room.index);
+      for (const nextIndex of values(room.neighbors)) {
+        const next = points.get(nextIndex); if (!next) continue;
+        path(c, [[point.x, point.y], [next.x, next.y]], '#7f9aaa88', 2);
+      }
+    }
+    for (const room of visible) {
+      const point = points.get(room.index), active = room.index === current, size = active ? 14 : 10;
+      rect(c, point.x - size / 2 - 2, point.y - size / 2 - 2, size + 4, size + 4, '#102433');
+      rect(c, point.x - size / 2, point.y - size / 2, size, size, active ? '#d7ecff' : room.dark ? '#24506a' : '#6e8b86');
+      if (markDispatch && room.terminal) {
+        path(c, [[point.x, point.y - 8], [point.x + 5, point.y], [point.x, point.y + 8], [point.x - 5, point.y], [point.x, point.y - 8]], '#f2d48a', 1.5);
+      }
+    }
+    mapTeammates(c, state, points);
+    mapRailAlly(c, state, points);
+    label(c, state.objective || '', left + 12, top + height - 28, '#c9d8c4', 8, 'left');
+    label(c, run.lit ? `灯油 ${Math.ceil(num(run.oil))}` : run.alerted ? '已惊动' : `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + 12, top + height - 12, '#9eb0b8', 8, 'left');
+    c.restore();
+  }
   function chapterFloor(c, state, time, still, endingAge) {
     if (state.mode !== 'chapter') return;
+    if (state.chapter && /^(chapter[2-5]|secret_)/.test(String(state.chapter.id || ''))) { storyWash(c, state, time); return; }
     if (trainChapter(state)) { trainFloor(c, state, time, still, endingAge); return; }
     if (routeChapter(state)) { routeFloor(c, state, time, still); return; }
     if (railChapter(state)) { railFloor(c, state, time, still); return; }
@@ -3431,6 +3501,7 @@
   }
   function chapterMap(c, state) {
     if (!state.chapter || !Array.isArray(state.rooms)) return;
+    if (/^(chapter[2-5]|secret_)/.test(String(state.chapter.id || ''))) { storyMap(c, state); return; }
     if (trainChapter(state)) { trainMap(c, state); return; }
     if (routeChapter(state)) { routeMap(c, state); return; }
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
@@ -4163,7 +4234,17 @@
     else values(state.particles).forEach(p => particle(c, p, time));
     if (!ending) combatEffects(c, events, state, still);
     if (!ending && !(rail && local?.railStun > 0)) aimReticle(c, local, time);
+    if (values(state.runBuffs).includes('windfeather')) {
+      values(state.enemies).forEach(enemy => {
+        if (enemy.storyRole === 'listen' && num(enemy.hp) > 0) ellipse(c, num(enemy.x), num(enemy.y), 42, 20, '#9fd7ff24');
+      });
+    }
     ambient(c, state, time);
+    storyDarkness(c, state);
+    if (state.mode === 'random' && state.room && state.room.mood === 'pulse') {
+      alpha(c, (Math.sin(time * .008) + 1) * .06, () => rect(c, 0, 0, W, H, '#ff8a4a'));
+    }
+    if (state.mode === 'random' && state.room && state.room.mood === 'flood') rect(c, 28, 430, W - 56, 120, '#1c6e8a33');
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
     resetHudTransform(c, options.view);

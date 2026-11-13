@@ -169,6 +169,40 @@ rollback;
 
 第三节不开放险境，`hardClears` 必须为零。已有存档的每次新增第三节通关可解释最多 60 星屑，其他胜场仍按原有上限校验。更新前后的专用用例随 `test/sql/progress-guard.sql` 运行。
 
+### 已有项目升级到全作章节
+
+发布第二章及以后的网页前，由现有函数所有者执行 **upgrade-story-arc.sql**。它接在 **upgrade-chapter-badges.sql** 之后，并取代那一份函数正文。新项目直接执行最新 **schema.sql**。只替换 `ruins_private.reject_ruins_progress_jump(jsonb,jsonb)` 和 `ruins_private.save_ruins_profile_impl(jsonb,bigint)`。不改存档行、表、RLS、公开 RPC、函数所有者或已有执行权限。重复执行不重置进度。不要在这次之后再跑旧版升级。
+
+档案仍是 **v2**。新任务、徽章和整备都写在原来的字段里：
+
+| 项目 | 规则 |
+| --- | --- |
+| 新任务 | `chapter2` 到 `chapter2_4`、`chapter3` 到 `chapter3_4`、`chapter4` 到 `chapter4_4`、`chapter5` 到 `chapter5_3`、`secret_unlisted`。旧客户端省略时保留已有记录 |
+| 章节 `hardClears` | 除 `ember`、`salvage`、`holdout` 外必须为 0，也不能改 |
+| 星屑 | 这些新胜场仍落在原来的每次最多 72 星屑里，不另开更高的上限 |
+| 徽章 | 在原有 7 个之外接受北灯、识线、护芯、七灯、三枚秘灯、车库旧信、私藏、回声祠和两个结局徽章。最多 19 个，不能重复，不能删 |
+| 整备 | 增加灯油壶 50、软底静步 60、轨钩手套 70、调度短讯 80。已买的不能消失 |
+| 遗物 | 增加蓝焰罩、隔水苔、听风羽、脉同步环。最多 10 个。出发遗物仍只能是原来的六件 |
+| `camp.records` | 可选，最多 11 条第一章记录编号。不能删，没有新的探险次数也不能新增 |
+
+`wayhome` 仍只在第一章五节都已通关时可以免跑补上。其他新徽章都要伴随至少一次新探险。未执行这份 SQL 时，本地进度还在，带新字段的云存会被拒绝。不要对线上库直接试写。
+
+### 已有项目升级到第一章徽章
+
+发布把营地记录改成第一章五节的网页前，由现有函数所有者执行 **upgrade-chapter-badges.sql**。新项目直接执行最新 **schema.sql**。这仍是一份独立部署 SQL，不是 Supabase CLI 的迁移历史。它只替换 `ruins_private.reject_ruins_progress_jump(jsonb,jsonb)` 和 `ruins_private.save_ruins_profile_impl(jsonb,bigint)`。不改存档行、表、RLS、公开 RPC、函数所有者或已有执行权限。重复执行不重置进度。不要在这次之后再跑旧版升级，否则会把第五节和新徽章校验覆盖掉。
+
+档案仍为 **v2**。这一版同时补上客户端已经在写、旧函数却会拒绝的 `chapter1_5`：
+
+| 项目 | 规则 |
+| --- | --- |
+| `missions.chapter1_5` | 可选。旧客户端省略时，服务端在原 CAS 更新里保留该账号已有记录 |
+| 第五节 `hardClears` | 必须为 0 |
+| 第五节新增通关 | 每次最多解释 70 星屑，和其他胜场分开计算 |
+| 徽章 | 原有 5 个 id 都还接受。新增 `wayhome`（归途已明）、`steady`（稳稳送到）。最多 7 个，不能重复，不能删掉已有的 |
+| `wayhome` | 若旧档五节通关都已经大于 0，可以在不增加探险次数的保存里补上这一枚。其他新徽章仍要伴随至少 1 次新探险 |
+
+线上合并后需要执行这份 SQL，游戏网页才会把新徽章和第五节记录写入云存档。未执行时，本地营地仍然显示正确记录，云端保存会被拒绝，云端旧档不变。不要对线上库直接试写；部署后用会回滚的事务核对形状即可。
+
 ## 4. 填写公开配置并发布
 
 从项目 Connect / API Keys 中取得 **Project URL** 和 **publishable key**，填写 `coop-adventure/cloud-config.js`：
