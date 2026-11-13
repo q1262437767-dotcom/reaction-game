@@ -290,7 +290,7 @@ begin
     end if;
   end;
   begin
-    perform ruins_private.save_ruins_profile_impl(jsonb_set(v_next, '{missions,chapter2}', pg_temp.zero_mission()), 1);
+    perform ruins_private.save_ruins_profile_impl(jsonb_set(v_next, '{missions,not_a_mission}', pg_temp.zero_mission()), 1);
     raise exception 'shape accepted an unknown chapter key';
   exception when sqlstate '22023' then
     if sqlerrm is distinct from 'invalid_profile' then
@@ -405,9 +405,58 @@ begin
   v_base := jsonb_set(v_base, '{missions,chapter1_3}', pg_temp.mission(1, 0, 60));
   v_base := jsonb_set(v_base, '{missions,chapter1_4}', pg_temp.mission(1, 0, 70));
   perform ruins_private.save_ruins_profile_impl(v_base, 0);
-  perform pg_temp.expect_rejected(
+    perform pg_temp.expect_rejected(
     jsonb_set(v_base, '{badges}', '["explorer","wayhome"]'::jsonb),
     1, 'wayhome without the fifth clear');
+
+  -- Later sections use the same v2 shape. A chapter 2 clear stays inside the
+  -- 72 coin ceiling, cannot invent a hard clear, and is kept when omitted.
+  perform set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa9', true);
+  v_base := pg_temp.profile(
+    0, 0, 0, false, '[]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission()
+  );
+  perform ruins_private.save_ruins_profile_impl(v_base, 0);
+  v_next := pg_temp.profile(
+    55, 1, 1, false, '["north"]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission(),
+    null, '["northlight"]'::jsonb
+  );
+  v_next := jsonb_set(v_next, '{missions,chapter2}', pg_temp.mission(1, 0, 40));
+  perform pg_temp.expect_rejected(jsonb_set(v_next, '{coins}', '73'::jsonb), 1, 'chapter two above the 72 ceiling');
+  begin
+    perform ruins_private.save_ruins_profile_impl(jsonb_set(v_next, '{missions,chapter2,hardClears}', '1'::jsonb), 1);
+    raise exception 'chapter two accepted a hard clear';
+  exception when sqlstate '22023' then
+    if sqlerrm is distinct from 'invalid_profile' then
+      raise exception 'chapter two hard clear returned %', sqlerrm;
+    end if;
+  end;
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 1);
+  if v_row.revision is distinct from 2 or not (v_row.profile->'badges' ? 'northlight')
+     or v_row.profile#>>'{missions,chapter2,clears}' is distinct from '1' then
+    raise exception 'chapter two clear was not stored';
+  end if;
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next #- '{missions,chapter2}', 2);
+  if v_row.revision is distinct from 3 or v_row.profile#>>'{missions,chapter2,clears}' is distinct from '1' then
+    raise exception 'legacy save lost the chapter two record';
+  end if;
+  perform pg_temp.expect_rejected(
+    jsonb_set(v_next, '{missions,chapter2}', pg_temp.zero_mission()), 3, 'chapter two regression');
+  perform pg_temp.expect_rejected(
+    jsonb_set(v_next, '{badges}', '["northlight","sevenlamps"]'::jsonb), 3, 'true ending badge without a new run');
+
+  v_next := pg_temp.profile(
+    5, 1, 2, false, '["north","oil"]'::jsonb,
+    pg_temp.zero_mission(), pg_temp.zero_mission(), pg_temp.zero_mission(),
+    null, '["northlight"]'::jsonb, '[]'::jsonb, '["lampOil"]'::jsonb
+  );
+  v_next := jsonb_set(v_next, '{missions,chapter2}', pg_temp.mission(1, 0, 40));
+  select * into v_row from ruins_private.save_ruins_profile_impl(v_next, 3);
+  if v_row.revision is distinct from 4 or not (v_row.profile#>'{camp,upgrades}' ? 'lampOil')
+     or (v_row.profile->>'coins')::numeric is distinct from 5 then
+    raise exception 'lamp oil purchase was rejected';
+  end if;
 
   begin
     perform ruins_private.save_ruins_profile_impl(jsonb_set(v_base, '{badges}',

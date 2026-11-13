@@ -59,7 +59,8 @@ test('cloud save progress guard accepts the first save and rejects regressions a
   psql(env, ['-d', database, '-f', path.join(root, 'adventure', 'backend', 'upgrade-rail-section.sql')]);
   psql(env, ['-d', database, '-f', path.join(root, 'adventure', 'backend', 'upgrade-route-section.sql')]);
   psql(env, ['-d', database, '-f', path.join(root, 'adventure', 'backend', 'upgrade-chapter-badges.sql')]);
-  psql(env, ['-d', database, '-f', path.join(root, 'adventure', 'backend', 'upgrade-chapter-badges.sql')]);
+  psql(env, ['-d', database, '-f', path.join(root, 'adventure', 'backend', 'upgrade-story-arc.sql')]);
+  psql(env, ['-d', database, '-f', path.join(root, 'adventure', 'backend', 'upgrade-story-arc.sql')]);
   psql(env, ['-d', database, '-f', path.join(sqlDir, 'progress-guard.sql')]);
   assert.ok(true);
 });
