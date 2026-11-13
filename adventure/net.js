@@ -8,7 +8,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 31;
+  const VERSION = 32;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -43,9 +43,9 @@
         if (!isRecord(fox) || Object.keys(fox).length !== 2 || fox.kind !== 'fox' || typeof fox.name !== 'string' || fox.name !== fox.name.trim() || !/^[\u3400-\u9fffA-Za-z0-9 ·_-]{1,12}$/.test(fox.name) || message.foxRescued === false) return false;
       }
       const camp = message.camp;
-      return camp === undefined || isRecord(camp) && Object.keys(camp).length === 1 && Array.isArray(camp.upgrades) && camp.upgrades.length <= 3 && new Set(camp.upgrades).size === camp.upgrades.length && camp.upgrades.every(id => ['ward', 'stride', 'relicCase'].includes(id));
+      return camp === undefined || isRecord(camp) && Object.keys(camp).length === 1 && Array.isArray(camp.upgrades) && camp.upgrades.length <= 7 && new Set(camp.upgrades).size === camp.upgrades.length && camp.upgrades.every(id => ['ward', 'stride', 'relicCase', 'lampOil', 'quietSole', 'railGlove', 'dispatch'].includes(id));
     }
-    if (message.type === 'lobby' && message.mode === 'chapter') return message.mission === 'chapter1' && message.difficulty === 1;
+    if (message.type === 'lobby' && message.mode === 'chapter') return message.difficulty === 1 && /^(chapter[1-5](_[2-5])?|secret_unlisted)$/.test(message.mission);
     return message.type !== 'lobby' || message.mode === 'chapter' || message.mode === 'random' || message.mode === 'story' || message.mode === 'relay' || message.mode === 'hunt';
   }
 
@@ -86,7 +86,7 @@
       const match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Fall back to the current page cache key. */ }
-    return '?v=55';
+    return '?v=56';
   })();
   let peerLibrary = null;
 

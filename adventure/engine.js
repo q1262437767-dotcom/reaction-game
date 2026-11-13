@@ -238,11 +238,379 @@
     if (s.status === 'playing' && !partyStanding(s)) finish(s, 'lost');
     return true;
   }
+  function storyBook() {
+    if (typeof AdventureStory !== 'undefined' && AdventureStory && AdventureStory.chapter) return AdventureStory;
+    if (typeof module === 'object' && module.exports) {
+      try { return require('./story.js'); } catch (err) { return null; }
+    }
+    return null;
+  }
+  function isStory(s) { return !!(s && s.mode === 'chapter' && s.chapter && storyBook() && storyBook().chapter(s.chapter.id)); }
+  function storyDef(s) { var book = storyBook(); return book ? book.chapter(s.chapter.id) : null; }
+  function storyPulseHigh(s) {
+    var wide = s.runBuffs && s.runBuffs.indexOf('pulsering') >= 0;
+    return (s.chapter.pulse % 7) >= (wide ? 5.2 : 4);
+  }
+  function storyFox(s) {
+    if (s.unlocks && s.unlocks.foxHere) return true;
+    var list = s._split && s._split.allCompanions || s.companions;
+    return !!(list && list.length);
+  }
+  function storyNeed(s, room) {
+    if (!room) return false;
+    var need = room.need || '', c = s.chapter;
+    if (!need) return true;
+    if (need === 'lit') return !!(c.lit && c.oil > 0);
+    if (need === 'well') return !c.lit || storyFox(s);
+    if (need === 'code') return c.clues.indexOf('code-set') >= 0;
+    if (need === 'linked') return c.link >= 2;
+    if (need === 'quiet') return !c.alerted;
+    if (need === 'water0') return c.water === 0;
+    if (need === 'water1') return c.water >= 1;
+    if (need === 'low') return !storyPulseHigh(s);
+    if (need === 'mouth') return !storyPulseHigh(s) && c.clues.indexOf('code-set') >= 0;
+    if (need === 'core') return c.clues.indexOf('core-taken') >= 0;
+    if (need === 'down') return c.phase === 'down' || c.phase === 'choice';
+    if (need === 'seat') return !!(s.unlocks && s.unlocks.readCore);
+    if (need === 'echo') return !!(s.unlocks && s.unlocks.lampCount >= 6) && storyFox(s);
+    return true;
+  }
+  function storyGate(s, from, to) { return !!(s.rooms[to] && storyNeed(s, s.rooms[to])); }
+  function storyLightRadius(s) { return s.runBuffs && s.runBuffs.indexOf('bluehood') >= 0 ? 210 : 158; }
+  function storyLightOf(s) {
+    var c = s.chapter;
+    if (!c || !c.lit || c.oil <= 0) return null;
+    if (c.hung === s.room.index) {
+      var stand = (s.interactables || []).filter(function (q) { return q.kind === 'story-lantern' || q.kind === 'story-flame'; })[0];
+      return { x: stand ? stand.x : 480, y: stand ? stand.y : 180, r: storyLightRadius(s) };
+    }
+    var id = c.bearer && s.players[c.bearer] ? c.bearer : '';
+    var bearer = id ? s.players[id] : null;
+    if (bearer && s.playerRooms && s.playerRooms[id] !== s.room.index) bearer = null;
+    if (!bearer) {
+      var present = Object.keys(s.players).map(function (key) { return s.players[key]; }).filter(function (p) {
+        return !p.downed && (!s.playerRooms || s.playerRooms[p.id] === s.room.index);
+      })[0];
+      bearer = present || null;
+    }
+    return bearer ? { x: bearer.x, y: bearer.y, r: storyLightRadius(s) } : null;
+  }
+  function storyInLight(s, point) {
+    if (!s.room || !s.room.dark) return true;
+    var light = storyLightOf(s);
+    return !!(light && dist(light, point) <= light.r);
+  }
+  function storyRemember(s, clue) {
+    if (!clue || s.chapter.clues.indexOf(clue) >= 0 || s.chapter.clues.length >= 4) return;
+    s.chapter.clues.push(clue);
+  }
+  function createStory(s) {
+    var book = storyBook(), def = book.chapter(s.mission.id);
+    s.chapter = book.blank(s.mission.id);
+    s.chapter.oil = 0;
+    s.rooms = def.rooms.map(function (src, i) {
+      return { index: i, id: s.mission.id + '-' + i, name: src.name, kind: src.kind, gx: src.gx, gy: src.gy,
+        neighbors: src.neighbors.slice(), need: src.need || '', secret: !!src.secret, dark: !!src.dark,
+        wind: !!src.wind, deep: !!src.deep, hot: !!src.hot, listen: !!src.listen, terminal: !!src.terminal,
+        cleared: !i, visited: false, discovered: !src.secret };
+    });
+    s.rooms.forEach(function (room) {
+      var src = def.rooms[room.index];
+      var data = { walls: [], doors: [], portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
+      addChapterRoutes(s, room, data, 'story-path-', function (to) { return storyGate(s, room.index, to); }, '往前走', '这边还没开');
+      (src.walls || []).forEach(function (w) { data.walls.push(rect(w[0], w[1], w[2], w[3])); });
+      (src.props || []).forEach(function (entry) { data.props.push(prop(s, entry[0], entry[1], entry[2])); });
+      (src.foes || []).forEach(function (f) {
+        var e = enemy(s, f.kind, f.x, f.y);
+        e.name = f.name;
+        if (f.role) e.storyRole = f.role;
+        if (f.boss) {
+          e.storyBoss = true;
+          e.hp = e.maxHp = s.playerCount > 1 ? 96 : 72;
+          if (f.role === 'lost' && s.unlocks && s.unlocks.archive) { e.stagger = 2.4; e.attackCd = 2.6; }
+        }
+        data.enemies.push(e);
+      });
+      (src.items || []).forEach(function (item, index) {
+        var noted = item.clue ? book.note(item.clue) : null;
+        data.interactables.push({ id: s.mission.id + '-' + room.index + '-' + item.kind + '-' + index, kind: item.kind,
+          x: item.x, y: item.y, r: 26, label: item.label, active: true, used: false,
+          clueId: item.clue || '', title: noted ? noted.title : '', text: noted ? noted.text : '',
+          lamp: item.lamp || '', pair: item.pair == null ? -1 : item.pair, relic: item.relic || '',
+          ending: item.ending || '', needClue: item.needClue || '', needDown: !!item.needDown,
+          description: noted ? noted.text : '' });
+      });
+      data.enemies.forEach(function (e) { placeEnemyInRoom(data, e); });
+      s.roomData[room.index] = data;
+    });
+    s.mission.name = def.name; s.mission.goal = def.goal; s.mission.total = 1;
+  }
+  function syncStory(s) {
+    var c = s.chapter, playing = s.status === 'playing';
+    if (playing && c.phase !== 'down' && c.phase !== 'choice' && c.phase !== 'boss') c.phase = c.clues.length ? 'mid' : 'arrive';
+    s.mission.phase = c.phase; s.mission.progress = s.status === 'won' ? 1 : 0;
+    s.rooms.forEach(function (room) { if (room.secret) room.discovered = room.visited || storyNeed(s, room); });
+    s.portals.forEach(function (gate) { gate.active = storyGate(s, s.room.index, gate.target); });
+    s.doors.forEach(function (door) {
+      var portal = s.portals.find(function (p) { return door.id === 'door-' + p.direction; });
+      if (portal) { door.locked = !portal.active; door.label = door.locked ? '这边还没开' : '往前走'; }
+    });
+    s.interactables.forEach(function (q) {
+      if (q.kind === 'story-note') { q.used = c.clues.indexOf(q.clueId) >= 0; q.active = !q.used; }
+      if (q.kind === 'story-lamp') q.active = playing && !q.used && c.lamp !== q.lamp;
+      if (q.kind === 'story-order' && q.ending === 'true') q.active = playing && !!(s.unlocks && s.unlocks.sevenReady);
+      if (q.kind === 'story-goal') {
+        q.active = playing && !q.used && (!q.needClue || c.clues.indexOf(q.needClue) >= 0) && (!q.needDown || c.phase === 'down' || c.phase === 'choice');
+      }
+      if (q.kind === 'story-vent') q.active = playing && s.enemies.some(function (e) { return e.storyBoss && e.hp > 0; });
+    });
+  }
+  function storyWin(s) {
+    var def = storyDef(s);
+    s.message = def && def.endWin || '这一节走完了。';
+    finish(s, 'won');
+  }
+  function interactStory(s, p, target) {
+    var c = s.chapter, book = storyBook();
+    if (!target || target.used && target.kind !== 'story-lantern' && target.kind !== 'story-valve' && target.kind !== 'story-drive' && target.kind !== 'story-smash') return false;
+    if (target.kind === 'story-note' || target.kind === 'story-talk' || target.kind === 'story-home') {
+      var clue = target.kind === 'story-home' ? (s.unlocks && s.unlocks.dawnEnding === 'true' ? 'home-true' : s.unlocks && s.unlocks.dawnEnding === 'ash' ? 'home-ash' : 'home-normal') : target.clueId;
+      var noted = book && book.note(clue);
+      storyRemember(s, clue);
+      target.used = target.kind === 'story-note';
+      s.message = noted ? noted.title + '：' + noted.text : target.label;
+      s.messageTime = 8;
+      event(s, 'chapter-note', { clueId: clue, title: noted ? noted.title : target.label, text: noted ? noted.text : '', playerId: p.id, x: target.x, y: target.y });
+      return true;
+    }
+    if (target.kind === 'story-lantern' || target.kind === 'story-flame') {
+      if (c.hung === s.room.index) { c.hung = -1; c.bearer = p.id; c.lit = c.oil > 0; s.message = '灯又在手里了。'; }
+      else if (c.bearer === p.id && c.lit) { c.hung = s.room.index; c.bearer = ''; s.message = '灯挂在这儿。暗处的路留给另一人。'; }
+      else { c.oil = Math.max(c.oil, 78); c.lit = true; c.bearer = p.id; c.hung = -1; s.message = '灯在手里。风会吹，油会尽，E 可以点灭。'; }
+      s.messageTime = 4; return true;
+    }
+    if (target.kind === 'story-oil') {
+      c.oil = Math.min(100, Math.max(c.oil, 0) + 55);
+      s.message = '灯油补上了。'; s.messageTime = 3; burst(s, 'spark', target.x, target.y, '#9fd4c8', 8); return true;
+    }
+    if (target.kind === 'story-valve') {
+      c.water = (c.water + 1) % 3;
+      s.message = c.water === 0 ? '水放下去了。底舱的门露出来。' : c.water === 1 ? '水涨到箱子底。箱子可以当桥。' : '水满过膝。提灯挨不得这深度。';
+      s.messageTime = 4; burst(s, 'steam', target.x, target.y, '#8ec9d4', 10); return true;
+    }
+    if (target.kind === 'story-flash') {
+      c.link = 1; c.linkLeft = 20; c.anchor = -1;
+      s.message = '三短一长打出去了。闸下趁这二十秒读码。'; s.messageTime = 4; return true;
+    }
+    if (target.kind === 'story-read') {
+      if (c.link < 1 || c.linkLeft <= 0) {
+        if (s.playerCount < 2 && s.railAlly && target.pair >= 0) {
+          s.railAlly.task = 'signal'; c.anchor = target.pair;
+          s.message = '阿禾：我上塔打灯讯。你留在闸下。'; s.messageTime = 4; return true;
+        }
+        s.message = '塔上还没有三短一长。'; s.messageTime = 3; return false;
+      }
+      storyRemember(s, 'code-set');
+      s.message = '闸开了。灯讯对上了。'; s.messageTime = 4; return true;
+    }
+    if (target.kind === 'story-link' || target.kind === 'story-tune') {
+      if (c.link >= 2) { s.message = '这一头已经接上了。'; s.messageTime = 2; return true; }
+      if (c.link === 1 && c.linkLeft > 0 && c.hung !== s.room.index && c.hung >= 0) {
+        c.link = 2; c.anchor = -1;
+        s.message = '两端在同一拍里合上了。'; s.messageTime = 4; return true;
+      }
+      c.link = 1; c.linkLeft = target.kind === 'story-tune' ? 12 : 8; c.hung = s.room.index;
+      if (s.playerCount < 2 && s.railAlly && target.pair >= 0) {
+        s.railAlly.task = 'wire'; c.anchor = target.pair;
+        s.message = target.kind === 'story-tune' ? '阿禾：你按刻度，我去转锁。' : '阿禾去对端了。窗口很短。';
+      } else s.message = '这一端按下了。对端要在窗口里合上。';
+      s.messageTime = 4; return true;
+    }
+    if (target.kind === 'story-switch') {
+      if (storyPulseHigh(s)) { s.message = '高潮还没过去。炉口此刻吞火。'; s.messageTime = 3; return false; }
+      storyRemember(s, 'code-set');
+      s.message = '低潮。炉口开了，快过。'; s.messageTime = 3; return true;
+    }
+    if (target.kind === 'story-drive') {
+      storyRemember(s, 'rolling');
+      c.cartRoom = s.room.index;
+      s.message = c.clues.filter(function (id) { return id === 'rolling'; }).length > 1 ? '陶铆：车停一下。' : '陶铆：走。你们盯着脉冲。';
+      s.messageTime = 3; return true;
+    }
+    if (target.kind === 'story-core') {
+      storyRemember(s, 'core-taken');
+      s.message = '主芯离开炉座了。该醒的都会醒。'; s.messageTime = 4;
+      burst(s, 'spark', target.x, target.y, '#ffb067', 12); target.used = true; target.active = false; return true;
+    }
+    if (target.kind === 'story-vent') {
+      var foe = s.enemies.filter(function (e) { return e.storyBoss && e.hp > 0; }).sort(function (a, b) { return dist(a, target) - dist(b, target); })[0];
+      if (!foe || dist(foe, target) > 190) { s.message = '等它靠近泄压口。'; s.messageTime = 2; return false; }
+      openWeakpoint(s, foe, p.id, 'counter', 3.4);
+      s.message = '护板松了。趁这一拍打。'; s.messageTime = 3; return true;
+    }
+    if (target.kind === 'story-bark') {
+      if (!storyFox(s)) { s.message = '灰尾狐不在身边，这声只能自己忍住。'; s.messageTime = 3; return false; }
+      s.rooms.forEach(function (room) {
+        if (!room.listen) return;
+        var list = room.index === s.room.index ? s.enemies : (s.roomData[room.index] && s.roomData[room.index].enemies) || [];
+        list.forEach(function (e) { if (e.storyRole === 'listen' && e.hp > 0) { e.stun = 3.2; e.x = 180; e.y = 460; } });
+      });
+      s.message = '灰尾狐叫了一声。听声的机器追了过去。你的脚步还是要轻。'; s.messageTime = 4; return true;
+    }
+    if (target.kind === 'story-supply') {
+      if (target.used) return false;
+      target.used = true; target.active = false;
+      livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 3); });
+      s.message = '小穗留下的给养。全队恢复 3 点。'; s.messageTime = 3; return true;
+    }
+    if (target.kind === 'story-cabinet') {
+      storyRemember(s, 'cabinet-lit');
+      s.message = '有一格灯亮了。不点也出得去。'; s.messageTime = 3; return true;
+    }
+    if (target.kind === 'story-lamp') {
+      if (!target.lamp || c.lamp === target.lamp) return false;
+      c.lamp = target.lamp; target.used = true; target.active = false;
+      var names = { wellblue: '盲井里的蓝焰', archive: '登记库里的识别晶', unlisted: '检修班的灯芯', private: '陶铆私藏的灯芯', echo: '回声祠的芯' };
+      s.message = '收下了' + (names[target.lamp] || '一枚灯芯') + '。它会计入七灯。'; s.messageTime = 4;
+      burst(s, 'spark', target.x, target.y, '#9ecbff', 12); return true;
+    }
+    if (target.kind === 'story-relic' && target.relic) {
+      if (s.runBuffs.indexOf(target.relic) < 0 && s.runBuffs.length < 10) s.runBuffs.push(target.relic);
+      target.used = true; target.active = false;
+      var labels = { bluehood: '蓝焰罩', moss: '隔水苔', windfeather: '听风羽', pulsering: '脉同步环' };
+      s.message = (labels[target.relic] || '遗物') + '并入这一局。'; s.messageTime = 3; return true;
+    }
+    if (target.kind === 'story-order') {
+      if (target.ending === 'true' && !(s.unlocks && s.unlocks.sevenReady)) {
+        s.message = '重明令的格子是暗的。七盏秘灯还没齐。'; s.messageTime = 4; return false;
+      }
+      var partnerThere = s.playerCount < 2 || c.link >= 2 || Object.keys(s.players).some(function (id) {
+        return id !== p.id && s.playerRooms && s.playerRooms[id] !== s.room.index;
+      });
+      if (!partnerThere) { s.message = '一个人过招，另一个人得在终端上。'; s.messageTime = 3; return false; }
+      c.ending = target.ending;
+      s.message = target.ending === 'true' ? '重明令送进去了。灯路会重新认人。' : '完结令送进去了。回收停，总炉封上。';
+      storyWin(s); return true;
+    }
+    if (target.kind === 'story-smash') {
+      if (c.ending !== 'warn') {
+        c.ending = 'warn'; c.phase = 'choice';
+        var warning = book && book.note('ash-warn');
+        s.message = warning ? warning.text : '再确认一次。这一下会灭掉许多灯。';
+        s.messageTime = 8; return true;
+      }
+      c.ending = 'ash';
+      s.message = '炉心碎了。回收停了，很多灯也灭了。';
+      storyWin(s); return true;
+    }
+    if (target.kind === 'story-skip' || target.kind === 'story-goal') {
+      if (target.kind === 'story-goal' && !target.active) {
+        s.message = target.needClue ? '话还没听完。' : '还没到离开的时候。'; s.messageTime = 3; return false;
+      }
+      if (s.mission.id === 'chapter5_3' && s.unlocks && /^(true|normal|ash)$/.test(s.unlocks.dawnEnding || '')) c.ending = s.unlocks.dawnEnding === 'true' ? 'true' : s.unlocks.dawnEnding === 'ash' ? 'ash' : 'normal';
+      storyWin(s); return true;
+    }
+    if (target.kind === 'story-air') { s.message = '气窝里能换一口气。别在深水里久留。'; s.messageTime = 2; return true; }
+    return false;
+  }
+  function updateStory(s, dt) {
+    if (!isStory(s) || s.status !== 'playing') return;
+    var c = s.chapter, globalStep = !s._split || !s._split.active || s._split.advanceGlobals;
+    if (globalStep) {
+      if (c.lit && c.oil > 0) {
+        var rate = 7;
+        if (hasPreparation(s, c.bearer || 'p1', 'lampOil') || hasPreparation(s, 'p2', 'lampOil')) rate = 3.5;
+        c.oil = Math.max(0, Math.min(100, c.oil - rate * dt));
+        if (c.oil <= 0) { c.lit = false; s.message = '灯油尽了。'; s.messageTime = 3; }
+      }
+      if (c.linkLeft > 0) {
+        c.linkLeft = Math.max(0, c.linkLeft - dt);
+        if (c.link === 1 && c.linkLeft <= 0) { c.link = 0; c.anchor = -1; if (c.hung >= 0 && s.mission.id.indexOf('chapter2') !== 0) c.hung = -1; }
+      }
+      c.pulse = (c.pulse + dt) % 7;
+      if ((s.mission.id === 'chapter4_2' || s.mission.id === 'chapter4_4') && s.room.hot && storyPulseHigh(s)) {
+        var glove = hasPreparation(s, 'p1', 'railGlove') || hasPreparation(s, 'p2', 'railGlove');
+        c.cartHp = Math.max(0, c.cartHp - dt * (glove ? 1.1 : 2.3));
+        c.cartRoom = s.room.index;
+        if (c.cartHp <= 0) { s.message = '运芯车在炉口里烧穿了。'; s.messageTime = 4; finish(s, 'lost'); return; }
+      }
+    }
+    if (s.room.wind && c.lit && globalStep) {
+      var gust = Math.floor(s.elapsed / 8);
+      if (gust > 0 && s.elapsed - gust * 8 < dt + 0.001) { c.lit = false; s.message = '风把灯吹灭了。'; s.messageTime = 3; }
+    }
+    if (s.room.deep && c.water >= 2) {
+      Object.keys(s.players).forEach(function (key) {
+        var actor = s.players[key];
+        if (!actor || actor.downed) return;
+        var safe = s.interactables.some(function (q) { return q.kind === 'story-air' && dist(actor, q) < 80; });
+        var moss = s.runBuffs && s.runBuffs.indexOf('moss') >= 0;
+        if (!safe && !moss && Math.floor(s.elapsed * 2) !== Math.floor((s.elapsed - dt) * 2)) damagePlayer(s, actor, 1, 'fire');
+      });
+      if (c.lit) { c.lit = false; s.message = '深水把提灯浇灭了。'; s.messageTime = 3; }
+    }
+  }
+  function storyFoe(s, e, p, dt) {
+    var c = s.chapter;
+    if (e.storyRole === 'shade' && s.room.dark && storyInLight(s, p)) return true;
+    if (e.storyRole === 'snuff' && c.lit && dist(e, p) < 84) {
+      c.lit = false; c.oil = Math.max(0, c.oil - 10);
+      s.message = '雾巡卫把灯吹灭了。'; s.messageTime = 2;
+    }
+    if (e.storyRole === 'listen' && !c.alerted && p.sneaking && p.dashTime <= 0) return true;
+    if (e.storyRole === 'seek' && c.hung === s.room.index) {
+      var light = storyLightOf(s);
+      var fooled = s.decoys.some(function (d) { return d.ttl > 0 && dist(d, e) < 760; });
+      if (light && !fooled && dist(e, light) > 40) {
+        var dx = light.x - e.x, dy = light.y - e.y, span = len(dx, dy) || 1;
+        move(s, e, dx / span * e.speed * dt, dy / span * e.speed * dt, false);
+        e.facing = Math.atan2(dy, dx);
+        return true;
+      }
+    }
+    if (e.storyRole === 'echo' && c.lit && e.stagger <= 0 && e.weakTime <= 0 && Math.floor(s.elapsed) % 5 === 0 && s.elapsed - Math.floor(s.elapsed) < dt + 0.001) {
+      e.x = clamp(p.x + (e.x < p.x ? -90 : 90), 70, W - 70);
+      e.y = clamp(p.y, 70, H - 70);
+    }
+    if (e.storyBoss && e.storyRole === 'lost' && s.unlocks && s.unlocks.archive && e.attackCd > 2) {
+      s.message = '它停了半拍，像是快要认出人来。'; s.messageTime = 3;
+    }
+    return false;
+  }
+  function storyAllyGoal(s, ally) {
+    var c = s.chapter, owner = partyPlayers(s).p1;
+    if ((ally.task === 'signal' || ally.task === 'wire') && c.anchor >= 0) {
+      if (ally.roomIndex === c.anchor) {
+        if (ally.task === 'signal') {
+          c.link = 1; c.linkLeft = 20; ally.task = 'follow'; c.anchor = -1;
+          railAllyReport(s, '阿禾：三短一长，打过了。你开闸。');
+        } else if (c.link === 1 && c.linkLeft > 0) {
+          c.link = 2; ally.task = 'follow'; c.anchor = -1;
+          railAllyReport(s, '阿禾：对端合上了。');
+        }
+      }
+      if ((ally.task === 'signal' || ally.task === 'wire') && c.anchor >= 0) return { roomIndex: c.anchor, x: 480, y: 300, combat: true };
+    }
+    if (!owner) return { roomIndex: ally.roomIndex, x: ally.x, y: ally.y, combat: false };
+    var direction = owner.moving ? Math.atan2(owner.vy, owner.vx) : owner.facing;
+    return { roomIndex: s.playerRooms ? s.playerRooms.p1 : s.room.index, x: owner.x - Math.cos(direction) * 64,
+      y: owner.y - Math.sin(direction) * 64, combat: true };
+  }
+  function tagExpeditionMoods(s) {
+    var moods = s.unlocks && s.unlocks.moods;
+    if (!Array.isArray(moods) || !moods.length) return;
+    var plain = s.rooms.filter(function (r) { return r.kind === 'battle' && !r.elite && !r.eventKind && r.encounter; })
+      .concat(s.rooms.filter(function (r) { return r.kind === 'refuge'; }));
+    moods.forEach(function (mood, index) { if (plain[index] && /^(dark|flood|pulse)$/.test(mood)) plain[index].mood = mood; });
+  }
+
   function create(options) {
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
     var mode = options.mode === 'chapter' ? 'chapter' : options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
-    var missionId = mode === 'chapter' ? ['chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'].indexOf(options.mission) >= 0 ? options.mission : 'chapter1' : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
+    var storyMission = mode === 'chapter' && storyBook() && storyBook().chapter(options.mission);
+    var missionId = mode === 'chapter' ? (['chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'].indexOf(options.mission) >= 0 || storyMission ? options.mission : 'chapter1') : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
+    if (storyMission && !MISSIONS[missionId]) MISSIONS[missionId] = { id: missionId, name: storyMission.name, goal: storyMission.goal, total: 1, coins: storyMission.coins };
     var missionDef = MISSIONS[missionId];
     var hostUpgrades = options.practice ? [] : campUpgrades(options.camp);
     var partnerUpgrades = options.practice ? [] : campUpgrades(options.partnerCamp);
@@ -279,7 +647,8 @@
         doors: [], portals: [], props: [], enemies: [master], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       s.mission.name = '听刃试炼'; s.mission.goal = '击败持刀守卫';
     } else if (mode === 'chapter') {
-      if (missionId === 'chapter1_5') createTrainChapter(s);
+      if (storyBook() && storyBook().chapter(missionId)) createStory(s);
+      else if (missionId === 'chapter1_5') createTrainChapter(s);
       else if (missionId === 'chapter1_4') createRouteChapter(s);
       else if (missionId === 'chapter1_3') createRailChapter(s);
       else if (missionId === 'chapter1_2') createTimber(s);
@@ -401,6 +770,7 @@
     });
   }
   function syncChapter(s) {
+    if (isStory(s)) { syncStory(s); return; }
     if (isTrainChapter(s)) { syncTrainChapter(s); return; }
     if (isRouteChapter(s)) { syncRouteChapter(s); return; }
     if (isTimber(s)) { syncTimber(s); return; }
@@ -425,6 +795,7 @@
     });
   }
   function interactChapter(s, p, target) {
+    if (isStory(s)) return interactStory(s, p, target);
     if (isTrainChapter(s)) return interactTrainChapter(s, p, target);
     if (isRouteChapter(s)) return interactRouteChapter(s, p, target);
     if (isTimber(s)) return interactTimber(s, p, target);
@@ -776,7 +1147,7 @@
     return true;
   }
   function isRouteChapter(s) { return s.mode === 'chapter' && s.chapter && s.chapter.id === 'chapter1_4'; }
-  function chapterAllySection(s) { return isRailChapter(s) || isRouteChapter(s) || isTrainChapter(s); }
+  function chapterAllySection(s) { return isRailChapter(s) || isRouteChapter(s) || isTrainChapter(s) || isStory(s); }
   function routeGate(s, from, to) {
     if (from === 3 && to === 6 || from === 6 && to === 3) return s.chapter.bridgeRaised;
     if (from === 5 && to === 6 || from === 6 && to === 5) return s.chapter.wallBreached;
@@ -1034,6 +1405,8 @@
           description: '先安置伤员，再把主芯送上空载滑轨。' });
         item(data, 'train-lamp', 540, 365, '点亮归途灯', { active: false,
           description: '停下归炉者之后，用隔离炉引出灯火。' });
+        if (s.unlocks && s.unlocks.garageCache) item(data, 'train-cache', 610, 250, '打开暖灯后的暗格', { active: false,
+          description: '等车进了站，暖灯后面才摸得到这格。第二章之后重走末班车，它才会在。' });
       } else {
         data.walls.push(rect(355, 130, 108, 58), rect(675, 430, 110, 55));
         var returner = enemy(s, 'boss', 680, 300);
@@ -1070,6 +1443,7 @@
       if (q.kind === 'train-divert') { q.used = ending.diverted; q.active = c.unloaded && !q.used && s.status === 'playing'; }
       if (q.kind === 'train-vent') { q.active = ending.diverted && !ending.stopped && ending.ventLeft === 0 && s.status === 'playing'; }
       if (q.kind === 'train-lamp') { q.used = ending.lampLit; q.active = ending.stopped && !q.used && s.status === 'playing'; }
+      if (q.kind === 'train-cache') { q.used = s.storyFind === 'letter'; q.active = c.arrived && !q.used && s.status === 'playing'; }
     });
     if (local) {
       var enabled = s.status === 'playing' && !c.unloaded && cart.hp > 0;
@@ -1142,6 +1516,12 @@
       }
       burst(s, 'steam', 660, 300, '#c9dfd9', 16);
       burst(s, 'spark', foe.x, foe.y, '#ffd18f', 12);
+    } else if (target.kind === 'train-cache') {
+      if (!c.arrived || s.storyFind === 'letter') return false;
+      s.storyFind = 'letter';
+      s.message = '暗格里是一封写给北方的旧信，还有一枚没点过的灯芯。';
+      s.messageTime = 7;
+      burst(s, 'spark', target.x, target.y, '#f0d7a2', 10);
     } else if (target.kind === 'train-lamp') {
       ending.lampLit = true;
       event(s, 'interact', { playerId: p.id, x: target.x, y: target.y });
@@ -1510,6 +1890,7 @@
       s.exploration.totalEnemies += data.enemies.length;
     });
     s.exploration.target = Math.ceil(s.exploration.totalEnemies * 0.6);
+    tagExpeditionMoods(s);
     if (s.unlocks.foxRescued !== true) addFoxRescue(s);
     s.mission.name = '迷雾远征'; s.mission.goal = '探索遗迹，唤醒并击败炉心守卫';
     s.mission.total = s.exploration.target; s.mission.phase = 'explore';
@@ -1895,6 +2276,7 @@
     if (isTimber(s) && !timberGate(s, from, index)) return false;
     if (isRouteChapter(s) && !routeGate(s, from, index)) return false;
     if (isTrainChapter(s) && !trainGate(s, from, index)) return false;
+    if (isStory(s) && !storyGate(s, from, index)) return false;
     return !isRailChapter(s) || railGate(s, from, index);
   }
   function moveSplitPlayer(s, key, index, initial) {
@@ -2267,7 +2649,7 @@
     if (s.railAlly && s.playerRooms) return;
     var ally = s.railAlly || player('rail-ally', 1, 'pistol', 'pistol', 'blade');
     Object.assign(ally, { name: '阿禾', x: owner.x, y: owner.y,
-      roomIndex: s.room.index, task: s._split && s._split.allyTask || ally.task || (isTrainChapter(s) ? 'escort' : isRouteChapter(s) ? 'route' : 'investigate'), travelCd: 0.9,
+      roomIndex: s.room.index, task: s._split && s._split.allyTask || ally.task || (isStory(s) ? 'follow' : isTrainChapter(s) ? 'escort' : isRouteChapter(s) ? 'route' : 'investigate'), travelCd: 0.9,
       facing: owner.facing, travelFacing: owner.facing, moving: false,
       mode: ally.downed ? 'downed' : ally.railStun > 0 ? 'stunned' : 'follow',
       attackTime: 0, evadeTime: 0, fireCd: 0.35, evadeX: 0, evadeY: 0,
@@ -2364,6 +2746,7 @@
   }
   function railAllyMissionGoal(s, ally) {
     var c = s.chapter;
+    if (isStory(s)) return storyAllyGoal(s, ally);
     if (isTrainChapter(s)) {
       if (c.ending.diverted && !c.ending.stopped && s.playerRooms.p1 === 8) {
         var escort = partyPlayers(s).p1;
@@ -2428,7 +2811,7 @@
         return index === from ? null : index;
       }
       s.rooms[index].neighbors.forEach(function (next) {
-        if (previous[next] !== undefined || (isTrainChapter(s) ? !trainGate(s, index, next) : isRouteChapter(s) ? !routeGate(s, index, next) : !railGate(s, index, next))) return;
+        if (previous[next] !== undefined || (isStory(s) ? !storyGate(s, index, next) : isTrainChapter(s) ? !trainGate(s, index, next) : isRouteChapter(s) ? !routeGate(s, index, next) : !railGate(s, index, next))) return;
         previous[next] = index; queue.push(next);
       });
     }
@@ -2609,6 +2992,15 @@
     if (s.status !== 'playing') return;
     if (s.practice) { s.objective = '击败持刀守卫'; s.hint = ''; return; }
     if (s.mode === 'chapter') {
+      if (isStory(s)) {
+        var story = storyDef(s), run = s.chapter;
+        s.objective = story ? story.objective : '';
+        s.hint = run.lit ? '灯油 ' + Math.ceil(run.oil) : s.room.dark ? 'E 点灯' : '';
+        if (run.alerted) s.hint = '惊动过了';
+        if (s.mission.id.indexOf('chapter3') === 0) s.hint = '水位 ' + run.water + (run.alerted ? ' · 已惊动' : '');
+        if (s.mission.id === 'chapter4_2' || s.mission.id === 'chapter4_4') s.hint = (storyPulseHigh(s) ? '脉冲高潮' : '脉冲低潮') + ' · 车 ' + Math.ceil(run.cartHp);
+        return;
+      }
       if (isTrainChapter(s)) {
         var train = s.chapter;
         s.objective = train.ending.stopped ? '返回避风车库 · 点亮归途灯' :
@@ -3037,11 +3429,13 @@
       event(s, 'reward', clone(s.reward));
       s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
       if (s.mode === 'chapter') {
-        s.message = isTrainChapter(s) ? '归炉者停在隔离炉边。灯亮起来，老岑从营地回了三下灯号：这回人都在。' :
+        var storyEnd = isStory(s) ? storyDef(s) : null;
+        s.message = storyEnd ? (status === 'won' ? storyEnd.endWin : storyEnd.endLose) :
+          isTrainChapter(s) ? '归炉者停在隔离炉边。灯亮起来，老岑从营地回了三下灯号：这回人都在。' :
           isRouteChapter(s) ? '信号亮起，轨道通了。维修棚的方向传来一声沉重的金属拖响。阿禾：快通知陶铆，得走了。' :
           isRailChapter(s) ? '陶铆：伤员还撑得住，炉火也没断。坏在前面，那截轨已经塌了。' :
           isTimber(s) ? '工人回到灯下，终于松了口气：“你们也在找炉芯？那晚有人借了辆重车，走的西边旧线。”' : '归途灯重新亮起，采集队循着灯光回到了营地。旧线路里，另一座废弃哨站传来微弱的求援声。';
-        s.objective = isTrainChapter(s) ? '第一章完成 · 归途灯已重新点亮' :
+        s.objective = storyEnd ? storyEnd.name : isTrainChapter(s) ? '第一章完成 · 归途灯已重新点亮' :
           isRouteChapter(s) ? '第四节完成 · 通往冷却站的轨道已接通' :
           isRailChapter(s) ? '第三节完成 · 已接应救援车' :
           isTimber(s) ? '第二节完成 · 木场工人已安全回营' : '第一节完成 · 今夜的归路重新亮起';
@@ -3170,7 +3564,15 @@
             burst(s, 'steam', fire.x, fire.y, '#b4d6d6', 10);
           }
         });
-        s.enemies.forEach(function (e) { if (len(cx - e.x, cy - e.y) < 92 + e.r) e.stun = 0.7; });
+        s.enemies.forEach(function (e) {
+          if (len(cx - e.x, cy - e.y) < 92 + e.r) {
+            e.stun = 0.7;
+            if (e.storyRole === 'echo' && e.hp > 0) {
+              openWeakpoint(s, e, p.id, 'counter', 3.2);
+              s.message = '灯腔灭了。破绽就这一会儿。'; s.messageTime = 3;
+            }
+          }
+        });
         event(s, 'splash', { playerId: p.id, extinguished: extinguished });
         // Pouring also sets the bucket down, so a single action frees both hands
         // for the crate puzzle without introducing another key binding.
@@ -3204,7 +3606,7 @@
         s.message = '灰尾狐自由了 · 回营后可在伙伴栏领养'; s.messageTime = 3;
         return true;
       }
-      if (s.mode === 'chapter' && target.kind.indexOf('chapter-') === 0) return interactChapter(s, p, target);
+      if (s.mode === 'chapter' && (target.kind.indexOf('chapter-') === 0 || target.kind.indexOf('story-') === 0)) return interactChapter(s, p, target);
       if (isTimber(s) && target.kind.indexOf('timber-') === 0) return interactTimber(s, p, target);
       if (isRailChapter(s) && target.kind.indexOf('rail-') === 0) return interactRailChapter(s, p, target);
       if (isRouteChapter(s) && target.kind.indexOf('route-') === 0) return interactRouteChapter(s, p, target);
@@ -3265,6 +3667,14 @@
     }
     var gate = s.portals.find(function (g) { return g.active && dist(p, g) < 70; });
     if (gate && playerTravelReady(s, p.id)) return enterRoom(s, gate.target, false, p.id);
+    if (isStory(s) && s.room.dark && !p.carry) {
+      var lamp = s.chapter;
+      if (lamp.lit && lamp.bearer === p.id) { lamp.lit = false; lamp.bearer = ''; s.message = '灯灭了。暗处的字会亮起来。'; }
+      else if (lamp.oil > 0) { lamp.lit = true; lamp.bearer = p.id; lamp.hung = -1; s.message = '灯亮了。'; }
+      else s.message = '灯油尽了。去找油壶。';
+      s.messageTime = 2;
+      return true;
+    }
     return false;
   }
   function updateCarries(s) {
@@ -3427,6 +3837,10 @@
       event(s, 'boss-phase', { enemyId: e.id, stage: 2, x: e.x, y: e.y });
     }
     if (e.hp <= 0) {
+      if (e.storyBoss && isStory(s) && s.chapter.phase !== 'down' && s.chapter.phase !== 'choice') {
+        s.chapter.phase = 'down';
+        s.message = e.name + '停住了。'; s.messageTime = 4;
+      }
       delete e.ai;
       s.stats.kills += 1;
       if (partyPlayers(s)[owner]) partyPlayers(s)[owner].kills += 1;
@@ -4435,11 +4849,13 @@
         if (!e.alerted) return;
       }
       var decoyRange = activeStyles(s).indexOf('phantom') >= 0 ? 760 : 600;
+      if (isStory(s) && s.room.dark && s.runBuffs && s.runBuffs.indexOf('decoy') >= 0) decoyRange = 760;
       var decoys = s.decoys.filter(function (d) { return d.ttl > 0 && dist(d, e) < decoyRange && lineClear(s, e, d, 4); });
       var p = (decoys.length ? decoys : targets).slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
       var human = s.players.p1;
       if ((e.railGuard || e.trainReturner) && p === s.railAlly && human && !human.downed &&
           (e.rhythmCycle === 0 || dist(e, human) < dist(e, p) + 85)) p = human;
+      if (isStory(s) && e.storyRole && storyFoe(s, e, p, dt)) return;
       if (e.kind === 'lamplighter') {
         e.stagger = Math.max(0, e.stagger - dt);
         if (e.stagger > 0) return;
@@ -4944,6 +5360,9 @@
         if (s.runBuffs.indexOf('swift') >= 0) speed *= 1.15;
         if (p.relayBoost > 0) speed *= 1.2;
         if (p.sneaking) speed *= 0.55;
+        if (isStory(s) && s.room.deep && s.chapter.water >= 2) speed *= 0.62;
+        if (isStory(s) && s.chapter.link < 2 && s.enemies.some(function (e) { return e.storyRole === 'scan' && e.hp > 0 && dist(e, p) < 240; })) speed *= 0.72;
+        if (s.mode === 'random' && s.room && s.room.mood === 'flood') speed *= 0.82;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
       if (p.railStun > 0) return;
@@ -4954,6 +5373,14 @@
       }
       p.vx = dt > 0 ? (p.x - oldX) / dt : 0; p.vy = dt > 0 ? (p.y - oldY) / dt : 0;
       p.moving = Math.abs(p.vx) + Math.abs(p.vy) > 1;
+      if (isStory(s) && s.room.listen && !s.chapter.alerted) {
+        var heard = !!input.shoot || p.dashTime > 0 || (p.moving && !p.sneaking);
+        var earshot = !!input.shoot || p.dashTime > 0 ? 340 : hasPreparation(s, key, 'quietSole') ? 96 : 230;
+        if (heard && s.enemies.some(function (e) { return e.storyRole === 'listen' && e.hp > 0 && dist(e, p) < earshot; })) {
+          s.chapter.alerted = true;
+          s.message = '声音惊动了巡卫。隐藏的门不会再开。'; s.messageTime = 4;
+        }
+      }
       if (s.mode === 'hunt' && p.moving && !p.sneaking && p.dashTime <= 0 && s.time - (s.hunt.stepAt[key] || 0) >= 0.85) {
         s.hunt.stepAt[key] = s.time; huntNoise(s, 1, p.x, p.y);
       }
@@ -4964,7 +5391,7 @@
     updateCarries(s); updateProps(s, dt);
     if (!s._split || s._split.advanceGlobals) { updateHunt(s, dt); updateTimber(s, dt); }
     else if (s.mode === 'hunt' && s.hunt.targetRoom === s.room.index) updateHunt(s, 0);
-    updateRailChapter(s, dt); advanceTrainChapter(s, dt);
+    updateRailChapter(s, dt); advanceTrainChapter(s, dt); updateStory(s, dt);
     updateEnemies(s, dt); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     aliveCombatants(s).forEach(function (p) {

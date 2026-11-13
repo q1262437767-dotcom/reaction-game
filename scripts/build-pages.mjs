@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const scripts = [
+  'story.js',
   'engine.js',
   'renderer.js',
   'net.js',
@@ -75,13 +76,13 @@ require(path.join(dist, 'adventure', 'net.js'));
 const cloud = fs.readFileSync(path.join(dist, 'adventure', 'cloud.js'), 'utf8');
 const net = fs.readFileSync(path.join(dist, 'adventure', 'net.js'), 'utf8');
 const html = fs.readFileSync(path.join(dist, 'adventure', 'index.html'), 'utf8');
-if (!cloud.includes('vendor/supabase-2.118.0.js') || !cloud.includes('?v=55')) {
+if (!cloud.includes('vendor/supabase-2.118.0.js') || !cloud.includes('?v=56')) {
   throw new Error('minified cloud.js lost the lazy Supabase URL');
 }
-if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=55')) {
+if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=56')) {
   throw new Error('minified net.js lost the lazy PeerJS URL');
 }
-if (!html.includes('engine.js?v=55') || html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
+if (!html.includes('engine.js?v=56') || !html.includes('story.js?v=56') || html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
   throw new Error('adventure page should keep separate scripts and lazy vendor files');
 }
 

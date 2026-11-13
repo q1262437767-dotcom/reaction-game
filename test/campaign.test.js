@@ -346,7 +346,7 @@ test('finished chapter saves gain the story badge without losing older ones', ()
   assert.equal(journal.cleared, 5);
   assert.equal(journal.total, 5);
   assert.deepEqual(journal.sections.map(section => section.done), [true, true, true, true, true]);
-  assert.deepEqual(journal.storyBadges.map(badge => badge.id), ['wayhome', 'steady', 'flawless', 'explorer', 'collector']);
+  assert.deepEqual(journal.storyBadges.map(badge => badge.id), ['wayhome', 'steady', 'northlight', 'rethread', 'coresafe', 'sevenlamps', 'flawless', 'explorer', 'collector']);
   assert.equal(journal.storyBadges.find(badge => badge.id === 'wayhome').earned, true);
   assert.equal(journal.storyBadges.find(badge => badge.id === 'steady').earned, false);
   assert.deepEqual(journal.legacyBadges.map(badge => badge.id), ['lamplighter', 'veteran']);
