@@ -1,12 +1,14 @@
 /* Compare the pre-protocol-23 full clone with the current snapshot and sync patch.
- * Run from the repo root: node adventure/snapshot-bench.js
+ * Run from the repo root: node scripts/snapshot-bench.js
  */
 'use strict';
 
-const E = require('./engine.js');
+const E = require('../adventure/engine.js');
 
 function legacySnapshot(s) {
   const result = JSON.parse(JSON.stringify(s));
+  delete result._split;
+  delete result.railAlly;
   result.roomData = {};
   result.particles = result.particles.slice(-24);
   result.events = result.events.slice(-12);

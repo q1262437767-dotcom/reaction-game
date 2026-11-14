@@ -120,6 +120,20 @@
     options = options || {};
     return !!(options.handheld && options.portrait && options.runActive && !options.dismissed);
   }
+  var STICK_DEADZONE = 0.12;
+  // dx/dy are pixels from the knob center. Output is -1..1 with the deadzone
+  // removed, so a resting thumb does not creep. knobX/knobY still follow the thumb.
+  function stickOutput(dx, dy, radius, deadzone) {
+    var dead = deadzone == null ? STICK_DEADZONE : deadzone;
+    if (!(dead >= 0) || dead >= 1) dead = STICK_DEADZONE;
+    var distance = Math.hypot(dx, dy);
+    if (!(radius > 0) || !(distance > 0)) return { x: 0, y: 0, knobX: 0, knobY: 0 };
+    var clamped = Math.min(distance, radius);
+    var nx = dx / distance, ny = dy / distance;
+    var magnitude = clamped / radius;
+    var output = magnitude <= dead ? 0 : (magnitude - dead) / (1 - dead);
+    return { x: nx * output, y: ny * output, knobX: nx * clamped, knobY: ny * clamped };
+  }
   function controlBounds(layout, viewW, viewH) {
     var stick = STICK_BASE * layout.stickScale;
     var skillsW = SKILLS_W * layout.skillsScale;
@@ -138,6 +152,7 @@
     hudOrientation: hudOrientation, hudStoreKey: hudStoreKey,
     defaultHudLayout: defaultHudLayout, normalizeHudLayout: normalizeHudLayout, clampHudLayout: clampHudLayout,
     portraitPlayBand: portraitPlayBand, landscapePlayView: landscapePlayView, portraitPlayView: portraitPlayView,
-    portraitHintVisible: portraitHintVisible, controlBounds: controlBounds
+    portraitHintVisible: portraitHintVisible, controlBounds: controlBounds,
+    STICK_DEADZONE: STICK_DEADZONE, stickOutput: stickOutput
   };
 });
