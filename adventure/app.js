@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const E = window.AdventureEngine, R = window.AdventureRenderer, C = window.AdventureCampaign;
+  const E = window.AdventureEngine, R = window.AdventureRenderer, C = window.AdventureCampaign, L = window.AdventureLayout;
   const $ = id => document.getElementById(id);
   const canvas = $('game'), ctx = canvas.getContext('2d');
   const STORE = 'ruins-squad-camp-v2', LEGACY_STORE = 'ruins-squad-camp-v1';
@@ -11,10 +11,10 @@
   const WEAPONS_TUTORIAL_STORE = 'ruins-squad-weapons-tutorial-v1';
   const TOUCH_STORE = 'ruins-squad-touch-controls-v1';
   const MELEE_STORE = 'ruins-squad-melee-choice-v1';
-  const HUD_STORE = 'ruins-squad-hud-layout-v1';
-  const MAP_W = 190, MAP_H = 164, MAP_EDGE = 18;
+  const HUD_STORE = L.HUD_LANDSCAPE;
   let touchPreference = readTouchPreference(), touchSeen = false, joystickId = null;
   let meleeChoice = readMeleeChoice();
+  let hudOrientation = L.hudOrientation(isHandheldViewport(), isPortraitViewport());
   let hudLayout = readHudLayout(), hudView = hudLayout, hudEditing = false, hudDrag = null;
   const touchPointers = new Map();
   let camp, storageOK = true, state = null, mode = 'solo', net = null;
@@ -36,7 +36,7 @@
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, guard: false, active: false };
   const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
   let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
-  let playFullscreen = false, orientationLocked = false, rotateHold = false, rotateAttempt = 0, rotatePromptShown = false;
+  let playFullscreen = false, orientationLocked = false, rotateHold = false, rotateAttempt = 0, portraitHintDismissed = readPortraitHint();
   let playView = null;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   let menuScreen = 'title';
@@ -112,36 +112,31 @@
     catch (_) { return 'blade'; }
   }
   function defaultHudLayout() {
-    return { mapScale: 0.76, mapInsetX: 6, mapInsetY: 4, stickScale: 1, stickInsetX: 36, stickInsetY: 24, skillsScale: 1, skillsInsetX: 22, skillsInsetY: 16 };
+    return L.defaultHudLayout(hudOrientation);
+  }
+  function readPortraitHint() {
+    try { return localStorage.getItem(L.PORTRAIT_HINT) === '1'; }
+    catch (_) { return false; }
   }
   function clampNum(value, min, max) {
     return Math.min(max, Math.max(min, value));
   }
   function readHudLayout() {
-    const defaults = defaultHudLayout();
-    try {
-      const raw = JSON.parse(localStorage.getItem(HUD_STORE) || 'null');
-      if (!raw || typeof raw !== 'object') return defaults;
-      const pick = (key, min, max) => {
-        const value = Number(raw[key]);
-        return Number.isFinite(value) ? clampNum(value, min, max) : defaults[key];
-      };
-      return {
-        mapScale: pick('mapScale', 0.52, 1.2),
-        mapInsetX: pick('mapInsetX', 0, 800),
-        mapInsetY: pick('mapInsetY', 0, 600),
-        stickScale: pick('stickScale', 0.72, 1.3),
-        stickInsetX: pick('stickInsetX', 0, 1200),
-        stickInsetY: pick('stickInsetY', 0, 900),
-        skillsScale: pick('skillsScale', 0.72, 1.3),
-        skillsInsetX: pick('skillsInsetX', 0, 1200),
-        skillsInsetY: pick('skillsInsetY', 0, 900)
-      };
-    } catch (_) { return defaults; }
+    try { return L.normalizeHudLayout(JSON.parse(localStorage.getItem(L.hudStoreKey(hudOrientation)) || 'null'), hudOrientation); }
+    catch (_) { return defaultHudLayout(); }
   }
   function saveHudLayout() {
-    try { localStorage.setItem(HUD_STORE, JSON.stringify(hudLayout)); }
+    try { localStorage.setItem(L.hudStoreKey(hudOrientation), JSON.stringify(hudLayout)); }
     catch (_) { /* This device keeps the layout for the current page. */ }
+  }
+  function syncHudOrientation() {
+    const next = L.hudOrientation(isHandheldViewport(), isPortraitViewport());
+    if (next === hudOrientation) return;
+    hudDrag = null;
+    hudOrientation = next;
+    hudLayout = readHudLayout();
+    applyHudLayout();
+    syncHudSliders();
   }
   function safeInsets() {
     const probe = $('safe-probe');
@@ -151,7 +146,7 @@
     return { top: px('borderTopWidth'), right: px('borderRightWidth'), bottom: px('borderBottomWidth'), left: px('borderLeftWidth') };
   }
   function handheldMapActive() {
-    return isHandheldViewport() && !isPortraitViewport() && !!state && $('start-screen').hidden;
+    return isHandheldViewport() && !!state && $('start-screen').hidden;
   }
   function mapSpace() {
     const rect = canvas.getBoundingClientRect();
@@ -161,36 +156,22 @@
     return { w: 960, h: Math.round(clampNum(960 * cssH / cssW, 280, 600)), rect: rect.width ? rect : { left: 0, top: 0, width: cssW, height: cssH } };
   }
   function clampLayout(layout) {
-    const next = Object.assign({}, layout);
     const space = mapSpace();
-    const safe = safeInsets();
-    next.mapScale = clampNum(next.mapScale, 0.52, 1.2);
-    next.stickScale = clampNum(next.stickScale, 0.72, 1.3);
-    next.skillsScale = clampNum(next.skillsScale, 0.72, 1.3);
-    if (space.rect.width > 40 && space.w > 40 && space.h > 40) {
-      const sx = space.w / space.rect.width, sy = space.h / space.rect.height;
-      const mapW = MAP_W * next.mapScale, mapH = MAP_H * next.mapScale;
-      next.mapInsetX = clampNum(next.mapInsetX, 0, Math.max(0, Math.min(space.w * 0.5 - mapW, space.w - MAP_EDGE - safe.right * sx - mapW - 8)));
-      next.mapInsetY = clampNum(next.mapInsetY, 0, Math.max(0, Math.min(space.h * 0.46 - mapH, space.h - MAP_EDGE - safe.top * sy - mapH - 8)));
-    }
-    const viewW = window.innerWidth || 0, viewH = window.innerHeight || 0;
-    if (viewW > 40 && viewH > 40) {
-      const stick = 118 * next.stickScale, skillsW = 200 * next.skillsScale, skillsH = 198 * next.skillsScale;
-      next.stickInsetX = clampNum(next.stickInsetX, 0, Math.max(0, Math.min(viewW * 0.5 - safe.left - stick, viewW - safe.left - safe.right - stick - 8)));
-      next.stickInsetY = clampNum(next.stickInsetY, 0, Math.max(0, viewH - safe.top - safe.bottom - stick - 8));
-      next.skillsInsetX = clampNum(next.skillsInsetX, 0, Math.max(0, Math.min(viewW * 0.52 - safe.right - skillsW, viewW - safe.left - safe.right - skillsW - 8)));
-      next.skillsInsetY = clampNum(next.skillsInsetY, 0, Math.max(0, viewH - safe.top - safe.bottom - skillsH - 8));
-    }
-    return next;
+    return L.clampHudLayout(layout, {
+      safe: safeInsets(),
+      viewW: window.innerWidth || 0,
+      viewH: window.innerHeight || 0,
+      map: { w: space.w, h: space.h, rectW: space.rect.width || 0, rectH: space.rect.height || 0 }
+    });
   }
   function mapGeometry(space) {
     const safe = safeInsets();
     const rect = space.rect.width ? space.rect : { left: 0, top: 0, width: space.w, height: space.h };
     const sx = rect.width ? space.w / rect.width : 1, sy = rect.height ? space.h / rect.height : 1;
     const scale = hudView.mapScale;
-    const anchorX = space.w - MAP_EDGE - hudView.mapInsetX - safe.right * sx;
-    const anchorY = MAP_EDGE + hudView.mapInsetY + safe.top * sy;
-    const width = MAP_W * scale, height = MAP_H * scale;
+    const anchorX = space.w - L.MAP_EDGE - hudView.mapInsetX - safe.right * sx;
+    const anchorY = L.MAP_EDGE + hudView.mapInsetY + safe.top * sy;
+    const width = L.MAP_W * scale, height = L.MAP_H * scale;
     return { scale, anchorX, anchorY, width, height, left: anchorX - width, top: anchorY, rect };
   }
   function mapPaintOptions() {
@@ -224,8 +205,8 @@
       const touchOn = wrap.getAttribute('data-touch-controls') === 'true' && !$('touch-controls').hidden;
       if (touchOn) {
         const safe = safeInsets();
-        const stickClear = safe.bottom + hudView.stickInsetY + 118 * hudView.stickScale;
-        const skillsClear = safe.bottom + hudView.skillsInsetY + 198 * hudView.skillsScale;
+        const stickClear = safe.bottom + hudView.stickInsetY + L.STICK_BASE * hudView.stickScale;
+        const skillsClear = safe.bottom + hudView.skillsInsetY + L.SKILLS_H * hudView.skillsScale;
         setVar('--hint-bottom', Math.round(Math.max(stickClear, skillsClear) + 12) + 'px');
       } else wrap.style.removeProperty('--hint-bottom');
     } else {
@@ -255,7 +236,7 @@
     set('hud-skills-inset', hudView.skillsInsetX);
   }
   function canDragHud() {
-    return isHandheldViewport() && !isPortraitViewport() && !!state && $('start-screen').hidden && $('end-screen').hidden && !chapterEndingActive() && !rotateHold;
+    return isHandheldViewport() && !!state && $('start-screen').hidden && $('end-screen').hidden && !chapterEndingActive() && !rotateHold;
   }
   function updateHudSettingsLabel() {
     const drag = canDragHud();
@@ -453,7 +434,7 @@
     orientationLocked = false;
     rotateHold = false;
     rotateAttempt = 0;
-    setRotatePrompt(false);
+    setPortraitHint(false);
     if (!playFullscreen && !getFullscreenElement()) return;
     playFullscreen = false;
     exitDocumentFullscreen();
@@ -472,26 +453,28 @@
   function runNeedsLandscape() {
     return !!state && $('start-screen').hidden && $('end-screen').hidden;
   }
-  function setRotatePrompt(show) {
-    const prompt = $('rotate-prompt');
-    if (!prompt) return;
-    prompt.hidden = !show;
-    try { $('game-wrap').inert = !!show; } catch (_) {}
-    if (show && !rotatePromptShown && !hasDialog()) $('rotate-fullscreen').focus();
-    rotatePromptShown = show;
+  function dismissPortraitHint() {
+    portraitHintDismissed = true;
+    try { localStorage.setItem(L.PORTRAIT_HINT, '1'); } catch (_) { /* The hint stays closed for this page. */ }
+    setPortraitHint(false);
+  }
+  function setPortraitHint(show) {
+    const hint = $('portrait-hint');
+    if (hint) hint.hidden = !show;
   }
   function updatePlayChrome() {
     const handheld = isHandheldViewport();
+    const portrait = isPortraitViewport();
     document.body.setAttribute('data-handheld', handheld ? 'true' : 'false');
+    document.body.setAttribute('data-portrait', handheld && portrait ? 'true' : 'false');
     const activeFullscreen = !!getFullscreenElement();
     if (playFullscreen && !activeFullscreen) { playFullscreen = false; orientationLocked = false; }
-    const wantRotate = handheld && isPortraitViewport() && runNeedsLandscape();
-    rotateHold = wantRotate && playing();
-    // Hide the prompt while a lock attempt is in flight so Android Chrome/Edge
-    // can rotate without a flash. If lock is rejected, the prompt appears.
-    setRotatePrompt(wantRotate && rotateAttempt === 0);
-    const rotateButton = $('rotate-fullscreen');
-    if (rotateButton) rotateButton.textContent = activeFullscreen ? '锁定横屏' : '进入全屏';
+    // Portrait stays playable. The hint only suggests turning sideways.
+    rotateHold = false;
+    setPortraitHint(L.portraitHintVisible({
+      handheld: handheld, portrait: portrait, runActive: runNeedsLandscape(), dismissed: portraitHintDismissed
+    }));
+    syncHudOrientation();
     const button = $('fullscreen-game');
     if (!button) return;
     const active = activeFullscreen;
@@ -502,22 +485,54 @@
     button.title = label;
     button.setAttribute('aria-label', label);
   }
+  function applyPortraitBand() {
+    const root = document.documentElement;
+    const portraitPlay = isHandheldViewport() && isPortraitViewport() && state && $('start-screen').hidden;
+    if (!portraitPlay) {
+      root.style.removeProperty('--portrait-play-top');
+      root.style.removeProperty('--portrait-play-height');
+      root.style.removeProperty('--portrait-play-bottom');
+      return null;
+    }
+    const band = L.portraitPlayBand(window.innerWidth || 0, window.innerHeight || 0, safeInsets());
+    root.style.setProperty('--portrait-play-top', band.top + 'px');
+    root.style.setProperty('--portrait-play-height', band.height + 'px');
+    root.style.setProperty('--portrait-play-bottom', band.bottom + 'px');
+    return band;
+  }
+  function resizePlayBuffer(width, height) {
+    const nextW = Math.max(1, Math.round(width)), nextH = Math.max(1, Math.round(height));
+    if (canvas.width !== nextW || canvas.height !== nextH) { canvas.width = nextW; canvas.height = nextH; }
+  }
   function syncPlayCanvas() {
+    const handheld = isHandheldViewport();
+    document.body.setAttribute('data-handheld', handheld ? 'true' : 'false');
+    document.body.setAttribute('data-portrait', handheld && isPortraitViewport() ? 'true' : 'false');
+    const band = applyPortraitBand();
+    const player = state && state.players && state.players[localId()];
+    if (band) {
+      const rect = canvas.getBoundingClientRect();
+      const cssW = Math.max(1, rect.width || band.width), cssH = Math.max(1, rect.height || band.height);
+      const focusX = player && Number.isFinite(player.x) ? player.x : 480;
+      const focusY = player && Number.isFinite(player.y) ? player.y : 300;
+      const view = L.portraitPlayView(cssW, cssH, focusX, focusY);
+      resizePlayBuffer(view.bufferW, view.bufferH);
+      playView = { x: view.x, y: view.y, w: view.w, h: view.h };
+      applyHudLayout();
+      return;
+    }
     const handheldPlay = isHandheldViewport() && !isPortraitViewport() && state && $('start-screen').hidden;
     if (!handheldPlay) {
       playView = null;
-      if (canvas.width !== 960 || canvas.height !== 600) { canvas.width = 960; canvas.height = 600; }
+      resizePlayBuffer(960, 600);
       return;
     }
     const rect = canvas.getBoundingClientRect();
     const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
-    const viewW = 960;
-    const viewH = Math.max(280, Math.min(600, viewW * cssH / cssW));
-    const bufH = Math.round(viewH);
-    if (canvas.width !== viewW || canvas.height !== bufH) { canvas.width = viewW; canvas.height = bufH; }
-    const player = state.players && state.players[localId()];
-    const focus = player && Number.isFinite(player.y) ? player.y : 300;
-    playView = { x: 0, y: Math.max(0, Math.min(600 - viewH, focus - viewH / 2)), w: viewW, h: viewH };
+    const focusY = player && Number.isFinite(player.y) ? player.y : 300;
+    const view = L.landscapePlayView(cssW, cssH, focusY);
+    resizePlayBuffer(view.bufferW, view.bufferH);
+    playView = { x: view.x, y: view.y, w: view.w, h: view.h };
   }
   function playUiScale() {
     if (!isHandheldViewport() || isPortraitViewport()) return 1;
@@ -2165,7 +2180,7 @@
   });
   $('pause-game').onclick = () => pause(!paused);
   $('fullscreen-game').onclick = () => togglePlayFullscreen();
-  $('rotate-fullscreen').onclick = () => enterLandscapePlay();
+  $('portrait-hint-dismiss').onclick = () => dismissPortraitHint();
   $('pause-settings').onclick = () => openDialog('settings-dialog');
   $('pause-hud').onclick = () => openHudEditor();
   $('close-settings').onclick = () => $('settings-dialog').close();
@@ -2528,7 +2543,8 @@
   window.addEventListener('storage', event => {
     if (!account && event.key === STORE) { camp = readCamp(); updateCamp(); }
     if (event.key === TOUCH_STORE) { touchPreference = readTouchPreference(); clearInput(); updateTouchControls(); }
-    if (event.key === HUD_STORE && !hudDrag) { hudLayout = readHudLayout(); applyHudLayout(); }
+    if ((event.key === L.HUD_LANDSCAPE || event.key === L.HUD_PORTRAIT) && event.key === L.hudStoreKey(hudOrientation) && !hudDrag) { hudLayout = readHudLayout(); applyHudLayout(); }
+    if (event.key === L.PORTRAIT_HINT) { portraitHintDismissed = readPortraitHint(); updatePlayChrome(); }
   });
   if (window.AdventureAccount && window.AdventureCloud) {
     const config = window.AdventureCloudConfig || {};

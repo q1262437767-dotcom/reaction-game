@@ -12,7 +12,7 @@
       var match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Tests and non-browser callers use the current cache key. */ }
-    return '?v=56';
+    return '?v=57';
   })();
   var MAX_PROFILE_BYTES = 32768;
   var messages = Object.freeze({

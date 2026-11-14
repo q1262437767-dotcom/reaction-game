@@ -1,6 +1,6 @@
 # 遗迹小队 · Ruin Runners
 
-第二章到第五章、隐藏关《未登记线》和三个结局都在这一版里。第一章《归途灯》五节保持原样。提灯、水位、静步、两端接线和运芯车上的脉冲都进了同一套房间与联机。存档仍是 v2。自建云存档要执行 [`adventure/backend/upgrade-story-arc.sql`](adventure/backend/upgrade-story-arc.sql)，它接在 `upgrade-chapter-badges.sql` 之后，不放宽进度闸门。静态资源 `?v=56`，联机协议 32。
+第二章到第五章、隐藏关《未登记线》和三个结局都在这一版里。第一章《归途灯》五节保持原样。提灯、水位、静步、两端接线和运芯车上的脉冲都进了同一套房间与联机。存档仍是 v2。自建云存档要执行 [`adventure/backend/upgrade-story-arc.sql`](adventure/backend/upgrade-story-arc.sql)，它接在 `upgrade-chapter-badges.sql` 之后，不放宽进度闸门。静态资源 `?v=57`，联机协议 32。手机竖屏可以直接玩，横屏仍是原来的画面。
 
 在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 
