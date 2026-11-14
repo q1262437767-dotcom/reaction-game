@@ -705,7 +705,7 @@
       const depth = run.water === 1 ? 150 : 250;
       rect(c, 40, H - depth, W - 80, depth - 40, run.water === 2 ? '#1c6e8a55' : '#1c6e8a33');
     }
-    if ((id === 'chapter4_2' || id === 'chapter4_4' || id === 'chapter5_2') && (Number(run.pulse) % 7) >= 4) {
+    if ((id === 'chapter4' || id === 'chapter4_2' || id === 'chapter4_3' || id === 'chapter4_4' || id === 'chapter5_2') && (Number(run.pulse) % 7) >= 4) {
       alpha(c, .18 + Math.sin(time * .01) * .05, () => rect(c, 0, 0, W, H, '#ff6a3a'));
     }
   }
@@ -713,6 +713,11 @@
     const room = state.room || {}, run = state.chapter || {};
     const expeditionDark = state.mode === 'random' && room.mood === 'dark';
     if (!room.dark && !expeditionDark) return;
+    if (!expeditionDark && String(run.id) === 'chapter5_3') {
+      const ending = run.ending || (state.unlocks && state.unlocks.dawnEnding) || '';
+      if (ending === 'true') return;
+      if (ending === 'normal' && num(room.index) <= 1) return;
+    }
     const lights = [];
     if (expeditionDark) values(state.players).forEach(p => lights.push([num(p.x), num(p.y), 120]));
     if (run.lit && run.oil > 0) {
@@ -2407,7 +2412,9 @@
       c.strokeStyle = '#dbb66c90'; c.lineWidth = 2;
       c.beginPath(); c.ellipse(x, y + 6, r + 7, (r + 7) * .47, 0, 0, Math.PI * 2); c.stroke();
     }
-    if (e.windup > 0 && !e.rhythm) {
+    const storyMarked = typeof AdventureStoryDraw !== 'undefined' && AdventureStoryDraw.owns(kind);
+    if (storyMarked && (e.windup > 0 || e.chargeTime > 0)) AdventureStoryDraw.telegraph(c, e, time);
+    if (e.windup > 0 && !e.rhythm && !storyMarked) {
       if (e.attack === 'ring') {
         const rr = boss ? 104 : 38;
         ellipse(c, x, y + 5, rr, rr * .65, '#e696631b'); c.strokeStyle = '#de947a'; c.lineWidth = 2; c.setLineDash([6,5]); c.beginPath(); c.ellipse(x, y + 5, rr, rr * .65, 0, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
@@ -2430,7 +2437,8 @@
       c.translate(0, 20); c.scale(1.18, 1.28); c.translate(0, -20);
     }
     if (chapter && !boss) {
-      chapterConstruct(c, e, time, step, pose);
+      if (typeof AdventureStoryDraw !== 'undefined' && AdventureStoryDraw.owns(kind)) AdventureStoryDraw.body(c, e, pose, time);
+      else chapterConstruct(c, e, time, step, pose);
     } else if (boss) {
       const awakened = e.stage >= 2;
       glow(c, 0, -12, awakened?76:56, awakened?'#ef8b4532':'#cfa66217');
@@ -2661,7 +2669,7 @@
       if(nearBreak)for(const side of [-1,1])path(c,[[x+side*(width/2+7),by-3],[x+side*(width/2+4),by],[x+side*(width/2+7),by+3]],'#f7d18d',1);
       if (e.stagger > 0) label(c, openingCore ? '炉芯外露' : '失衡', x, readout?.stagger ?? y - (boss ? 91 : 87), '#ffe2a4', openingCore ? 13 : 10);
     }
-    const chapterName = rail ? e.name || '旧线守卫' : chapterEnemyNames[kind] || '炉卫';
+    const chapterName = e.name || (rail ? '旧线守卫' : chapterEnemyNames[kind] || '炉卫');
     if (e.elite && !boss) {
       const crownY = y - 64;
       path(c, [[x - 8, crownY - 4],[x - 6, crownY + 2],[x + 6, crownY + 2],[x + 8, crownY - 4],[x + 3, crownY - 1],[x, crownY - 7],[x - 3, crownY - 1],[x - 8, crownY - 4]], '#e8c67d', 2);
