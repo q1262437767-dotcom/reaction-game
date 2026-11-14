@@ -7,6 +7,24 @@
   const styleColors = { echo: '#d5c4ec', pursuit: '#edcf91', phantom: '#b0dfd2' };
   const styleNames = { echo: '回响反击', pursuit: '闪身射击', phantom: '残影牵制' };
   const floorCache = new Map();
+  const glowCache = new Map();
+  const layerCache = new Map();
+  const propCache = new Map();
+  const vignetteCache = new Map();
+  function scratchCanvas(width, height) {
+    const surface = document.createElement('canvas');
+    surface.width = Math.max(1, Math.ceil(width));
+    surface.height = Math.max(1, Math.ceil(height));
+    return surface;
+  }
+  function remember(cache, key, limit, build) {
+    let sprite = cache.get(key);
+    if (sprite) return sprite;
+    if (cache.size >= limit) cache.clear();
+    sprite = build();
+    cache.set(key, sprite);
+    return sprite;
+  }
   // Per surface presentation history. It never belongs to the simulation or a
   // network snapshot, and advancing wall time alone cannot move an enemy.
   const enemyMotionCache = new WeakMap();
@@ -33,7 +51,36 @@
   function hash(value) { return String(value).split('').reduce((a, v) => (a * 31 + v.charCodeAt(0)) | 0, 227); }
   function alpha(c, a, fn) { c.save(); c.globalAlpha *= Math.max(0, Math.min(1, a)); fn(); c.restore(); }
   function ellipse(c, x, y, rx, ry, color) { c.fillStyle = color; c.beginPath(); c.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), 0, 0, Math.PI * 2); c.fill(); }
-  function glow(c, x, y, radius, color) { if (radius <= 0) return; const g = c.createRadialGradient(x, y, 0, x, y, radius); g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x - radius, y - radius, radius * 2, radius * 2); }
+  function glow(c, x, y, radius, color) {
+    if (radius <= 0) return;
+    const r = Math.max(1, Math.round(radius));
+    const key = r + ':' + color;
+    const sprite = remember(glowCache, key, 80, () => {
+      const surface = scratchCanvas(r * 2, r * 2);
+      const g = surface.getContext('2d');
+      const shade = g.createRadialGradient(r, r, 0, r, r, r);
+      shade.addColorStop(0, color);
+      shade.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = shade;
+      g.fillRect(0, 0, r * 2, r * 2);
+      return surface;
+    });
+    c.drawImage(sprite, x - r, y - r);
+  }
+  function paintVignette(c, key, inner, mid, outer) {
+    const sprite = remember(vignetteCache, key, 4, () => {
+      const surface = scratchCanvas(W, H);
+      const g = surface.getContext('2d');
+      const shade = g.createRadialGradient(480, 300, 200, 480, 300, 590);
+      shade.addColorStop(0, inner);
+      shade.addColorStop(.75, mid);
+      shade.addColorStop(1, outer);
+      g.fillStyle = shade;
+      g.fillRect(0, 0, W, H);
+      return surface;
+    });
+    c.drawImage(sprite, 0, 0);
+  }
   function label(c, text, x, y, color = '#d6dfbd', size = 11, align = 'center') { c.font = `600 ${size}px ${font}`; c.textAlign = align; c.textBaseline = 'middle'; c.lineWidth = 3; c.strokeStyle = '#112225df'; c.strokeText(String(text), Math.round(x), Math.round(y)); c.fillStyle = color; c.fillText(String(text), Math.round(x), Math.round(y)); }
   function path(c, points, color, width = 1) { c.strokeStyle = color; c.lineWidth = width; c.beginPath(); points.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke(); }
   function grass(c, x, y, color = '#677e4f', scale = 1) { rect(c, x, y - 5 * scale, 2 * scale, 5 * scale, color); rect(c, x - 3 * scale, y - 3 * scale, 2 * scale, 3 * scale, color); rect(c, x + 3 * scale, y - 4 * scale, 2 * scale, 4 * scale, color); }
@@ -2716,7 +2763,7 @@
       const x = (i * 137.7 + 49 + Math.sin(time * .0002 + i) * 14) % W, y = (i * 83.4 + 50 - time * .003) % H;
       if (y > 0) alpha(c, (.25 + Math.sin(time * .001 + i) * .2), () => rect(c, x, y, 1, 1, '#d8c795'));
     }
-    const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590); vignette.addColorStop(0, '#091a2600'); vignette.addColorStop(.75, '#091a2610'); vignette.addColorStop(1, '#091a2666'); c.fillStyle = vignette; c.fillRect(0, 0, W, H);
+    paintVignette(c, 'vignette:play', '#091a2600', '#091a2610', '#091a2666');
   }
   function railGuard(c, e, state, pose, viewTop, still) {
     if (e.hp <= 0 || e.dead) return;
@@ -4088,7 +4135,56 @@
     }
   }
   function resetHudTransform(c, view) {
-    if (view) c.setTransform(1, 0, 0, 1, 0, 0);
+    if (!view || !(view.w > 0) || !(view.h > 0)) {
+      const sx = c.canvas.width / W, sy = c.canvas.height / H;
+      if (Math.abs(sx - 1) > 0.01 || Math.abs(sy - 1) > 0.01) c.setTransform(sx, 0, 0, sy, 0, 0);
+      return;
+    }
+    // The bitmap can be a device-pixel multiple of the camera. HUD anchors stay
+    // in camera pixels, so the same scale keeps text the same size on screen.
+    c.setTransform(c.canvas.width / view.w, 0, 0, c.canvas.height / view.h, 0, 0);
+  }
+  function wallKey(w) {
+    return [Math.round(num(w.x)), Math.round(num(w.y)), Math.round(num(w.w ?? w.width, 32)), Math.round(num(w.h ?? w.height, 32)), w.routeGap ? 1 : 0, w.routeCar ? 1 : 0, w.corePillar ? 1 : 0, w.routeWall ? 1 : 0, w.id || ''].join(',');
+  }
+  function paintWalls(c, walls, openingId) {
+    const list = values(walls);
+    const parts = ['w', openingId || ''];
+    for (let i = 0; i < list.length; i += 1) if (!list[i] || !list[i].timberCart) parts.push(wallKey(list[i]));
+    const sprite = remember(layerCache, parts.join('|'), 24, () => {
+      const surface = scratchCanvas(W, H);
+      const g = surface.getContext('2d');
+      for (let i = 0; i < list.length; i += 1) {
+        if (!list[i] || list[i].timberCart) continue;
+        wall(g, list[i], !!(openingId && list[i].id === openingId));
+      }
+      return surface;
+    });
+    c.drawImage(sprite, 0, 0);
+  }
+  function paintTimberWalls(c, walls) {
+    const list = values(walls).filter(w => w && !w.timberCart);
+    const sprite = remember(layerCache, 't|' + list.map(wallKey).join('|'), 24, () => {
+      const surface = scratchCanvas(W, H);
+      const g = surface.getContext('2d');
+      list.forEach(w => timberWall(g, w));
+      return surface;
+    });
+    c.drawImage(sprite, 0, 0);
+  }
+  function paintProp(c, p, time) {
+    const kind = p.kind || p.type || 'crate';
+    const busy = p.thrown || p.carriedBy || p.lit || num(p.fuse) > 0 || kind === 'core' || kind === 'relic' || kind === 'loot' || kind === 'gem' || (num(p.hp) > 0 && num(p.maxHp) > num(p.hp));
+    if (busy || p.eventSeal) { prop(c, p, time); return; }
+    const radius = Math.max(16, num(p.r, 16));
+    const size = Math.ceil(radius * 2 + 48);
+    const key = ['p', kind, p.charges === 0 ? 0 : 1, Math.round(radius), size].join(':');
+    const sprite = remember(propCache, key, 32, () => {
+      const surface = scratchCanvas(size, size);
+      prop(surface.getContext('2d'), Object.assign({}, p, { x: size / 2, y: size / 2 + 8 }), 0);
+      return surface;
+    });
+    c.drawImage(sprite, Math.round(num(p.x) - size / 2), Math.round(num(p.y) - size / 2 - 8));
   }
   function paintAnchored(c, scale, x, y, fn) {
     if (!(scale > 1.02)) { fn(); return; }
@@ -4134,7 +4230,7 @@
     const poses = enemyMotionFrame(c, state, options);
     openWorld(c, options.view); rect(c, 0, 0, W, H, '#23382e'); c.save(); c.translate(motion.x, motion.y);
     timberFloor(c, state); lanternAuras(c, state);
-    values(state.walls).filter(w => !w.timberCart).forEach(w => timberWall(c, w));
+    paintTimberWalls(c, state.walls);
     values(state.doors).forEach(d => door(c, d, time)); values(state.portals).forEach(p => portal(c, p, time)); values(state.portals).forEach(p => portalDestination(c, p, state, localId));
     values(state.fountains).forEach(f => fountain(c, f, time)); values(state.fires).forEach(f => fire(c, f, time)); values(state.pickups).forEach(p => pickup(c, p, time));
     for (const [x, y] of [[77, 53], [883, 53], [77, 553], [883, 553]]) lantern(c, x, y, still ? 0 : time, .85);
@@ -4142,7 +4238,7 @@
     values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
     const sprites = [
       ...values(state.decoys).map(d => ({ y: num(d.y), draw: () => decoy(c, d, time) })),
-      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
+      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => paintProp(c, p, time) })),
       ...values(state.walls).filter(w => w.timberCart).map(w => ({ y: num(w.y) + num(w.h) / 2, draw: () => timberCart(c, w, state) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => timberInteractable(c, item, time, state, localId, still) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => e.timber ? timberBoss(c, e, state, events, still) : timberGuard(c, e, time, poses.get(e.id)) })),
@@ -4178,7 +4274,7 @@
     chapterFloor(c, state, time, still, trainEndingAge);
     expeditionFloor(c, state, time, still);
     lanternAuras(c, state);
-    values(state.walls).forEach(w => wall(c, w, coreRoom && w.id === 'core-pillar-west'));
+    paintWalls(c, state.walls, coreRoom ? 'core-pillar-west' : '');
     if (ending) chapterEndingLight(c, ending);
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
@@ -4205,7 +4301,7 @@
       ...(train && state.chapter.cart?.roomIndex === state.room.index ? [{ y: num(state.chapter.cart.y) + 9,
         draw: () => trainCar(c, state, enemyTime, localId, still, viewTop) }] : []),
       ...(tao ? [{ y: tao.y, draw: () => chapterEndingCivilian(c, tao.x, tao.y, 'helper', tao.gait) }] : []),
-      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => prop(c, p, time) })),
+      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => paintProp(c, p, time) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
       ...enemies.map(e => ({ y: e.y, draw: () => {
         const pose = enemyPoses.get(e.id);
@@ -4277,9 +4373,7 @@
       alpha(c, Math.sin(phase * Math.PI) * .034,
         () => ellipse(c, 705 + Math.sin(phase * 3 + i) * 11, 346 - phase * 66, 10 + phase * 12, 6 + phase * 10, '#b8b19a'));
     }
-    const vignette = c.createRadialGradient(480, 300, 200, 480, 300, 590);
-    vignette.addColorStop(0, '#071a2300'); vignette.addColorStop(.75, '#071a2315'); vignette.addColorStop(1, '#071a2399');
-    c.fillStyle = vignette; c.fillRect(0, 0, W, H);
+    paintVignette(c, 'vignette:preview', '#071a2300', '#071a2315', '#071a2399');
   }
 
   function preview(c, profile = {}) {

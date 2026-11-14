@@ -5590,16 +5590,154 @@
     }
     return patch;
   }
-  function applySync(state, patch) {
+  function sameSync(a, b) {
+    if (Object.is(a, b)) return true;
+    if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') return false;
+    if (Array.isArray(a) || Array.isArray(b)) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+      for (var i = 0; i < a.length; i += 1) if (!sameSync(a[i], b[i])) return false;
+      return true;
+    }
+    var aKeys = Object.keys(a), bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (var k = 0; k < aKeys.length; k += 1) {
+      if (!Object.prototype.hasOwnProperty.call(b, aKeys[k]) || !sameSync(a[aKeys[k]], b[aKeys[k]])) return false;
+    }
+    return true;
+  }
+  function entityId(item) {
+    return !!item && typeof item === 'object' && !Array.isArray(item) && (typeof item.id === 'string' || typeof item.id === 'number');
+  }
+  function isIdDiff(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    var keys = Object.keys(value);
+    return keys.length === 2 && Object.prototype.hasOwnProperty.call(value, 'ids') && Object.prototype.hasOwnProperty.call(value, 'u') && Array.isArray(value.ids) && Array.isArray(value.u);
+  }
+  function isReplace(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && Object.prototype.hasOwnProperty.call(value, '~');
+  }
+  function diffObject(base, next) {
+    var out = {}, changed = false, key;
+    for (key in next) {
+      if (!Object.prototype.hasOwnProperty.call(next, key)) continue;
+      if (!Object.prototype.hasOwnProperty.call(base, key)) { out[key] = next[key]; changed = true; continue; }
+      var child = diffAny(base[key], next[key]);
+      if (child !== undefined) { out[key] = child; changed = true; }
+    }
+    for (key in base) {
+      if (Object.prototype.hasOwnProperty.call(base, key) && !Object.prototype.hasOwnProperty.call(next, key)) {
+        out[key] = null; changed = true;
+      }
+    }
+    return changed ? out : undefined;
+  }
+  function diffList(base, next) {
+    var i;
+    if (!next.every(entityId) || (base.length && !base.every(entityId))) return next;
+    var baseMap = Object.create(null);
+    for (i = 0; i < base.length; i += 1) baseMap[base[i].id] = base[i];
+    var ids = new Array(next.length), updates = [], allFull = true;
+    for (i = 0; i < next.length; i += 1) {
+      ids[i] = next[i].id;
+      var prev = baseMap[next[i].id];
+      if (!prev) { updates.push(next[i]); continue; }
+      var child = diffObject(prev, next[i]);
+      if (child === undefined) { allFull = false; continue; }
+      if (isReplace(child)) updates.push(child['~']);
+      else { child.id = next[i].id; updates.push(child); allFull = false; }
+    }
+    var sameIds = base.length === next.length;
+    if (sameIds) for (i = 0; i < ids.length; i += 1) if (ids[i] !== base[i].id) { sameIds = false; break; }
+    if (sameIds && !updates.length) return undefined;
+    if (allFull && updates.length === next.length) return next;
+    return { ids: ids, u: updates };
+  }
+  function diffAny(base, next) {
+    if (sameSync(base, next)) return undefined;
+    if (Array.isArray(next) || Array.isArray(base)) {
+      if (!Array.isArray(next) || !Array.isArray(base)) return { '~': next };
+      return diffList(base, next);
+    }
+    if (next && typeof next === 'object' && base && typeof base === 'object') return diffObject(base, next);
+    return next;
+  }
+  // Hot fields since the last full snapshot. Unchanged cold data (walls, doors,
+  // portals, props, mission, …) is omitted. A lost packet is harmless: the next
+  // patch is still relative to that same snapshot, not to the dropped one.
+  var DIFF_PARTIAL = { players: 1, enemies: 1, bullets: 1, props: 1, particles: 1, events: 1, combatEvents: 1, companions: 1, decoys: 1, pickups: 1, fires: 1, interactables: 1, portals: 1, doors: 1, switches: 1, walls: 1 };
+  function syncBaseline(s) { return syncPatch(s, false); }
+  function syncDiff(s, base) {
+    var next = syncPatch(s, false);
+    if (!base || typeof base !== 'object') return next;
+    var patch = {}, i, key;
+    for (i = 0; i < SYNC_KEYS.length; i += 1) {
+      key = SYNC_KEYS[i];
+      // Room membership rides the full snapshot. A diff must not move someone.
+      if (key === 'playerRooms') continue;
+      if (!Object.prototype.hasOwnProperty.call(next, key)) {
+        if (Object.prototype.hasOwnProperty.call(base, key)) patch[key] = null;
+        continue;
+      }
+      if (!Object.prototype.hasOwnProperty.call(base, key)) { patch[key] = next[key]; continue; }
+      if (sameSync(base[key], next[key])) continue;
+      if (DIFF_PARTIAL[key]) {
+        var child = diffAny(base[key], next[key]);
+        if (child !== undefined) patch[key] = child;
+      } else patch[key] = next[key];
+    }
+    return patch;
+  }
+  function applyAny(base, patch) {
+    if (isReplace(patch)) return clone(patch['~']);
+    if (isIdDiff(patch)) return applyIdDiff(base, patch);
+    if (Array.isArray(patch) || patch === null || typeof patch !== 'object') return patch && typeof patch === 'object' ? clone(patch) : patch;
+    if (!base || typeof base !== 'object' || Array.isArray(base)) return clone(patch);
+    var out = clone(base), key;
+    for (key in patch) {
+      if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+      out[key] = applyAny(out[key], patch[key]);
+    }
+    return out;
+  }
+  function applyIdDiff(base, patch) {
+    var map = Object.create(null), updates = Object.create(null), list = Array.isArray(base) ? base : [], i, out = [];
+    for (i = 0; i < list.length; i += 1) if (list[i] && list[i].id != null) map[list[i].id] = list[i];
+    for (i = 0; i < patch.u.length; i += 1) if (patch.u[i] && patch.u[i].id != null) updates[patch.u[i].id] = patch.u[i];
+    for (i = 0; i < patch.ids.length; i += 1) {
+      var id = patch.ids[i], update = updates[id], prev = map[id];
+      if (!update) out.push(prev ? clone(prev) : null);
+      else if (!prev || isReplace(update)) out.push(clone(isReplace(update) ? update['~'] : update));
+      else out.push(applyAny(prev, update));
+    }
+    return out;
+  }
+  function applySync(state, patch, base) {
     if (!state || !patch || typeof patch !== 'object') return state;
-    for (var i = 0; i < SYNC_KEYS.length; i += 1) {
-      var key = SYNC_KEYS[i];
-      if (Object.prototype.hasOwnProperty.call(patch, key)) state[key] = patch[key];
+    var i, key;
+    if (!base) {
+      for (i = 0; i < SYNC_KEYS.length; i += 1) {
+        key = SYNC_KEYS[i];
+        if (Object.prototype.hasOwnProperty.call(patch, key)) state[key] = patch[key];
+      }
+      return state;
+    }
+    for (i = 0; i < SYNC_KEYS.length; i += 1) {
+      key = SYNC_KEYS[i];
+      var hasBase = Object.prototype.hasOwnProperty.call(base, key);
+      var hasPatch = Object.prototype.hasOwnProperty.call(patch, key);
+      if (!hasBase && !hasPatch) continue;
+      if (!hasPatch) state[key] = clone(base[key]);
+      else state[key] = applyAny(hasBase ? base[key] : undefined, patch[key]);
     }
     return state;
+  }
+  function expandSync(base, patch) {
+    var holder = {};
+    applySync(holder, patch || {}, base || {});
+    return holder;
   }
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource };
+    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource };
 });

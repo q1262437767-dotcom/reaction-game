@@ -107,6 +107,20 @@ test('the rotate overlay is only a dismissible portrait hint', () => {
   assert.equal(L.portraitHintVisible({ handheld: true, portrait: true, runActive: false, dismissed: false }), false);
 });
 
+test('the joystick ignores the inner 12% and keeps the thumb graphic', () => {
+  assert.equal(L.STICK_DEADZONE, 0.12);
+  const still = L.stickOutput(2, 1, 40, 0.12);
+  assert.equal(still.x, 0);
+  assert.equal(still.y, 0);
+  assert.ok(still.knobX !== 0 || still.knobY !== 0);
+  const full = L.stickOutput(40, 0, 40, 0.12);
+  assert.ok(Math.abs(full.x - 1) < 1e-9);
+  assert.equal(full.y, 0);
+  const mid = L.stickOutput(20, 0, 40, 0.12);
+  assert.ok(mid.x > 0.35 && mid.x < 0.5);
+  assert.equal(L.stickOutput(0, 0, 40).x, 0);
+});
+
 test('a safe-area inset still leaves the portrait playfield on screen', () => {
   const band = L.portraitPlayBand(390, 844, { top: 47, right: 0, bottom: 34, left: 0 });
   assert.ok(band.top >= 47 + 64);

@@ -2,6 +2,11 @@
 -- Re-running preserves saves. Only this game's table, policies and RPC are changed.
 -- Updates against an existing row reject regressions and single-save spikes.
 -- The first insert (expected revision 0) still accepts any well-shaped profile.
+--
+-- Fresh database: this file is the complete schema. It is equivalent to applying
+-- every historical upgrade-*.sql in order. Do not run those upgrade files after
+-- this script. A database that already has the live functions does not need any
+-- new SQL; the upgrade files stay in the repo only as history.
 begin;
 
 create table if not exists public.ruins_saves (

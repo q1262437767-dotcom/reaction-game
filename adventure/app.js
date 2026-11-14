@@ -10,6 +10,9 @@
   const HUNT_TUTORIAL_STORE = 'ruins-squad-hunt-tutorial-v1';
   const WEAPONS_TUTORIAL_STORE = 'ruins-squad-weapons-tutorial-v1';
   const TOUCH_STORE = 'ruins-squad-touch-controls-v1';
+  const AUDIO_STORE = 'ruins-squad-audio-v1';
+  const HAPTIC_STORE = 'ruins-squad-haptics-v1';
+  const JOYSTICK_STORE = 'ruins-squad-joystick-v1';
   const MELEE_STORE = 'ruins-squad-melee-choice-v1';
   const HUD_STORE = L.HUD_LANDSCAPE;
   let touchPreference = readTouchPreference(), touchSeen = false, joystickId = null;
@@ -31,13 +34,17 @@
   const netMeters = { full: 0, sync: 0, input: 0, fullBytes: 0, syncBytes: 0, inputBytes: 0, windowStart: 0 };
   let last = 0, accumulator = 0, lastHud = 0, toastTimer, dialogPaused = false;
   let chapterNotesKey = null;
-  let muted = false, audio = null, soundLast = 0, uiSoundAt = -Infinity, resultNext = null;
+  let muted = false, volume = 1, audio = null, soundLast = 0, uiSoundAt = -Infinity, resultNext = null;
+  let hapticsOn = true, floatingJoystick = false;
+  readAudioPreference();
+  hapticsOn = readHapticsPreference();
+  floatingJoystick = readJoystickMode() === 'float';
   const heardEvents = new Set(), soundNodes = new Set(), soundAt = new Map(), chapterNotesSeen = new Set(), chapterMomentsSeen = new Set();
   const keys = new Set(), mouse = { x: 650, y: 300, down: false, guard: false, active: false };
   const touch = { mx: 0, my: 0, shoot: false, dash: false, guard: false, interact: false, switchWeapon: false };
   let dashPulse = false, guardPulse = false, interactPulse = false, switchPulse = false;
   let playFullscreen = false, orientationLocked = false, rotateHold = false, rotateAttempt = 0, portraitHintDismissed = readPortraitHint();
-  let playView = null;
+  let playView = null, playLayoutDirty = true, playMetrics = null, hostSyncBase = null, guestSyncBase = null;
   let tutorialPending = false, remoteTutorialPending = false, rhythmTutorial = false, relayTutorial = false, huntTutorial = false;
   let menuScreen = 'title';
   let homeAccountReturn = false;
@@ -107,6 +114,34 @@
     try { const value = localStorage.getItem(TOUCH_STORE); return ['auto', 'show', 'hide'].includes(value) ? value : 'auto'; }
     catch (_) { return 'auto'; }
   }
+  function hapticsSupported() {
+    return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+  }
+  function readAudioPreference() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(AUDIO_STORE) || 'null');
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+      muted = raw.muted === true;
+      const level = Number(raw.volume);
+      if (Number.isFinite(level)) volume = Math.max(0, Math.min(1, level));
+    } catch (_) { /* Keep the defaults for this page. */ }
+  }
+  function writeAudioPreference() {
+    try { localStorage.setItem(AUDIO_STORE, JSON.stringify({ muted: muted, volume: volume })); }
+    catch (_) { /* The choice stays for this page. */ }
+  }
+  function readHapticsPreference() {
+    try {
+      const value = localStorage.getItem(HAPTIC_STORE);
+      if (value === '0') return false;
+      if (value === '1') return true;
+    } catch (_) { /* Fall through to the device default. */ }
+    return hapticsSupported();
+  }
+  function readJoystickMode() {
+    try { return localStorage.getItem(JOYSTICK_STORE) === 'float' ? 'float' : 'fixed'; }
+    catch (_) { return 'fixed'; }
+  }
   function readMeleeChoice() {
     try { return localStorage.getItem(MELEE_STORE) === 'spear' ? 'spear' : 'blade'; }
     catch (_) { return 'blade'; }
@@ -150,7 +185,9 @@
   }
   function mapSpace() {
     const rect = canvas.getBoundingClientRect();
-    if (handheldMapActive() && canvas.width > 0 && canvas.height > 0) return { w: canvas.width, h: canvas.height, rect };
+    // Anchors stay in camera pixels. The bitmap may be a device-pixel multiple.
+    if (handheldMapActive() && playView && playView.w > 0 && playView.h > 0) return { w: playView.w, h: playView.h, rect };
+    if (handheldMapActive() && canvas.width > 0 && canvas.height > 0 && !(window.devicePixelRatio > 1)) return { w: canvas.width, h: canvas.height, rect };
     const cssW = Math.max(1, rect.width || window.innerWidth || 960);
     const cssH = Math.max(1, rect.height || window.innerHeight || 600);
     return { w: 960, h: Math.round(clampNum(960 * cssH / cssW, 280, 600)), rect: rect.width ? rect : { left: 0, top: 0, width: cssW, height: cssH } };
@@ -174,6 +211,7 @@
     const width = L.MAP_W * scale, height = L.MAP_H * scale;
     return { scale, anchorX, anchorY, width, height, left: anchorX - width, top: anchorY, rect };
   }
+  let mapPaintCache = {};
   function mapPaintOptions() {
     if (!handheldMapActive()) return {};
     const geo = mapGeometry(mapSpace());
@@ -214,6 +252,7 @@
       wrap.style.removeProperty('--hint-bottom');
     }
     if (hudEditing) placeMapEditor();
+    mapPaintCache = mapPaintOptions();
   }
   function commitHudLayout() {
     const round = (value, places) => { const factor = 10 ** places; return Math.round(value * factor) / factor; };
@@ -266,6 +305,7 @@
     $('hud-editor').hidden = false;
     updateTouchControls();
     applyHudLayout();
+    paintJoystickMode();
     $('hud-editor-done').focus();
   }
   function closeHudEditor(options) {
@@ -275,6 +315,7 @@
     $('game-wrap').setAttribute('data-hud-edit', 'false');
     $('hud-editor').hidden = true;
     applyHudLayout();
+    paintJoystickMode();
     commitHudLayout();
     updateTouchControls();
     if (options && options.silent) return;
@@ -465,15 +506,19 @@
   function updatePlayChrome() {
     const handheld = isHandheldViewport();
     const portrait = isPortraitViewport();
+    const activeFullscreen = !!getFullscreenElement();
+    const hintOn = L.portraitHintVisible({
+      handheld: handheld, portrait: portrait, runActive: runNeedsLandscape(), dismissed: portraitHintDismissed
+    });
+    const chromeKey = [handheld, portrait, activeFullscreen, hintOn, playFullscreen, hudOrientation].join('|');
+    if (chromeKey === updatePlayChrome.key) return;
+    updatePlayChrome.key = chromeKey;
     document.body.setAttribute('data-handheld', handheld ? 'true' : 'false');
     document.body.setAttribute('data-portrait', handheld && portrait ? 'true' : 'false');
-    const activeFullscreen = !!getFullscreenElement();
-    if (playFullscreen && !activeFullscreen) { playFullscreen = false; orientationLocked = false; }
+    if (playFullscreen && !activeFullscreen) { playFullscreen = false; orientationLocked = false; updatePlayChrome.key = ''; }
     // Portrait stays playable. The hint only suggests turning sideways.
     rotateHold = false;
-    setPortraitHint(L.portraitHintVisible({
-      handheld: handheld, portrait: portrait, runActive: runNeedsLandscape(), dismissed: portraitHintDismissed
-    }));
+    setPortraitHint(hintOn);
     syncHudOrientation();
     const button = $('fullscreen-game');
     if (!button) return;
@@ -500,43 +545,76 @@
     root.style.setProperty('--portrait-play-bottom', band.bottom + 'px');
     return band;
   }
-  function resizePlayBuffer(width, height) {
-    const nextW = Math.max(1, Math.round(width)), nextH = Math.max(1, Math.round(height));
-    if (canvas.width !== nextW || canvas.height !== nextH) { canvas.width = nextW; canvas.height = nextH; }
+  function canvasPixelScale(cssW, cssH) {
+    const raw = window.devicePixelRatio || 1;
+    if (!(raw > 1.2) || !(cssW > 0) || !(cssH > 0)) return 1;
+    // A 3x phone does not need a 3x bitmap. Cap the buffer so low-end GPUs stay comfortable.
+    let scale = Math.min(2, raw);
+    const cap = 1280 * 800;
+    if (cssW * scale * cssH * scale > cap) scale = Math.max(1, Math.sqrt(cap / (cssW * cssH)));
+    return scale < 1.2 ? 1 : scale;
   }
-  function syncPlayCanvas() {
+  function resizePlayBuffer(cssW, cssH) {
+    const scale = canvasPixelScale(cssW, cssH);
+    const nextW = Math.max(1, Math.round(cssW * scale)), nextH = Math.max(1, Math.round(cssH * scale));
+    if (canvas.width !== nextW || canvas.height !== nextH) { canvas.width = nextW; canvas.height = nextH; }
+    return scale;
+  }
+  function markPlayLayout() { playLayoutDirty = true; }
+  function measurePlayCanvas() {
     const handheld = isHandheldViewport();
+    const portrait = handheld && isPortraitViewport();
     document.body.setAttribute('data-handheld', handheld ? 'true' : 'false');
-    document.body.setAttribute('data-portrait', handheld && isPortraitViewport() ? 'true' : 'false');
+    document.body.setAttribute('data-portrait', portrait ? 'true' : 'false');
     const band = applyPortraitBand();
-    const player = state && state.players && state.players[localId()];
+    let mode = 'desktop', cssW = 960, cssH = 600;
     if (band) {
       const rect = canvas.getBoundingClientRect();
-      const cssW = Math.max(1, rect.width || band.width), cssH = Math.max(1, rect.height || band.height);
+      cssW = Math.max(1, rect.width || band.width);
+      cssH = Math.max(1, rect.height || band.height);
+      mode = 'portrait';
+    } else if (handheld && state && $('start-screen').hidden) {
+      const rect = canvas.getBoundingClientRect();
+      cssW = Math.max(1, rect.width);
+      cssH = Math.max(1, rect.height);
+      mode = 'landscape';
+    } else {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 40 && rect.height > 40) { cssW = rect.width; cssH = rect.height; }
+    }
+    const scale = canvasPixelScale(cssW, cssH);
+    if (mode === 'desktop' && scale === 1) {
+      if (canvas.width !== 960 || canvas.height !== 600) { canvas.width = 960; canvas.height = 600; }
+    } else resizePlayBuffer(cssW, cssH);
+    playMetrics = { mode: mode, cssW: cssW, cssH: cssH, scale: scale };
+    playLayoutDirty = false;
+    applyHudLayout();
+  }
+  function syncPlayCanvas() {
+    if (playLayoutDirty || !playMetrics) measurePlayCanvas();
+    const player = state && state.players && state.players[localId()];
+    if (!playMetrics || playMetrics.mode === 'desktop' && playMetrics.scale === 1) {
+      playView = null;
+      return;
+    }
+    if (playMetrics.mode === 'portrait') {
       const focusX = player && Number.isFinite(player.x) ? player.x : 480;
       const focusY = player && Number.isFinite(player.y) ? player.y : 300;
-      const view = L.portraitPlayView(cssW, cssH, focusX, focusY);
-      resizePlayBuffer(view.bufferW, view.bufferH);
+      const view = L.portraitPlayView(playMetrics.cssW, playMetrics.cssH, focusX, focusY);
       playView = { x: view.x, y: view.y, w: view.w, h: view.h };
-      applyHudLayout();
       return;
     }
-    const handheldPlay = isHandheldViewport() && !isPortraitViewport() && state && $('start-screen').hidden;
-    if (!handheldPlay) {
-      playView = null;
-      resizePlayBuffer(960, 600);
+    if (playMetrics.mode === 'landscape') {
+      const focusY = player && Number.isFinite(player.y) ? player.y : 300;
+      const view = L.landscapePlayView(playMetrics.cssW, playMetrics.cssH, focusY);
+      playView = { x: view.x, y: view.y, w: view.w, h: view.h };
       return;
     }
-    const rect = canvas.getBoundingClientRect();
-    const cssW = Math.max(1, rect.width), cssH = Math.max(1, rect.height);
-    const focusY = player && Number.isFinite(player.y) ? player.y : 300;
-    const view = L.landscapePlayView(cssW, cssH, focusY);
-    resizePlayBuffer(view.bufferW, view.bufferH);
-    playView = { x: view.x, y: view.y, w: view.w, h: view.h };
+    playView = { x: 0, y: 0, w: 960, h: 600 };
   }
   function playUiScale() {
     if (!isHandheldViewport() || isPortraitViewport()) return 1;
-    const width = canvas.getBoundingClientRect().width;
+    const width = playMetrics ? playMetrics.cssW : 0;
     if (!(width > 80)) return 1;
     const shown = width / 960;
     if (shown >= 0.95) return 1;
@@ -547,9 +625,13 @@
   }
   function updateTouchControls() {
     const enabled = touchPreference === 'show' || touchPreference === 'auto' && (supportsTouch() || isHandheldViewport());
-    $('game-wrap').setAttribute('data-touch-controls', String(enabled || hudEditing));
-    $('touch-controls').hidden = !(hudEditing || (enabled && touchGameActive()));
+    const shown = hudEditing || (enabled && touchGameActive());
     const label = { auto: '自动', show: '显示', hide: '隐藏' }[touchPreference];
+    const touchKey = [enabled || hudEditing, shown, label, canDragHud(), hudEditing].join('|');
+    if (touchKey === updateTouchControls.key) return;
+    updateTouchControls.key = touchKey;
+    $('game-wrap').setAttribute('data-touch-controls', String(enabled || hudEditing));
+    $('touch-controls').hidden = !shown;
     $('settings-touch').textContent = '触屏按钮 · ' + label;
     $('settings-touch').setAttribute('aria-label', `触屏按钮：${label}；点击切换显示方式`);
     updateHudSettingsLabel();
@@ -564,6 +646,7 @@
     dashPulse = guardPulse = interactPulse = switchPulse = false;
     joystickId = null; touchPointers.clear();
     $('joystick-stick').style.transform = 'translate(0px,0px)';
+    clearFloatingStick();
     remoteInput = {};
   }
   function showMenu(screen) {
@@ -693,14 +776,20 @@
     if (soundAt.has(channel) && time - soundAt.get(channel) < interval) return false;
     soundAt.set(channel, time); return true;
   }
+  function masterLevel() { return muted ? 0 : Math.max(0, Math.min(1, volume)); }
+  function buzz(pattern) {
+    if (!hapticsOn || typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
+    try { navigator.vibrate(pattern); } catch (_) { /* This device does not vibrate. */ }
+  }
   function tone(frequency, duration, volume, type, delay, endFrequency) {
-    if (muted || !audio || audio.state !== 'running') return;
+    const level = masterLevel();
+    if (level <= 0 || !audio || audio.state !== 'running') return;
     try {
       const oscillator = audio.createOscillator(), gain = audio.createGain();
       const at = audio.currentTime + (delay || 0);
       oscillator.type = type || 'sine'; oscillator.frequency.setValueAtTime(frequency, at);
       if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, at + duration);
-      gain.gain.setValueAtTime(volume || 0.025, at);
+      gain.gain.setValueAtTime((volume || 0.025) * level, at);
       gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
       oscillator.connect(gain); gain.connect(audio.destination);
       oscillator.onended = () => { soundNodes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
@@ -743,6 +832,9 @@
       // Historical snapshots may contain an old cue: never play a late warning as a new beat.
       const age = Number.isFinite(event.time) ? Math.max(0, state.elapsed - event.time) : 0;
       if (age > .25 || paused || tutorialPending || remoteTutorialPending || hasDialog()) continue;
+      if (event.type === 'player-hit' && event.playerId === localId()) buzz(20);
+      else if (event.type === 'perfect-parry' || event.type === 'mikiri') buzz(12);
+      else if (event.type === 'posture-break' || event.type === 'weakpoint-open') buzz(26);
       if (event.type === 'rhythm-windup') {
         const remaining = Math.max(0, Math.min(3, event.duration || .8) - age);
         if (remaining < .07) continue;
@@ -1205,6 +1297,7 @@
     shutdownNet(); state = null; mode = 'solo'; paused = false; disconnected = false;
     finished = ''; runId = ''; resultNext = null; clearInput(); resetSounds(); closeDialogs();
     $('start-screen').hidden = false; $('pause-screen').hidden = true; $('end-screen').hidden = true;
+    hostSyncBase = null; guestSyncBase = null; markPlayLayout();
     $('interaction-hint').hidden = true; tutorialPending = false; $('tutorial-panel').hidden = true; updateCamp(); showMenu('title'); hud();
   }
   function newRunId() {
@@ -1243,9 +1336,12 @@
     clearChapterEnding(); runId = newRunId(); chapterEndingEligible = gameMode === 'chapter' && ['chapter1', 'chapter1_5'].includes(mission) ? runId : ''; finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; remotePaused = false; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
+    markPlayLayout();
     const partnerView = isCoop ? E.viewForPlayer(state, 'p2') : state;
+    const opening = E.snapshot(partnerView, true);
+    hostSyncBase = E.syncBaseline(JSON.parse(JSON.stringify(opening)));
     netRev = 1; netStamp = E.networkStamp(partnerView); linkageSent = E.linkageStamp(partnerView); lastFullSend = performance.now(); lastSend = 0; lastInputKey = '';
-    if (isCoop && !net.send({ type: 'start', state: E.snapshot(partnerView, true), runId, rev: netRev })) {
+    if (isCoop && !net.send({ type: 'start', state: opening, runId, rev: netRev })) {
       pause(true, false); toast('开局消息尚未送达，请稍后点“重新出发”。');
     }
     startTutorial(); primeChapterNarration(); enableAudio(); canvas.focus(); hud();
@@ -1259,6 +1355,7 @@
     runId = newRunId(); finished = ''; paused = false; disconnected = false; accumulator = 0;
     remoteInput = {}; remoteAt = 0; remoteSeq = -1; clearInput(); resetSounds();
     closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing'); displayPause();
+    markPlayLayout();
     startTutorial(); enableAudio(); canvas.focus(); hud();
   }
   function resultDetails(before, result) {
@@ -1338,6 +1435,7 @@
     state = null; finished = ''; runId = ''; paused = false; disconnected = false; resultNext = null;
     clearInput(); resetSounds(); closeDialogs(); tutorialPending = false; $('tutorial-panel').hidden = true;
     $('start-screen').hidden = false; $('end-screen').hidden = true; $('pause-screen').hidden = true;
+    markPlayLayout();
     $('difficulty-select').value = String(difficulty);
     if (gameMode === 'story' && C.MISSIONS.some(item => item.id === mission)) $('mission-select').value = mission;
     if (gameMode === 'chapter') $('chapter-select').value = C.CHAPTERS.concat(C.SECRETS).some(chapter => chapter.id === mission) ? mission : 'chapter1';
@@ -1892,28 +1990,40 @@
     }
     return true;
   }
-  function validSync(patch, current) {
+  function idDiff(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.ids) && Array.isArray(value.u) && Object.keys(value).length === 2;
+  }
+  function validSync(patch, current, base) {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
     const caps = { enemies: 100, bullets: 500, props: 80, particles: 200, walls: 100, doors: 30, portals: 30, fires: 30, switches: 30, pickups: 80, events: 40, combatEvents: 24, interactables: 30, decoys: 8, companions: 2 };
     for (const key of Object.keys(caps)) {
       const value = patch[key];
-      if (value === undefined) continue;
+      if (value === undefined || value === null) continue;
+      if (idDiff(value)) {
+        if (value.ids.length > caps[key] || value.u.length > caps[key] || value.u.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
+        continue;
+      }
       if (!Array.isArray(value) || value.length > caps[key] || value.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry))) return false;
+    }
+    let expanded = patch;
+    if (base) {
+      try { expanded = E.expandSync(base, patch); }
+      catch (_) { return false; }
     }
     if (patch.playerRooms !== undefined) {
       if (!validPlayerRooms({ ...current, playerRooms: patch.playerRooms }) ||
           !current.playerRooms || patch.playerRooms.p1 !== current.playerRooms.p1 || patch.playerRooms.p2 !== current.playerRooms.p2) return false;
     }
-    if (patch.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)) || !validRailBoss(enemy, current))) return false;
-    if (patch.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current))) return false;
+    if (expanded.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)) || !validRailBoss(enemy, current))) return false;
+    if (expanded.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current))) return false;
     if (railSection(current)) {
       const railView = { ...current };
       for (const key of ['chapter', 'mission', 'enemies', 'interactables', 'portals']) {
-        if (patch[key] !== undefined) railView[key] = patch[key];
+        if (expanded[key] !== undefined) railView[key] = expanded[key];
       }
       if (!validRailState(railView, (value, max) => Number.isFinite(value) && value >= 0 && value <= max)) return false;
     }
-    const players = patch.players;
+    const players = expanded.players;
     if (!players || typeof players !== 'object' || Array.isArray(players) || !players.p1 || !players.p2) return false;
     for (const id of ['p1', 'p2']) {
       const player = players[id];
@@ -1955,19 +2065,20 @@
     const stamp = E.networkStamp(view);
     const finishedRun = view.status !== 'playing';
     if (finishedRun && stamp === netStamp && lastFullSend) return;
-    const needFull = !netRev || stamp !== netStamp || (!finishedRun && now - lastFullSend >= 400);
+    const needFull = !netRev || !hostSyncBase || stamp !== netStamp || (!finishedRun && now - lastFullSend >= 1200);
     if (!needFull && now - lastSend < (hostBusy(now, view) ? 50 : 100)) return;
     if (needFull) {
-      const message = { type: 'state', state: E.snapshot(view, true), runId, rev: netRev + 1 };
+      const snap = E.snapshot(view, true);
+      const message = { type: 'state', state: snap, runId, rev: netRev + 1 };
       if (!net.send(message)) return;
+      hostSyncBase = E.syncBaseline(JSON.parse(JSON.stringify(snap)));
       netRev += 1; netStamp = stamp; linkageSent = E.linkageStamp(view); lastFullSend = now; lastSend = now;
       meterNet('full', message);
       return;
     }
-    const linkage = E.linkageStamp(view);
-    const message = { type: 'sync', runId, rev: netRev, room: view.room.index, state: E.syncPatch(view, linkage === linkageSent) };
+    const message = { type: 'sync', runId, rev: netRev, room: view.room.index, state: E.syncDiff(view, hostSyncBase) };
     if (!net.send(message)) return;
-    linkageSent = linkage; lastSend = now;
+    linkageSent = E.linkageStamp(view); lastSend = now;
     meterNet('sync', message);
   }
   function sendGuestInput(now, controlsReady) {
@@ -2012,14 +2123,15 @@
       if (state.mode === 'chapter') $('chapter-select').value = state.mission.id;
       remoteTutorialPending = ['relay', 'hunt'].includes(state.mode);
       clearInput(); resetSounds(); closeDialogs(); $('start-screen').hidden = true; $('end-screen').hidden = true; showMenu('playing');
+      guestSyncBase = E.syncBaseline(state); markPlayLayout();
       startTutorial(); primeChapterNarration(); displayPause(); canvas.focus(); hud();
     } else if (msg.type === 'state' && msg.runId === runId && Number.isInteger(msg.rev) && msg.rev >= netRev && validGuestState(msg.state)) {
       if (state && state.mode === 'chapter' && finished === runId && state.status !== msg.state.status) return;
       const roomChanged = state && state.room.index !== msg.state.room.index;
-      netRev = msg.rev; state = msg.state; settle();
+      netRev = msg.rev; state = msg.state; guestSyncBase = E.syncBaseline(state); settle();
       if (roomChanged) { clearInput(); resetSounds(); lastSend = 0; lastInputKey = ''; }
-    } else if (msg.type === 'sync' && msg.runId === runId && state && msg.rev === netRev && msg.room === state.room.index && finished !== runId && validSync(msg.state, state)) {
-      E.applySync(state, msg.state); settle();
+    } else if (msg.type === 'sync' && msg.runId === runId && state && guestSyncBase && msg.rev === netRev && msg.room === state.room.index && finished !== runId && validSync(msg.state, state, guestSyncBase)) {
+      E.applySync(state, msg.state, guestSyncBase); settle();
     }
     if (msg.type === 'pause' && msg.reason === 'tutorial') {
       if (msg.runId === runId && playing() && ['relay', 'hunt'].includes(state.mode) && typeof msg.paused === 'boolean') {
@@ -2230,10 +2342,49 @@
     else if (resultNext.kind === 'workshop') { const focusId = resultNext.focusId || 'unlock-scatter'; updateCamp(); openDialog('camp-dialog'); $(focusId).focus(); }
     else prepareResultMode(resultNext.gameMode, resultNext.mission);
   };
+  function paintAudioControls() {
+    const sound = $('settings-sound'), mute = $('mute-game'), slider = $('settings-volume');
+    if (sound) { sound.setAttribute('aria-pressed', String(muted)); sound.textContent = muted ? '声音 · 已关闭' : '声音 · 已开启'; }
+    if (mute) { mute.setAttribute('aria-pressed', String(muted)); mute.textContent = muted ? '×♪' : '♪'; }
+    if (slider && document.activeElement !== slider) slider.value = String(Math.round(volume * 100));
+  }
+  function paintHaptics() {
+    const button = $('settings-haptics');
+    if (!button) return;
+    const supported = hapticsSupported();
+    button.disabled = !supported;
+    button.setAttribute('aria-pressed', String(supported && hapticsOn));
+    button.textContent = !supported ? '震动 · 设备不支持' : hapticsOn ? '震动 · 开启' : '震动 · 关闭';
+  }
+  function paintJoystickMode() {
+    const wrap = $('game-wrap'), zone = $('stick-zone'), button = $('settings-joystick');
+    if (wrap) wrap.setAttribute('data-joystick', floatingJoystick ? 'float' : 'fixed');
+    if (zone) zone.hidden = !floatingJoystick || hudEditing;
+    if (!button) return;
+    button.setAttribute('aria-pressed', String(floatingJoystick));
+    button.textContent = floatingJoystick ? '摇杆 · 跟随手指' : '摇杆 · 固定';
+  }
   $('mute-game').onclick = () => {
     muted = !muted; if (muted) stopSounds(); enableAudio();
-    $('mute-game').setAttribute('aria-pressed', String(muted)); $('mute-game').textContent = muted ? '×♪' : '♪';
-    $('settings-sound').setAttribute('aria-pressed', String(muted)); $('settings-sound').textContent = muted ? '声音 · 已关闭' : '声音 · 已开启';
+    writeAudioPreference(); paintAudioControls();
+  };
+  $('settings-volume').addEventListener('input', () => {
+    const next = Number($('settings-volume').value);
+    if (!Number.isFinite(next)) return;
+    volume = Math.max(0, Math.min(1, next / 100));
+    if (volume > 0) muted = false;
+    writeAudioPreference(); paintAudioControls(); enableAudio();
+  });
+  $('settings-haptics').onclick = () => {
+    if (!hapticsSupported()) return;
+    hapticsOn = !hapticsOn;
+    try { localStorage.setItem(HAPTIC_STORE, hapticsOn ? '1' : '0'); } catch (_) { /* Keep the choice for this page. */ }
+    paintHaptics(); if (hapticsOn) buzz(16);
+  };
+  $('settings-joystick').onclick = () => {
+    floatingJoystick = !floatingJoystick;
+    try { localStorage.setItem(JOYSTICK_STORE, floatingJoystick ? 'float' : 'fixed'); } catch (_) { /* Keep the choice for this page. */ }
+    clearInput(); paintJoystickMode();
   };
   const menuButtons = {
     title: ['menu-play', 'menu-coop', 'menu-camp', 'menu-settings'],
@@ -2241,7 +2392,7 @@
     challenges: ['mode-hunt', 'mode-relay', 'mode-legacy', 'menu-challenges-back'],
     loadout: ['solo-start', 'loadout-coop', 'open-coop', 'menu-loadout-back']
   };
-  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'home-account', 'resume-game', 'pause-hud', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-hud', 'settings-help', 'settings-account', 'close-settings', 'hud-editor-done', 'hud-editor-reset', 'hud-sliders-reset'])];
+  const feedbackButtons = [...new Set([...Object.values(menuButtons).flat(), 'home-account', 'resume-game', 'pause-hud', 'restart-game', 'pause-settings', 'back-camp', 'end-restart', 'end-camp', 'end-next-action', 'settings-sound', 'settings-touch', 'settings-haptics', 'settings-joystick', 'settings-hud', 'settings-help', 'settings-account', 'close-settings', 'hud-editor-done', 'hud-editor-reset', 'hud-sliders-reset'])];
   feedbackButtons.forEach(id => {
     $(id).addEventListener('click', () => menuSound('select'));
     $(id).addEventListener('pointerenter', () => menuSound('hover'));
@@ -2313,10 +2464,14 @@
   window.addEventListener('pointerdown', event => {
     if (event.pointerType === 'touch' && !touchSeen) { touchSeen = true; updateTouchControls(); }
   }, true);
-  window.addEventListener('resize', () => { hudDrag = null; clearInput(); updateTouchControls(); updatePlayChrome(); applyHudLayout(); });
-  window.addEventListener('orientationchange', () => updatePlayChrome());
-  document.addEventListener('fullscreenchange', () => updatePlayChrome());
-  document.addEventListener('webkitfullscreenchange', () => updatePlayChrome());
+  window.addEventListener('resize', () => { hudDrag = null; clearInput(); updateTouchControls(); updatePlayChrome(); markPlayLayout(); });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', markPlayLayout);
+    window.visualViewport.addEventListener('scroll', markPlayLayout);
+  }
+  window.addEventListener('orientationchange', () => { markPlayLayout(); updatePlayChrome(); });
+  document.addEventListener('fullscreenchange', () => { markPlayLayout(); updatePlayChrome(); });
+  document.addEventListener('webkitfullscreenchange', () => { markPlayLayout(); updatePlayChrome(); });
   try { if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => updatePlayChrome()); } catch (_) {}
   for (const query of ['(any-pointer: coarse)', '(pointer: coarse)']) {
     try {
@@ -2357,10 +2512,27 @@
   function moveStick(event) {
     const bounds = joystick.getBoundingClientRect(), layout = joystick.offsetWidth || bounds.width || 1;
     const visualScale = bounds.width / layout || 1, radius = bounds.width * .32;
-    const x = event.clientX - bounds.left - bounds.width / 2, y = event.clientY - bounds.top - bounds.height / 2;
-    const length = Math.hypot(x, y), factor = Math.min(1, radius / (length || 1));
-    touch.mx = x * factor / radius; touch.my = y * factor / radius;
-    $('joystick-stick').style.transform = `translate(${x * factor / visualScale}px,${y * factor / visualScale}px)`;
+    const dx = event.clientX - bounds.left - bounds.width / 2, dy = event.clientY - bounds.top - bounds.height / 2;
+    const out = L.stickOutput(dx, dy, radius, L.STICK_DEADZONE);
+    touch.mx = out.x; touch.my = out.y;
+    $('joystick-stick').style.transform = `translate(${out.knobX / visualScale}px,${out.knobY / visualScale}px)`;
+  }
+  function placeFloatingStick(clientX, clientY) {
+    const box = isHandheldViewport() ? L.STICK_BASE : (Math.min(window.innerWidth, window.innerHeight) <= 650 ? 74 : 105);
+    const left = Math.max(4, Math.min(window.innerWidth - box - 4, clientX - box / 2));
+    const top = Math.max(4, Math.min(window.innerHeight - box - 4, clientY - box / 2));
+    joystick.style.left = left + 'px';
+    joystick.style.top = top + 'px';
+    joystick.style.bottom = 'auto';
+    joystick.style.right = 'auto';
+    joystick.dataset.floating = '1';
+  }
+  function clearFloatingStick() {
+    joystick.style.left = '';
+    joystick.style.top = '';
+    joystick.style.bottom = '';
+    joystick.style.right = '';
+    delete joystick.dataset.floating;
   }
   function bindHudTarget(el, kind) {
     if (!el) return;
@@ -2376,9 +2548,21 @@
   bindHudTarget(joystick, 'stick');
   bindHudTarget(document.querySelector('.touch-actions'), 'skills');
   bindHudTarget($('map-editor'), 'map');
-  joystick.addEventListener('pointerdown', event => { if (!touchGameActive() || touchPreference === 'hide' || joystickId !== null) return; event.preventDefault(); mouse.active = false; joystickId = event.pointerId; joystick.setPointerCapture(event.pointerId); moveStick(event); });
+  joystick.addEventListener('pointerdown', event => { if (floatingJoystick || !touchGameActive() || touchPreference === 'hide' || joystickId !== null) return; event.preventDefault(); mouse.active = false; joystickId = event.pointerId; joystick.setPointerCapture(event.pointerId); moveStick(event); });
+  const stickZone = $('stick-zone');
+  stickZone.addEventListener('pointerdown', event => {
+    if (!floatingJoystick || !touchGameActive() || touchPreference === 'hide' || joystickId !== null) return;
+    if (event.target.closest && event.target.closest('.touch-button, .touch-actions')) return;
+    event.preventDefault(); mouse.active = false; enableAudio();
+    placeFloatingStick(event.clientX, event.clientY);
+    joystickId = event.pointerId; stickZone.setPointerCapture(event.pointerId); moveStick(event);
+  });
+  stickZone.addEventListener('pointermove', event => { if (event.pointerId === joystickId && floatingJoystick && touchGameActive()) moveStick(event); });
+  stickZone.addEventListener('pointerup', releaseStick);
+  stickZone.addEventListener('pointercancel', releaseStick);
+  stickZone.addEventListener('lostpointercapture', releaseStick);
   joystick.addEventListener('pointermove', event => { if (event.pointerId === joystickId && touchGameActive()) moveStick(event); });
-  function releaseStick(event) { if (event.pointerId === joystickId) { joystickId = null; touch.mx = touch.my = 0; $('joystick-stick').style.transform = 'translate(0px,0px)'; } }
+  function releaseStick(event) { if (event.pointerId === joystickId) { joystickId = null; touch.mx = touch.my = 0; $('joystick-stick').style.transform = 'translate(0px,0px)'; clearFloatingStick(); } }
   joystick.addEventListener('pointerup', releaseStick); joystick.addEventListener('pointercancel', releaseStick); joystick.addEventListener('lostpointercapture', releaseStick);
   for (const action of ['shoot', 'dash', 'guard', 'interact', 'switchWeapon']) {
     const button = $('touch-' + (action === 'switchWeapon' ? 'switch' : action));
@@ -2425,17 +2609,37 @@
     for (const id of shown.slice(existing.length)) root.append(chapterNoteArticle(id));
     while (root.childElementCount > CHAPTER_NOTE_CAP) root.removeChild(root.firstElementChild);
   }
+  const BUFF_LABELS = Object.fromEntries(Object.entries(E.BUFFS).map(([id, buff]) => [id, buff.label]));
+  const hudDom = new Map();
+  function putText(id, value) {
+    const next = value == null ? '' : String(value);
+    if (hudDom.get(id) === next) return;
+    hudDom.set(id, next);
+    const el = $(id);
+    if (el) el.textContent = next;
+  }
+  function putAttr(id, name, value) {
+    const key = id + '\0' + name, next = String(value);
+    if (hudDom.get(key) === next) return;
+    hudDom.set(key, next);
+    const el = $(id);
+    if (el) el.setAttribute(name, next);
+  }
+  function putHidden(id, hidden) {
+    const el = $(id);
+    if (el && el.hidden !== hidden) el.hidden = hidden;
+  }
   function hud() {
     const p = state && state.players[localId()];
     const random = state && state.mode === 'random';
     const relay = state && state.mode === 'relay';
     const hunt = state && state.mode === 'hunt';
     const chapter = state && state.mode === 'chapter';
-    $('game-wrap').setAttribute('data-mode', state ? state.mode : selectedGameMode());
-    $('game-wrap').setAttribute('data-practice', String(!!(state && state.practice)));
+    putAttr('game-wrap', 'data-mode', state ? state.mode : selectedGameMode());
+    putAttr('game-wrap', 'data-practice', String(!!(state && state.practice)));
     if (tutorialPending && state && state.room.index !== 0) dismissTutorial();
-    $('tutorial-panel').hidden = !tutorialPending || !playing() || paused || hasDialog();
-    $('hud-stage').textContent = state ? state.room.name : '苔灯营地';
+    putHidden('tutorial-panel', !tutorialPending || !playing() || paused || hasDialog());
+    putText('hud-stage', state ? state.room.name : '苔灯营地');
     const core = relay && state.props.find(prop => prop.id === state.relay.coreId);
     let huntObjective = '';
     if (hunt) {
@@ -2450,13 +2654,13 @@
       } else if (state.hunt.lastSeenRoom != null) huntObjective = `上次目击：${state.rooms[state.hunt.lastSeenRoom].name}`;
       else huntObjective = '追踪逐迹巨兽';
     }
-    $('hud-objective').textContent = remoteTutorialPending && !tutorialPending ? '等待搭档准备好，一起出发' : hunt ? huntObjective : relay ? state.relay.delivered ? '炉芯已送达' : core && core.carriedBy ? core.carriedBy === localId() ? '炉芯在你手中 · 带回入口' : '搭档携带炉芯 · 掩护撤离' : `炉芯位于${state.rooms[state.relay.coreRoom].name}` : state ? state.objective : '独自探险，或邀请一位搭档';
-    $('hud-objective').hidden = false;
-    $('hud-health').textContent = p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6';
-    $('hud-dash').textContent = p && p.railStun > 0 ? `电晕 ${p.railStun.toFixed(1)}s` : p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪';
+    putText('hud-objective', remoteTutorialPending && !tutorialPending ? '等待搭档准备好，一起出发' : hunt ? huntObjective : relay ? state.relay.delivered ? '炉芯已送达' : core && core.carriedBy ? core.carriedBy === localId() ? '炉芯在你手中 · 带回入口' : '搭档携带炉芯 · 掩护撤离' : `炉芯位于${state.rooms[state.relay.coreRoom].name}` : state ? state.objective : '独自探险，或邀请一位搭档');
+    putHidden('hud-objective', false);
+    putText('hud-health', p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6');
+    putText('hud-dash', p && p.railStun > 0 ? `电晕 ${p.railStun.toFixed(1)}s` : p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪');
     const train = trainSection(state) ? state.chapter : null;
-    $('hud-loot').textContent = train?.unloaded ? '伤员已安置' : train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 修×${train.repairsLeft}` : `${camp.coins} 星屑`;
-    $('hud-loot-symbol').textContent = train ? '▣' : '◆';
+    putText('hud-loot', train?.unloaded ? '伤员已安置' : train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 修×${train.repairsLeft}` : `${camp.coins} 星屑`);
+    putText('hud-loot-symbol', train ? '▣' : '◆');
     const ally = state?.railAlly;
     const partnerId = localId() === 'p1' ? 'p2' : 'p1';
     const partnerRoom = state?.playerRooms?.[partnerId];
@@ -2464,51 +2668,68 @@
     const allyTasks = { investigate: '调查工棚', rendezvous: '站台会合', feeder: '打通配电廊', guard: '支援拨道场', rescue: '接应救援车', route: '一起探路', dispatch: '赶往调度室', signal: '前往冷却站', done: '任务完成' };
     const allyRoom = ally && Number.isInteger(ally.roomIndex) ? state.rooms[ally.roomIndex]?.name : '';
     const allyTask = ally?.taskReturn ? '赶去救你' : train?.unloaded ? '隔离炉支援' : train ? '守护救援车' : allyTasks[ally?.task] || '同行';
-    $('hud-team').textContent = ally ? (ally.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
+    putText('hud-team', ally ? (ally.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
       `阿禾 ${ally.hp} / ${ally.maxHp}${ally.task ? ' · ' + allyTask : ''}`) :
       separated ? `搭档 · ${state.rooms[partnerRoom].name}` :
       state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ?
-        (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险';
+        (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险');
     const rangedName = p && p.weapons.ranged === 'scatter' ? '散射枪' : '手枪';
     const meleeName = p && p.weapons.melee === 'spear' ? '长枪' : '短刃';
-    $('hud-melee').textContent = meleeName;
-    $('hud-ranged').textContent = rangedName + (p && p.rangedBroken ? ' · 已损坏' : '');
-    $('hud-melee').setAttribute('data-active', String(!!p && p.activeSlot === 'melee'));
-    $('hud-ranged').setAttribute('data-active', String(!!p && p.activeSlot === 'ranged'));
-    $('hud-ranged').setAttribute('data-broken', String(!!p && p.rangedBroken));
-    $('hud-quiet').hidden = !p || !p.sneaking;
-    const opening = p && !p.downed && state.enemies.filter(enemy => enemy.hp > 0 && enemy.weakTime > 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= 360).sort((a, b) => b.weakTime - a.weakTime)[0];
-    $('hud-opportunity').hidden = !opening || paused || tutorialPending || remoteTutorialPending || hasDialog() || !playing();
-    $('hud-opportunity').textContent = opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '';
-    const buffs = Object.fromEntries(Object.entries(E.BUFFS).map(([id, buff]) => [id, buff.label]));
-    $('route-progress').textContent = chapter ? `第一节 · 借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => buffs[id] || '').filter(Boolean).join(' / ') : ''}` : '';
-    if (chapter && state.chapter.id === 'chapter1_2') $('route-progress').textContent = `第二节 · 木场求援 · 记录 ${state.chapter.clues.length} / 2${state.chapter.workerFreed ? ' · 工人已脱困' : ''}`;
-    if (chapter && state.chapter.id === 'chapter1_3') $('route-progress').textContent = `第三节 · 借走的主芯 · 记录 ${state.chapter.clues.length} / 2${state.chapter.bossDefeated ? ' · 转车台已打通' : ''}`;
-    if (chapter && state.chapter.id === 'chapter1_4') $('route-progress').textContent = `第四节 · 断轨开路 · 记录 ${state.chapter.clues.length} / 2${state.chapter.gateOpened ? ' · 主轨闸已开' : ''}`;
+    putText('hud-melee', meleeName);
+    putText('hud-ranged', rangedName + (p && p.rangedBroken ? ' · 已损坏' : ''));
+    putAttr('hud-melee', 'data-active', String(!!p && p.activeSlot === 'melee'));
+    putAttr('hud-ranged', 'data-active', String(!!p && p.activeSlot === 'ranged'));
+    putAttr('hud-ranged', 'data-broken', String(!!p && p.rangedBroken));
+    putHidden('hud-quiet', !p || !p.sneaking);
+    let opening = null;
+    if (p && !p.downed && state && state.enemies) {
+      for (let i = 0; i < state.enemies.length; i += 1) {
+        const enemy = state.enemies[i];
+        if (!(enemy.hp > 0) || !(enemy.weakTime > 0) || Math.hypot(enemy.x - p.x, enemy.y - p.y) > 360) continue;
+        if (!opening || enemy.weakTime > opening.weakTime) opening = enemy;
+      }
+    }
+    putHidden('hud-opportunity', !opening || paused || tutorialPending || remoteTutorialPending || hasDialog() || !playing());
+    putText('hud-opportunity', opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '');
+    let route = chapter ? `第一节 · 借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => BUFF_LABELS[id] || '').filter(Boolean).join(' / ') : ''}` : '';
+    if (chapter && state.chapter.id === 'chapter1_2') route = `第二节 · 木场求援 · 记录 ${state.chapter.clues.length} / 2${state.chapter.workerFreed ? ' · 工人已脱困' : ''}`;
+    if (chapter && state.chapter.id === 'chapter1_3') route = `第三节 · 借走的主芯 · 记录 ${state.chapter.clues.length} / 2${state.chapter.bossDefeated ? ' · 转车台已打通' : ''}`;
+    if (chapter && state.chapter.id === 'chapter1_4') route = `第四节 · 断轨开路 · 记录 ${state.chapter.clues.length} / 2${state.chapter.gateOpened ? ' · 主轨闸已开' : ''}`;
     if (train?.unloaded) {
       const beat = { divert: '主芯分流', returner: '隔离炉 · 归炉者', relight: '返回车库点灯', complete: '归途灯已亮' }[train.phase];
-      $('route-progress').textContent = beat ? '第五节 · ' + beat : '第五节 · 末班车';
-    } else if (train) $('route-progress').textContent = `第五节 · 末班车 · ${state.rooms[train.cart.roomIndex].name}${train.phase === 'cooling' ? ' · 冷却 ' + Math.ceil(train.coolingLeft) + 's' : train.cart.moving ? ' · 行驶中' : ' · 停车'}`;
-    if (random && styleNames(state).length) $('route-progress').textContent = '流派 · ' + styleNames(state).join(' / ') + (state.difficulty === 2 ? ' · 险境' : '');
-    $('route-progress').hidden = !!(state && state.practice) || !$('route-progress').textContent;
+      route = beat ? '第五节 · ' + beat : '第五节 · 末班车';
+    } else if (train) route = `第五节 · 末班车 · ${state.rooms[train.cart.roomIndex].name}${train.phase === 'cooling' ? ' · 冷却 ' + Math.ceil(train.coolingLeft) + 's' : train.cart.moving ? ' · 行驶中' : ' · 停车'}`;
+    if (random && styleNames(state).length) route = '流派 · ' + styleNames(state).join(' / ') + (state.difficulty === 2 ? ' · 险境' : '');
+    putText('route-progress', route);
+    putHidden('route-progress', !!(state && state.practice) || !route);
     const hint = state && !paused && !finished ? (E.getHint ? E.getHint(state, localId()) : state.hint) : '';
-    $('interaction-hint').textContent = hint || ''; $('interaction-hint').hidden = !hint;
+    putText('interaction-hint', hint || '');
+    putHidden('interaction-hint', !hint);
     updateTouchControls();
     const storyLamp = !!(state && state.mode === 'chapter' && state.chapter && state.room && state.room.dark && !relay);
-    $('touch-interact').textContent = relay && p && p.carry === state.relay.coreId ? state.room.index === state.relay.extractionRoom && Math.hypot(p.x - 120, p.y - 300) < 76 ? '交' : '掷' : storyLamp ? '灯' : 'E';
-    $('touch-interact').setAttribute('aria-label', relay ? '拾取、投掷或交付炉芯' : storyLamp ? '点灭提灯，或与眼前的东西互动' : '互动');
-    $('touch-guard').setAttribute('aria-label', relay ? '接住炉芯、格挡与静步' : '格挡与静步');
-    $('touch-shoot').textContent = p && p.activeSlot === 'ranged' ? '射' : p && p.weapons.melee === 'spear' ? '刺' : '斩';
-    $('touch-switch').disabled = !p || p.rangedBroken;
-    $('touch-switch').setAttribute('aria-label', p && p.rangedBroken ? '远程武器损坏，本局无法切换' : p && p.activeSlot === 'ranged' ? '切换为' + meleeName : '切换为' + rangedName);
+    putText('touch-interact', relay && p && p.carry === state.relay.coreId ? state.room.index === state.relay.extractionRoom && Math.hypot(p.x - 120, p.y - 300) < 76 ? '交' : '掷' : storyLamp ? '灯' : 'E');
+    putAttr('touch-interact', 'aria-label', relay ? '拾取、投掷或交付炉芯' : storyLamp ? '点灭提灯，或与眼前的东西互动' : '互动');
+    putAttr('touch-guard', 'aria-label', relay ? '接住炉芯、格挡与静步' : '格挡与静步');
+    putText('touch-shoot', p && p.activeSlot === 'ranged' ? '射' : p && p.weapons.melee === 'spear' ? '刺' : '斩');
+    const switchDisabled = !p || p.rangedBroken;
+    if ($('touch-switch').disabled !== switchDisabled) $('touch-switch').disabled = switchDisabled;
+    putAttr('touch-switch', 'aria-label', p && p.rangedBroken ? '远程武器损坏，本局无法切换' : p && p.activeSlot === 'ranged' ? '切换为' + meleeName : '切换为' + rangedName);
     updatePlayChrome();
-    $('chapter-journal').hidden = !chapter;
-    if (chapter) $('chapter-journal').querySelector('h3').textContent = missionInfo(state.mission.id).name + ' · 已发现记录';
+    putHidden('chapter-journal', !chapter);
+    if (chapter) {
+      const title = missionInfo(state.mission.id).name + ' · 已发现记录';
+      const heading = $('chapter-journal').querySelector('h3');
+      if (heading && heading.textContent !== title) heading.textContent = title;
+    }
     renderChapterNotes();
-    applyHudLayout();
   }
   function frame(now) {
+    if (!state && (hasDialog() || frame.previewAt && now - frame.previewAt < 1000 / 30)) {
+      requestAnimationFrame(frame);
+      return;
+    }
     const delta = last ? Math.min((now - last) / 1000, .1) : 0; last = now;
+    if (!state) frame.previewAt = now;
     const localTutorialHold = !!(state && (state.practice || relayTutorial || huntTutorial) && tutorialPending);
     const controlsReady = !hudEditing && !paused && !rotateHold && !hasDialog() && !localTutorialHold;
     const sharedHold = remoteTutorialPending || localTutorialHold;
@@ -2534,7 +2755,7 @@
     settle();
     advanceChapterEnding(now);
     syncPlayCanvas();
-    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }, mapPaintOptions())); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (hudEditing) placeMapEditor();
     if (now - lastHud > 100) { hud(); lastHud = now; }
@@ -2567,6 +2788,9 @@
     $('open-account').onclick = () => { $('account-message').textContent = '账号服务未加载，请刷新后再试。'; openDialog('account-dialog'); };
     $('close-account').onclick = () => $('account-dialog').close();
   }
+  paintAudioControls();
+  paintHaptics();
+  paintJoystickMode();
   applyHudLayout();
   updateCamp(); showMenu('title'); hud(); requestAnimationFrame(frame);
 })();

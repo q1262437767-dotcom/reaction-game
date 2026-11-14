@@ -92,3 +92,30 @@ test('the same seed steps the same way', () => {
   }
   assert.deepEqual(play(7), play(7));
 });
+
+test('a cumulative diff omits unchanged geometry and survives a dropped packet', () => {
+  const host = E.create({ mode: 'story', players: 2, seed: 7, mission: 'ember', difficulty: 1 });
+  E.enterRoom(host, 1);
+  fight(host, 30);
+  const opening = wire(E.snapshot(E.viewForPlayer(host, 'p2'), true));
+  const hostBase = E.syncBaseline(opening);
+  let guest = wire(opening);
+  const guestBase = E.syncBaseline(guest);
+  fight(host, 12);
+  const dropped = E.syncDiff(E.viewForPlayer(host, 'p2'), hostBase);
+  assert.equal(dropped.walls, undefined);
+  assert.equal(dropped.mission, undefined);
+  assert.equal(dropped.props, undefined);
+  fight(host, 12);
+  const patch = wire(E.syncDiff(E.viewForPlayer(host, 'p2'), hostBase));
+  assert.equal(patch.walls, undefined);
+  E.applySync(guest, patch, guestBase);
+  near(guest.players.p1.x, host.players.p1.x, 0.011);
+  near(guest.players.p1.hp, host.players.p1.hp, 0.011);
+  assert.equal(guest.enemies.length, host.enemies.length);
+  host.walls[0].x += 6;
+  const moved = wire(E.syncDiff(E.viewForPlayer(host, 'p2'), hostBase));
+  assert.ok(Array.isArray(moved.walls) || moved.walls && Array.isArray(moved.walls.ids));
+  E.applySync(guest, moved, guestBase);
+  assert.equal(guest.walls[0].x, host.walls[0].x);
+});
