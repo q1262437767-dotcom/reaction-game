@@ -86,7 +86,7 @@
       const match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Fall back to the current page cache key. */ }
-    return '?v=58';
+    return '?v=59';
   })();
   let peerLibrary = null;
 

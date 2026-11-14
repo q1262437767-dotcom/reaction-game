@@ -1,6 +1,6 @@
 # 遗迹小队 · Ruin Runners
 
-静态资源 `?v=58`，联机协议 33。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）；已经上线的库不用再跑 SQL。手机竖屏可以直接玩。第二章到第五章、隐藏关和三个结局都在这一版里，第一章五节保持原样。
+静态资源 `?v=59`，联机协议 33。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）；已经上线的库不用再跑 SQL。手机竖屏可以直接玩。第二章到第五章各自有了招牌敌人和读得懂的前摇，终局的衡石分三拍。隐藏关和三个结局都在，第一章五节保持原样。
 
 在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 

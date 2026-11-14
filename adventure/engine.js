@@ -320,13 +320,18 @@
       addChapterRoutes(s, room, data, 'story-path-', function (to) { return storyGate(s, room.index, to); }, '往前走', '这边还没开');
       (src.walls || []).forEach(function (w) { data.walls.push(rect(w[0], w[1], w[2], w[3])); });
       (src.props || []).forEach(function (entry) { data.props.push(prop(s, entry[0], entry[1], entry[2])); });
-      (src.foes || []).forEach(function (f) {
+      (src.foes || []).forEach(function (f, index) {
         var e = enemy(s, f.kind, f.x, f.y);
         e.name = f.name;
+        tuneStoryBody(e, index);
         if (f.role) e.storyRole = f.role;
         if (f.boss) {
           e.storyBoss = true;
-          e.hp = e.maxHp = s.playerCount > 1 ? 96 : 72;
+          e.elite = true;
+          var base = { pulseling: 40, echoguard: 70, surveyor: 76, grandfurnace: 88, wardenblade: 96 }[f.kind] || 72;
+          if (f.role === 'lost') base = 58;
+          e.hp = e.maxHp = Math.round(base * (s.playerCount > 1 ? 1.3 : 1));
+          e.attackCd = 1.35;
           if (f.role === 'lost' && s.unlocks && s.unlocks.archive) { e.stagger = 2.4; e.attackCd = 2.6; }
         }
         data.enemies.push(e);
@@ -552,8 +557,8 @@
   }
   function storyFoe(s, e, p, dt) {
     var c = s.chapter;
-    if (e.storyRole === 'shade' && s.room.dark && storyInLight(s, p)) return true;
-    if (e.storyRole === 'snuff' && c.lit && dist(e, p) < 84) {
+    if (e.storyRole === 'shade' && e.kind !== 'shadeling' && s.room.dark && storyInLight(s, p)) return true;
+    if (e.storyRole === 'snuff' && e.kind !== 'mistwarden' && c.lit && dist(e, p) < 84) {
       c.lit = false; c.oil = Math.max(0, c.oil - 10);
       s.message = '雾巡卫把灯吹灭了。'; s.messageTime = 2;
     }
@@ -568,7 +573,7 @@
         return true;
       }
     }
-    if (e.storyRole === 'echo' && c.lit && e.stagger <= 0 && e.weakTime <= 0 && Math.floor(s.elapsed) % 5 === 0 && s.elapsed - Math.floor(s.elapsed) < dt + 0.001) {
+    if (e.storyRole === 'echo' && e.kind !== 'echoguard' && c.lit && e.stagger <= 0 && e.weakTime <= 0 && Math.floor(s.elapsed) % 5 === 0 && s.elapsed - Math.floor(s.elapsed) < dt + 0.001) {
       e.x = clamp(p.x + (e.x < p.x ? -90 : 90), 70, W - 70);
       e.y = clamp(p.y, 70, H - 70);
     }
@@ -2091,10 +2096,10 @@
       charges: kind === 'water' ? 3 : 0, destroyed: false };
   }
   function enemy(s, kind, x, y) {
-    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'hookwarden' ? 26 : kind === 'brute' ? 30 : kind === 'pyromancer' ? 20 : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' ? 4 : 3;
+    var hp = kind === 'boss' ? (s.playerCount > 1 ? 58 : 42) : kind === 'hookwarden' ? 26 : kind === 'brute' ? 30 : kind === 'pyromancer' ? 20 : kind === 'duelist' ? 24 : kind === 'shield' || kind === 'charger' || kind === 'pulseling' ? 4 : 3;
     if (s.difficulty === 2) hp += kind === 'boss' ? 10 : 1;
     if (kind === 'boss') hp *= 10;
-    else if (/^(chaser|shooter|shield|charger|lamplighter)$/.test(kind)) hp *= 3;
+    else if (/^(chaser|shooter|shield|charger|lamplighter|mistwarden|shadeling|listener|program|pulseling)$/.test(kind)) hp *= 3;
     return { id: id(s, 'enemy-'), kind: kind, x: x, y: y, r: kind === 'boss' ? 34 : kind === 'hookwarden' ? 20 : kind === 'brute' ? 27 : kind === 'charger' ? 19 : 16,
       hp: hp, maxHp: hp, speed: (kind === 'duelist' ? 102 : kind === 'brute' ? 72 : kind === 'pyromancer' || kind === 'hookwarden' ? 65 : kind === 'boss' ? 43 : kind === 'lamplighter' ? 50 : kind === 'chaser' ? 78 : kind === 'charger' ? 64 : 40) * (s.difficulty === 2 ? 1.1 : 1),
       facing: Math.PI, attackCd: 0.65 + random(s) * 0.6, windup: 0, attack: '',
@@ -3817,6 +3822,7 @@
         source: 'furnace-core', x: e.x, y: e.y });
     } else if (weapon !== undefined && !quietHit) hitFeedback(s, e, amount, owner, weapon);
     e.hp -= amount; e.flash = 0.12;
+    advanceStoryBoss(s, e);
     if ((s.mode === 'random' || s.mode === 'chapter') && e.kind === 'boss' && !e.timber && !e.railGuard && e.hp > 0 && e.stage === 1 && e.hp <= e.maxHp * 0.5) {
       e.stage = 2; e.rhythm = null; e.chargeTime = 0; e.rushHitIds = []; e.stagger = 1.1; e.attackCd = 0.8; e.rhythmCycle = 0; delete e.pursuit;
       delete e.coreOpeningPending;
@@ -4824,6 +4830,192 @@
       event(s, 'enemy-windup', { enemyId: e.id, kind: e.kind, attack: e.attack });
     }
   }
+  var STORY_KINDS = { mistwarden: 1, shadeling: 1, listener: 1, program: 1, pulseling: 1, echoguard: 1, surveyor: 1, grandfurnace: 1, wardenblade: 1 };
+  var STORY_WIND = { gust: 0.85, slash: 0.72, blink: 1.02, ring: 1.08, vent: 1.18, lunge: 0.82, beam: 0.92, slam: 0.98, hook: 0.92 };
+  function isStoryKind(e) { return !!(e && STORY_KINDS[e.kind]); }
+  function tuneStoryBody(e, index) {
+    var speed = { mistwarden: 70, shadeling: 98, listener: 86, program: 48, pulseling: 76, echoguard: 92, surveyor: 66, grandfurnace: 74, wardenblade: 100 };
+    var radius = { mistwarden: 16, shadeling: 15, listener: 16, program: 14, pulseling: 18, echoguard: 22, surveyor: 24, grandfurnace: 30, wardenblade: 18 };
+    if (speed[e.kind]) e.speed = speed[e.kind];
+    if (radius[e.kind]) e.r = radius[e.kind];
+    if (isStoryKind(e)) e.attackCd = 0.75 + (index % 4) * 0.32;
+  }
+  function advanceStoryBoss(s, e) {
+    if (!isStory(s) || !e.storyBoss || e.hp <= 0) return;
+    if (!/^(echoguard|surveyor|grandfurnace|wardenblade)$/.test(e.kind)) return;
+    var next = e.hp <= e.maxHp * 0.34 ? 3 : e.hp <= e.maxHp * 0.67 ? 2 : 1;
+    if (next <= (e.stage || 1)) return;
+    e.stage = next; e.windup = 0; e.chargeTime = 0; e.attack = '';
+    e.stun = Math.max(e.stun, 0.95);
+    var lines = {
+      echoguard: { 2: '回声开始吹灯。看准气口，水能浇灭灯腔。', 3: '它往亮处跳。先看落点，再闪或招架。' },
+      surveyor: { 2: '扫描收成钩索。对着它招架，钩子会弹开。', 3: '护舱大开。钩和光一起来，仍能招架。' },
+      grandfurnace: { 2: '它改砸地。退出圈，或贴身把这一拍招架掉。', 3: '它要吞主芯。这一口很慢，闪或招架。' },
+      wardenblade: { 2: '衡石收刃。程序的火从他身后喷出来。', 3: '炉口按程序砸下来。圈是实的，人要让开。' }
+    };
+    s.message = lines[e.kind][next]; s.messageTime = 3.4;
+    event(s, 'boss-phase', { enemyId: e.id, stage: next, x: e.x, y: e.y });
+  }
+  function storyAttackName(e) {
+    var stage = e.stage || 1, n = (e.phase || 0) + 1;
+    if (e.kind === 'mistwarden') return 'gust';
+    if (e.kind === 'shadeling' || e.kind === 'listener') return 'lunge';
+    if (e.kind === 'program') return 'beam';
+    if (e.kind === 'pulseling') return 'slam';
+    if (e.kind === 'echoguard') return stage === 1 ? (n % 2 ? 'blink' : 'slash') : stage === 2 ? (n % 2 ? 'gust' : 'slash') : (n % 2 ? 'blink' : 'ring');
+    if (e.kind === 'surveyor') return stage === 1 ? 'beam' : stage === 2 ? (n % 2 ? 'hook' : 'beam') : (n % 2 ? 'hook' : 'ring');
+    if (e.kind === 'grandfurnace') return stage === 1 ? 'lunge' : stage === 2 ? 'slam' : (n % 2 ? 'hook' : 'slam');
+    if (e.kind === 'wardenblade') return stage === 1 ? 'slash' : stage === 2 ? (n % 2 ? 'ring' : 'slash') : (n % 2 ? 'vent' : 'slash');
+    return 'slash';
+  }
+  function storyBusy(s, e) {
+    return s.enemies.some(function (q) {
+      return q !== e && q.hp > 0 && isStoryKind(q) && (q.windup > 0 || q.chargeTime > 0);
+    });
+  }
+  function storyResolve(s, e, p, snuff) {
+    if (!p || p.downed || p.hp <= 0 || s.status !== 'playing') return 'miss';
+    if (p.dashWindow > 0) return 'dodge';
+    if (p.guarding && p.invuln <= 0 && facingEnemy(p, e) && guardBlock(s, p, e, 1, 'melee', false)) {
+      e.stun = Math.max(e.stun, 0.9); e.attackCd = Math.max(e.attackCd, 1.2);
+      e.windup = 0; e.chargeTime = 0;
+      return 'parry';
+    }
+    if (p.invuln > 0 || !damagePlayer(s, p, 1, 'melee')) return 'miss';
+    if (snuff && s.chapter && s.chapter.lit) {
+      s.chapter.lit = false; s.chapter.oil = Math.max(0, s.chapter.oil - 12);
+      s.message = '这一口气把灯吹灭了。'; s.messageTime = 2.4;
+    }
+    return 'hit';
+  }
+  function storyCone(e, p, reach, arc) {
+    var dx = p.x - e.x, dy = p.y - e.y, d = len(dx, dy);
+    if (d > reach || d < 0.01) return false;
+    return Math.cos(Math.atan2(dy, dx) - e.facing) > Math.cos(arc);
+  }
+  function beginStoryWindup(s, e, p) {
+    var attack = storyAttackName(e);
+    e.phase = (e.phase || 0) + 1;
+    e.attack = attack;
+    e.windup = STORY_WIND[attack] || 0.85;
+    e.aimX = p.x; e.aimY = p.y;
+    e.facing = Math.atan2(p.y - e.y, p.x - e.x);
+    e.chargeX = Math.cos(e.facing); e.chargeY = Math.sin(e.facing);
+    if (attack === 'blink') {
+      var side = e.phase % 2 ? 1 : -1;
+      e.aimX = clamp(p.x + side * 86, 78, W - 78);
+      e.aimY = clamp(p.y + (e.phase % 3 === 0 ? 48 : -36), 78, H - 78);
+    }
+    event(s, 'enemy-windup', { enemyId: e.id, kind: e.kind, attack: attack });
+  }
+  function releaseStoryAttack(s, e) {
+    var attack = e.attack, targets = aliveCombatants(s);
+    e.windup = 0;
+    if (attack === 'lunge') {
+      e.chargeTime = e.kind === 'grandfurnace' ? 0.5 : 0.42;
+      e.rushHitIds = [];
+      e.attackCd = 1.35;
+      return;
+    }
+    if (attack === 'blink') {
+      if (!collides(s, e.aimX, e.aimY, e.r, e.id, false)) { e.x = e.aimX; e.y = e.aimY; }
+      var landed = targets.slice().sort(function (a, b) { return dist(a, e) - dist(b, e); })[0];
+      if (landed) e.facing = Math.atan2(landed.y - e.y, landed.x - e.x);
+    }
+    if (attack === 'beam') hostileBullet(s, e, e.facing, 155, 6);
+    if (attack === 'ring') {
+      [-0.42, -0.2, 0, 0.2, 0.42].forEach(function (offset) { hostileBullet(s, e, e.facing + offset, 145, 6); });
+    }
+    targets.forEach(function (p) {
+      if (s.status !== 'playing') return;
+      if (attack === 'gust' && storyCone(e, p, 118, 0.7)) storyResolve(s, e, p, true);
+      else if (attack === 'slash' && dist(e, p) < e.r + p.r + 30 && storyCone(e, p, 160, 0.9)) storyResolve(s, e, p, false);
+      else if (attack === 'blink' && dist(e, p) < e.r + p.r + 26) storyResolve(s, e, p, false);
+      else if (attack === 'slam' && dist(e, p) < (e.kind === 'grandfurnace' ? 118 : 100)) storyResolve(s, e, p, false);
+      else if (attack === 'vent' && dist(p, { x: e.aimX, y: e.aimY }) < 76) storyResolve(s, e, p, false);
+      else if (attack === 'hook' && dist(e, p) < 220 && storyCone(e, p, 230, 0.55)) {
+        if (storyResolve(s, e, p, false) === 'hit') {
+          var pull = Math.atan2(e.y - p.y, e.x - p.x);
+          move(s, p, Math.cos(pull) * 68, Math.sin(pull) * 68, false);
+        }
+      }
+    });
+    if (e.chargeTime <= 0) e.attackCd = Math.max(e.attackCd, attack === 'beam' || attack === 'ring' ? 1.45 : 1.25);
+  }
+  function driveStoryCharge(s, e, dt) {
+    var speed = e.kind === 'grandfurnace' ? 250 : 310;
+    e.chargeTime = Math.max(0, e.chargeTime - dt);
+    var dx = e.chargeX * speed * dt, dy = e.chargeY * speed * dt;
+    var blocked = collides(s, e.x + dx, e.y + dy, e.r, e.id, false);
+    if (!blocked) move(s, e, dx, dy, false);
+    var stopped = blocked;
+    aliveCombatants(s).forEach(function (p) {
+      if (stopped && e.chargeTime <= 0) return;
+      if (e.rushHitIds.indexOf(p.id) >= 0 || dist(e, p) > e.r + p.r + 8) return;
+      e.rushHitIds.push(p.id);
+      if (storyResolve(s, e, p, false) === 'parry') stopped = true;
+    });
+    if (stopped || e.chargeTime <= 0) {
+      e.chargeTime = 0; e.rushHitIds = [];
+      if (blocked) e.stun = Math.max(e.stun, 1.05);
+      e.attackCd = Math.max(e.attackCd, 1.25);
+    }
+  }
+  function updateStoryKind(s, e, p, dt) {
+    e.stagger = Math.max(0, (e.stagger || 0) - dt);
+    if (e.stagger > 0) { e.windup = 0; e.chargeTime = 0; return; }
+    if (e.kind === 'shadeling' && s.room.dark && storyInLight(s, e)) {
+      var light = storyLightOf(s);
+      e.windup = 0; e.chargeTime = 0;
+      if (light) {
+        var awayX = e.x - light.x, awayY = e.y - light.y, span = len(awayX, awayY) || 1;
+        e.facing = Math.atan2(awayY, awayX);
+        move(s, e, awayX / span * e.speed * dt, awayY / span * e.speed * dt, false);
+      }
+      return;
+    }
+    if (e.storyRole === 'damp' && s.room.deep && s.chapter.water >= 2) {
+      e.windup = 0; e.chargeTime = 0; e.attack = '';
+      e.stun = Math.max(e.stun, 0.4);
+      return;
+    }
+    if (e.kind === 'listener' && e.storyRole === 'listen' && !s.chapter.alerted) {
+      if (p) e.facing = Math.atan2(p.y - e.y, p.x - e.x);
+      e.windup = 0;
+      return;
+    }
+    if (e.kind === 'pulseling' && !storyPulseHigh(s)) {
+      e.windup = 0; e.chargeTime = 0; e.attack = '';
+      return;
+    }
+    if (e.kind === 'surveyor' && s.chapter.link >= 2 && !e.opened) {
+      e.opened = 1; e.stagger = 2.1; e.windup = 0; e.chargeTime = 0;
+      s.message = '线接上了。扫描停了一拍，护舱敞着。'; s.messageTime = 3.2;
+      return;
+    }
+    if (!p) return;
+    if (e.chargeTime > 0) { driveStoryCharge(s, e, dt); return; }
+    if (e.windup > 0) {
+      if (e.attack === 'slash' || e.attack === 'gust' || e.attack === 'beam' || e.attack === 'hook') {
+        e.aimX = p.x; e.aimY = p.y;
+        e.facing = Math.atan2(p.y - e.y, p.x - e.x);
+        e.chargeX = Math.cos(e.facing); e.chargeY = Math.sin(e.facing);
+      }
+      e.windup -= dt;
+      if (e.windup <= 0) releaseStoryAttack(s, e);
+      return;
+    }
+    e.attackCd -= dt;
+    var desired = e.kind === 'program' || e.kind === 'surveyor' ? 168 : 62;
+    var gap = dist(e, p);
+    if (gap > desired + 10) {
+      var stepX = p.x - e.x, stepY = p.y - e.y, stepLen = len(stepX, stepY) || 1;
+      e.facing = Math.atan2(stepY, stepX);
+      move(s, e, stepX / stepLen * e.speed * dt, stepY / stepLen * e.speed * dt, false);
+    } else e.facing = Math.atan2(p.y - e.y, p.x - e.x);
+    var start = e.kind === 'program' || e.kind === 'surveyor' ? 300 : e.kind === 'echoguard' || e.kind === 'wardenblade' ? 210 : 168;
+    if (e.attackCd <= 0 && gap < start && !storyBusy(s, e)) beginStoryWindup(s, e, p);
+  }
   function updateEnemies(s, dt) {
     var targets = aliveCombatants(s);
     var cartTarget = trainCartTarget(s);
@@ -4856,6 +5048,7 @@
       if ((e.railGuard || e.trainReturner) && p === s.railAlly && human && !human.downed &&
           (e.rhythmCycle === 0 || dist(e, human) < dist(e, p) + 85)) p = human;
       if (isStory(s) && e.storyRole && storyFoe(s, e, p, dt)) return;
+      if (isStoryKind(e)) { updateStoryKind(s, e, p, dt); return; }
       if (e.kind === 'lamplighter') {
         e.stagger = Math.max(0, e.stagger - dt);
         if (e.stagger > 0) return;
