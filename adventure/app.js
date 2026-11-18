@@ -1793,11 +1793,14 @@
       if (!enemy || !validIntercept(enemy, furnaceRoom) || !validRailBoss(enemy, s) ||
           enemy.routeBreaker !== undefined && !routeSection(s) || enemy.trainReturner !== undefined && !trainSection(s)) return false;
       if ((enemy.storyRole !== undefined || enemy.storyBoss !== undefined) && !storySection(s)) return false;
-      if (enemy.storyRole !== undefined && !['snuff', 'seek', 'shade', 'listen', 'echo', 'scan', 'returner', 'heng', 'lost'].includes(enemy.storyRole)) return false;
+      if (enemy.storyRole !== undefined && !['snuff', 'seek', 'shade', 'listen', 'echo', 'scan', 'returner', 'heng', 'lost', 'damp'].includes(enemy.storyRole)) return false;
       if (enemy.storyBoss !== undefined && enemy.storyBoss !== true) return false;
       const furnaceBoss = furnaceRoom && enemy.kind === 'boss' && enemy.timber === undefined && enemy.stage === 1;
       if (enemy.coreExposed !== undefined && (!furnaceBoss || enemy.coreExposed !== true || enemy.rhythm != null)) return false;
-      const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : 1.6;
+      const storyWeakTime = storySection(s) && enemy.storyBoss === true &&
+        (enemy.kind === 'grandfurnace' && s.mission.id === 'chapter4_4' ? 3.4 :
+          enemy.kind === 'echoguard' && s.mission.id === 'chapter2_4' ? 3.2 : 0);
+      const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : storyWeakTime || 1.6;
       if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, maxWeakTime) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
       if (enemy.pursuit !== undefined) {
         const pursuit = enemy.pursuit;
@@ -2057,6 +2060,8 @@
       if (enemy.rhythm || enemy.chargeTime > 0 || enemy.stagger > 0 || enemy.windup > 0) return true;
     }
     if (view.chapter && (view.chapter.railPower > 0 || view.chapter.cart && view.chapter.cart.position > 0 && view.chapter.cart.position < 1)) return true;
+    if (storySection(view) && ['chapter4_2', 'chapter4_4'].includes(view.chapter.id) &&
+        view.chapter.cartRoom === view.room.index && view.chapter.clues.includes('rolling')) return true;
     if (now - remoteAt < 250 && remoteInput && (remoteInput.mx || remoteInput.my || remoteInput.shoot || remoteInput.dash || remoteInput.guard || remoteInput.interact || remoteInput.switchWeapon)) return true;
     return false;
   }
