@@ -44,7 +44,7 @@
   function teammateInRoom(state, index) {
     if (index === state.room?.index) return false;
     return (!!state.playerRooms && Object.entries(state.playerRooms).some(([id, room]) => state.players?.[id] && room === index)) ||
-      ((railChapter(state) || routeChapter(state) || trainChapter(state)) && state.railAlly?.roomIndex === index);
+      (state.mode === 'chapter' && state.railAlly?.roomIndex === index);
   }
   const rect = (c, x, y, w, h, color) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
   function seedRandom(seed) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -147,6 +147,12 @@
   }
   function trainChapter(state) {
     return state?.mode === 'chapter' && state.chapter?.id === 'chapter1_5';
+  }
+  function storyChapter(state) {
+    return state?.mode === 'chapter' && /^(chapter[2-5]|secret_)/.test(String(state.chapter?.id || ''));
+  }
+  function storyCartChapter(state) {
+    return state?.mode === 'chapter' && ['chapter4_2', 'chapter4_4'].includes(state.chapter?.id);
   }
   function furnacePressureFloor(c, state, still) {
     const ending = state.chapter.ending, x = 660, y = 300, radius = 180;
@@ -697,17 +703,146 @@
       }
     }
   }
+  function storyCanal(state) {
+    return state.mode === 'chapter' && state.chapter?.id === 'chapter3' && state.room?.index === 1;
+  }
+  function storyFloatingBox(p, state) {
+    return storyCanal(state) && /^story-float-[0-2]$/.test(p.id);
+  }
+  function storyFloat(c, p, state, time, still) {
+    const x = num(p.x), y = num(p.y), afloat = num(state.chapter.water) >= 1;
+    // The deck is the same size as the walkable bridge, drawn at the physics
+    // position. The water ripples move; the collision surface never bobs away.
+    const width = 62, height = 72;
+    if (afloat) {
+      const swell = still ? 0 : Math.sin(time * .002 + x) * 2;
+      ellipse(c, x, y + 35, 35 + swell, 6, '#8bc8cd45');
+      path(c, [[x - 31, y + 37], [x, y + 41 + swell], [x + 31, y + 37]], '#b9dfd15e', 1);
+    }
+    rect(c, x - width / 2 - 2, y - height / 2 + 3, width + 4, height, '#1b3034');
+    rect(c, x - width / 2, y - height / 2, width, height, '#94754b');
+    for (let i = 0; i < 6; i++) {
+      const py = y - 35 + i * 12;
+      rect(c, x - 30, py, 60, 10, i % 2 ? '#96764c' : '#a18458');
+      rect(c, x - 29, py, 58, 1, '#cfb580');
+      rect(c, x - 20 + i % 3 * 9, py + 6, 16, 1, '#6b543f');
+    }
+    for (const dx of [-24, 22]) {
+      rect(c, x + dx, y - 34, 3, 68, '#4c6261');
+      for (const dy of [-29, 27]) rect(c, x + dx, y + dy, 3, 3, '#b4c1a3');
+    }
+    for (const dy of [-27, 27]) {
+      path(c, [[x - 31, y + dy], [x + 31, y + dy]], '#d4bd89', 2);
+    }
+    if (!afloat) {
+      path(c, [[x - 24, y - 35], [x - 32, y - 54], [x - 32, y - 80]], '#b5a07877', 2);
+    }
+  }
+  function storyRailFloor(c, state, high) {
+    const index = state.room.index, run = state.chapter;
+    const last = run.id === 'chapter4_2' ? 5 : 1;
+    if (index > last) return;
+    for (let x = 80; x < 895; x += 25) {
+      rect(c, x, 283, 8, 35, '#262f30');
+      rect(c, x + 1, 283, 6, 2, '#9b84565c');
+    }
+    for (const y of [288, 308]) {
+      rect(c, 72, y, 818, 4, '#202f35');
+      rect(c, 73, y, 816, 1, '#ada58288');
+    }
+    if (run.id === 'chapter4_2' && index === 4) {
+      // This central furnace span is exactly where the car can take pulse
+      // damage. The approach tracks remain visibly safe to stop on.
+      rect(c, 360, 260, 300, 80, high ? '#b24b2848' : '#1b252c8c');
+      for (const x of [360, 660]) {
+        rect(c, x - 4, 249, 8, 102, '#313b3d');
+        rect(c, x - 2, 251, 3, 98, high ? '#eac087' : '#917b58');
+      }
+      for (let x = 372; x < 650; x += 21) {
+        rect(c, x, 263, 10, 3, high ? '#e89b69' : '#816949');
+        rect(c, x, 334, 10, 3, high ? '#e89b69' : '#816949');
+      }
+    }
+  }
+  function storyCart(c, state, still, viewTop) {
+    const run = state.chapter;
+    if (!storyCartChapter(state) || run.cartRoom !== state.room.index) return;
+    const x = num(run.cartX), y = 300, hp = Math.max(0, num(run.cartHp));
+    const arrived = run.id === 'chapter4_2' ? run.cartRoom === 5 && x >= 680 : run.cartRoom === 1 && x >= 260;
+    const running = state.status === 'playing' && hp > 0 && values(run.clues).includes('rolling') && !arrived;
+    const waiting = running && run.id === 'chapter4_2' && run.cartRoom === 3 && x >= 740 &&
+      (!values(run.clues).includes('code-set') || num(run.pulse) >= (values(state.runBuffs).includes('pulsering') ? 5.2 : 4));
+    const moving = running && !waiting;
+    const empty = run.id === 'chapter4_4' && values(run.clues).includes('core-taken');
+    const hot = run.id === 'chapter4_2' && run.cartRoom === 4 && x >= 360 && x <= 660 &&
+      num(run.pulse) >= (values(state.runBuffs).includes('pulsering') ? 5.2 : 4);
+    const angle = moving && !still ? x * .09 : 0;
+    shadow(c, x, y + 12, 64, .4);
+    for (const dx of [-43, 42]) {
+      ellipse(c, x + dx, y + 16, 11, 10, '#14282e');
+      ellipse(c, x + dx, y + 16, 8, 7, '#738075');
+      for (const a of [angle, angle + Math.PI / 2]) path(c,
+        [[x + dx - Math.cos(a) * 6, y + 16 - Math.sin(a) * 6], [x + dx + Math.cos(a) * 6, y + 16 + Math.sin(a) * 6]], '#d0bc88', 1.5);
+      rect(c, x + dx - 1, y + 15, 3, 3, '#e1cca0');
+    }
+    rect(c, x - 61, y - 7, 123, 22, '#1d3037');
+    rect(c, x - 58, y - 8, 117, 17, '#74715a');
+    rect(c, x - 59, y - 9, 119, 3, '#be9f6d');
+    rect(c, x - 55, y + 4, 111, 4, '#8e7756');
+    for (const dx of [-50, -23, 8, 48]) rect(c, x + dx, y - 4, 4, 10, '#c1ac7f');
+    rect(c, x - 33, y - 34, 64, 28, '#304448');
+    rect(c, x - 30, y - 34, 58, 5, '#8d9680');
+    rect(c, x - 24, y - 29, 46, 20, '#1c343c');
+    if (!empty) {
+      glow(c, x - 1, y - 25, 61, hot ? '#f2a36652' : '#eac27530');
+      crystal(c, x - 1, y - 25, 1.9, hot ? '#ffca83' : '#e6c27f');
+      for (const dx of [-23, 17]) rect(c, x + dx, y - 35, 5, 27, '#b6a579');
+      path(c, [[x - 21, y - 34], [x - 1, y - 43], [x + 20, y - 34]], '#718a80', 3);
+    } else rect(c, x - 14, y - 20, 26, 4, '#75867c');
+    // Tao's seat and cap distinguish the core carrier from the rescue wagon.
+    rect(c, x + 34, y - 23, 17, 14, '#435a57');
+    rect(c, x + 36, y - 35, 12, 14, '#d4b087');
+    rect(c, x + 34, y - 38, 17, 5, '#697e77');
+    rect(c, x + 37, y - 40, 11, 3, '#b5b392');
+    path(c, [[x + 43, y - 18], [x + 53, y - 15], [x + 56, y - 20]], '#d4b087', 3);
+    if (hp < 8) path(c, [[x - 43, y - 5], [x - 37, y], [x - 41, y + 5], [x - 33, y + 8]], '#283a37', 2);
+    const color = hot || hp < 4.2 ? '#e9a17c' : '#bdd8ba';
+    const top = Math.max(num(viewTop) + 24, y - 72);
+    const status = hp <= 0 ? '损坏' : empty ? '已取芯' : hot ? '受热' : arrived ? '已停靠' : waiting ? '等放行' : moving ? '行驶中' : '停车';
+    label(c, '运芯车 · ' + status, x, top - 9, color, 10);
+    bar(c, x, top + 3, 84, hp / 14, color, 4);
+  }
   function storyWash(c, state, time) {
-    const run = state.chapter || {}, id = String(run.id || '');
+    const run = state.chapter || {}, id = String(run.id || ''), room = state.room || {};
     const cool = id.startsWith('chapter2') || id === 'secret_unlisted' ? '#12324655' : id.startsWith('chapter3') ? '#12383a44' : id.startsWith('chapter4') ? '#3a241844' : '#24304444';
     rect(c, 0, 0, W, H, cool);
-    if (run.water > 0) {
+    if (storyCanal(state)) {
+      rect(c, 390, 28, 180, 544, '#142d36');
+      rect(c, 395, 29, 170, 542, run.water > 0 ? '#205364' : '#233c43');
+      for (const x of [384, 570]) {
+        rect(c, x, 28, 6, 544, '#798a7b');
+        rect(c, x + 1, 28, 2, 544, '#b5b79769');
+      }
+      if (run.water > 0) {
+        rect(c, 390, 28, 180, 544, run.water === 2 ? '#1c6e8a55' : '#1c6e8a33');
+        const flow = Math.floor(time * .014) % 32;
+        for (let y = 55; y < 545; y += 34) for (const x of [411, 469, 531]) {
+          rect(c, x, y + flow, 18, 1, '#9bc5c046');
+        }
+        for (const x of [370, 570]) {
+          rect(c, x, 264, 20, 72, '#657b70');
+          for (let y = 266; y < 336; y += 12) rect(c, x, y, 20, 2, '#bdad81');
+        }
+      }
+    } else if (room.deep && run.water > 0) {
       const depth = run.water === 1 ? 150 : 250;
       rect(c, 40, H - depth, W - 80, depth - 40, run.water === 2 ? '#1c6e8a55' : '#1c6e8a33');
     }
-    if ((id === 'chapter4' || id === 'chapter4_2' || id === 'chapter4_3' || id === 'chapter4_4' || id === 'chapter5_2') && (Number(run.pulse) % 7) >= 4) {
+    const high = (num(run.pulse) % 7) >= (values(state.runBuffs).includes('pulsering') ? 5.2 : 4);
+    if (room.hot && high && (id.startsWith('chapter4') || id === 'chapter5_2')) {
       alpha(c, .18 + Math.sin(time * .01) * .05, () => rect(c, 0, 0, W, H, '#ff6a3a'));
     }
+    if (storyCartChapter(state)) storyRailFloor(c, state, high);
   }
   function storyDarkness(c, state) {
     const room = state.room || {}, run = state.chapter || {};
@@ -4282,7 +4417,8 @@
     chapterFloor(c, state, time, still, trainEndingAge);
     expeditionFloor(c, state, time, still);
     lanternAuras(c, state);
-    paintWalls(c, state.walls, coreRoom ? 'core-pillar-west' : '');
+    // Canal collision strips describe the gap in the floor, not upright walls.
+    paintWalls(c, storyCanal(state) ? values(state.walls).filter(w => !/^story-canal-/.test(w.id || '')) : state.walls, coreRoom ? 'core-pillar-west' : '');
     if (ending) chapterEndingLight(c, ending);
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
@@ -4308,8 +4444,13 @@
         { kind: 'rail-car', x: 705, y: 255, active: false, used: true }, enemyTime, state, localId, still) }] : []),
       ...(train && state.chapter.cart?.roomIndex === state.room.index ? [{ y: num(state.chapter.cart.y) + 9,
         draw: () => trainCar(c, state, enemyTime, localId, still, viewTop) }] : []),
+      ...(storyCartChapter(state) && state.chapter.cartRoom === state.room.index ? [{ y: 309,
+        draw: () => storyCart(c, state, still, viewTop) }] : []),
       ...(tao ? [{ y: tao.y, draw: () => chapterEndingCivilian(c, tao.x, tao.y, 'helper', tao.gait) }] : []),
-      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({ y: p.y, draw: () => paintProp(c, p, time) })),
+      ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({
+        y: storyFloatingBox(p, state) ? p.y - 40 : p.y,
+        draw: () => storyFloatingBox(p, state) ? storyFloat(c, p, state, time, still) : paintProp(c, p, time)
+      })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
       ...enemies.map(e => ({ y: e.y, draw: () => {
         const pose = enemyPoses.get(e.id);
@@ -4317,7 +4458,7 @@
         else if (rail && e.railGuard === true) railGuard(c, e, state, pose, viewTop, still);
         else enemy(c, e, enemyTime, events, still, state.mode === 'chapter', state.mode === 'random', pose, coreRoom, viewTop, rail || train);
       } })),
-      ...((rail || route || train) && railAllyInRoom(state) ? [{
+      ...((rail || route || train || storyChapter(state)) && railAllyInRoom(state) ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
       ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),

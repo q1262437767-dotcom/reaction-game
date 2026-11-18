@@ -341,7 +341,8 @@
         !STORY_KEYS.every(function (key) { return Object.prototype.hasOwnProperty.call(c, key); })) return false;
     if (!['arrive', 'mid', 'boss', 'down', 'choice', 'complete', 'failed'].includes(c.phase)) return false;
     if (!Array.isArray(c.clues) || c.clues.length > 4 || new Set(c.clues).size !== c.clues.length ||
-        c.clues.some(function (id) { return !STORY_CLUES.includes(id); })) return false;
+        c.clues.some(function (id) { return !STORY_CLUES.includes(id) &&
+          !(id === 'rolling' && status === 'playing' && (missionId === 'chapter4_2' || missionId === 'chapter4_4')); })) return false;
     if (!inRange(c.oil, 100) || typeof c.lit !== 'boolean' || !['', 'p1', 'p2'].includes(c.bearer)) return false;
     if (!Number.isInteger(c.hung) || c.hung < -1 || c.hung > 15 || !Number.isInteger(c.water) || c.water < 0 || c.water > 2) return false;
     if (!inRange(c.pulse, 7) || !Number.isInteger(c.link) || c.link < 0 || c.link > 2 || !inRange(c.linkLeft, 30)) return false;

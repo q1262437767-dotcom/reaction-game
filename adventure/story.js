@@ -23,7 +23,7 @@
     'keeper-talk': { title: '守灯人', text: '“识别线是我剪的。当时总炉要溢，不剪，整条谷都会烧起来。我没想到回收令不会停。”' },
     drafts: { title: '两份令稿', text: '完结令：停止回收，封上总炉。重明令：接回识别线，让灯重新认人。陶铆：“这次不是借。是送它回家。”' },
     'core-hot': { title: '比留下时更热', text: '隔离炉的表针自己在跳。陶铆：“一拿起来，路上所有归炉者都会醒。我们还是拿。”' },
-    'pulse-route': { title: '心跳开门', text: '总炉的脉冲低潮时炉口开，高潮时吞火。上路避热，下路借暗。换道闸在邻房。' },
+    'pulse-route': { title: '心跳开门', text: '先扳道岔，再叫陶铆发车。运芯车会在炉口前等信号。低潮时扳闸放行，千万别把车停在炉口红线里。' },
     'cabinet-names': { title: '被收走的营名', text: '柜上刻着已经灭掉的营：霜驿、西渡、北坡。有些芯还温着。点亮它们，不算完成任务。' },
     'heng-call': { title: '衡石的远话', text: '“完成回收，别把火交回那座炉。你们不确定它还认不认得人。”' },
     'door-talk': { title: '炉门之前', text: '衡石：“再往前，就是把火重新交给那座炉。”守灯人站在他对面，没有退。' },
@@ -102,10 +102,11 @@
         ] }),
         room('塔梯', 'battle', 1, 0, [0, 2, 3], { dark: true, walls: [[480, 140, 50, 120]],
           foes: [foe('chaser', 720, 400, 'seek', '塔内巡卫'), foe('mistwarden', 280, 220, 'snuff', '雾巡卫'), foe('shadeling', 700, 180, 'shade', '暗栖')] }),
-        room('蓝光秘道', 'puzzle', 1, 1, [1, 3], { dark: true, secret: true, need: 'lit',
+        room('蓝光秘道', 'puzzle', 1, 1, [1, 4], { dark: true, secret: true, need: 'lit',
           items: [{ kind: 'story-oil', x: 400, y: 300, label: '秘道里的灯油' }] }),
-        room('灯路图室', 'rescue', 2, 0, [1, 2], {
-          items: [note('lamp-map', 320, 200), { kind: 'story-goal', x: 620, y: 320, label: '收下灯路图', needClue: 'xiaosui' }] })
+        room('灯路图室', 'rescue', 2, 0, [1, 4], {
+          items: [note('lamp-map', 320, 200), { kind: 'story-goal', x: 620, y: 320, label: '收下灯路图', needClue: 'xiaosui' }] }),
+        room('塔后转廊', 'puzzle', 2, 1, [2, 3], { dark: true, secret: true })
       ]
     },
     chapter2_4: {
@@ -140,8 +141,9 @@
           { kind: 'story-valve', x: 480, y: 280, label: '扳动水位闸' },
           note('cable', 240, 180)
         ] }),
-        room('浅渠', 'puzzle', 1, 0, [0, 2, 4], { deep: true, walls: [[360, 390, 200, 40]],
-          props: [['crate', 480, 430]],
+        room('浅渠', 'puzzle', 1, 0, [0, 2, 4], { deep: true,
+          props: [['crate', 420, 430], ['crate', 480, 430], ['crate', 540, 430]],
+          items: [{ kind: 'story-valve', x: 700, y: 480, label: '扳动东岸回水闸' }],
           foes: [foe('program', 700, 180, '', '渠岸机'), foe('program', 240, 220, '', '渠岸机'), foe('listener', 780, 400, '', '听声残哨')] }),
         room('漂箱廊', 'battle', 2, 0, [1, 3], { deep: true, need: 'water1',
           foes: [foe('program', 300, 400, 'damp', '浸线机'), foe('program', 700, 420, 'damp', '浸线机')],
@@ -228,18 +230,19 @@
       rooms: [
         room('悬轨起点', 'camp', 0, 0, [1, 2], { items: [
           note('pulse-route', 250, 180),
-          { kind: 'story-drive', x: 620, y: 300, label: '开车或停车' }
+          { kind: 'story-switch', x: 440, y: 200, label: '扳向上轨', pair: 1 },
+          { kind: 'story-switch', x: 440, y: 430, label: '扳向下轨', pair: 2 }
         ] }),
-        room('上路避热', 'puzzle', 1, -1, [0, 3], { hot: true,
+        room('上路避热', 'puzzle', 1, 0, [0, 3], { hot: true,
           foes: [foe('pulseling', 360, 240, '', '脉卒'), foe('pulseling', 720, 400, '', '脉卒')] }),
-        room('下路暗轨', 'puzzle', 1, 1, [0, 3], { dark: true,
+        room('下路暗轨', 'puzzle', 0, 1, [0, 3], { dark: true,
           foes: [foe('shadeling', 320, 220, 'shade', '暗栖'), foe('shadeling', 700, 400, 'shade', '暗栖')],
           items: [{ kind: 'story-lantern', x: 400, y: 280, label: '点起提灯' }] }),
-        room('前方信号房', 'puzzle', 2, 0, [1, 2, 4], { terminal: true,
+        room('前方信号房', 'puzzle', 1, 1, [1, 2, 4], { terminal: true,
           items: [{ kind: 'story-switch', x: 480, y: 260, label: '在低潮时开炉口', pair: 4 }] }),
-        room('炉口', 'battle', 3, 0, [3, 5], { hot: true, need: 'mouth',
+        room('炉口', 'battle', 2, 1, [3, 5], { hot: true, need: 'mouth',
           foes: [foe('pulseling', 520, 200, '', '脉卒'), foe('pulseling', 760, 400, '', '脉卒'), foe('charger', 700, 300, '', '炉口巡卫')] }),
-        room('轨尾', 'rescue', 4, 0, [4], { items: [{ kind: 'story-goal', x: 480, y: 280, label: '把车停进收芯库外' }] })
+        room('轨尾', 'rescue', 3, 1, [4], { items: [{ kind: 'story-goal', x: 680, y: 390, label: '把车停进收芯库外' }] })
       ]
     },
     chapter4_3: {
@@ -271,7 +274,6 @@
       objective: '先冲，再砸，再吞 · 泄压或招架 · 然后把芯搬走',
       rooms: [
         room('追车廊', 'battle', 0, 0, [1], { hot: true,
-          items: [{ kind: 'story-drive', x: 300, y: 300, label: '让车先走' }],
           foes: [foe('charger', 720, 200, 'returner', '追车钳'), foe('pulseling', 640, 420, '', '脉卒'), foe('pulseling', 800, 400, '', '脉卒')] }),
         room('泄压台', 'boss', 1, 0, [0, 2], { hot: true,
           foes: [foe('grandfurnace', 620, 260, 'returner', '总归炉者', true)],

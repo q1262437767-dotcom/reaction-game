@@ -139,7 +139,8 @@
   function railAllyHere(s) {
     return !!(s.railAlly && (!s.playerRooms || s.railAlly.roomIndex === s.room.index));
   }
-  function solidProp(p) { return !p.destroyed && (p.kind === 'crate' || p.kind === 'barrel'); }
+  function storyFloatProp(p) { return /^story-float-[0-2]$/.test(p.id); }
+  function solidProp(p) { return !p.destroyed && !storyFloatProp(p) && (p.kind === 'crate' || p.kind === 'barrel'); }
   function collides(s, x, y, r, ignoreId, ignoreProps) {
     var c = { x: x, y: y, r: r };
     if (x < 28 + r || x > W - 28 - r || y < 28 + r || y > H - 28 - r) return true;
@@ -251,6 +252,68 @@
     var wide = s.runBuffs && s.runBuffs.indexOf('pulsering') >= 0;
     return (s.chapter.pulse % 7) >= (wide ? 5.2 : 4);
   }
+  function storyCartSection(s) {
+    return isStory(s) && (s.chapter.id === 'chapter4_2' || s.chapter.id === 'chapter4_4');
+  }
+  function storyCartArrived(c) {
+    return c.id === 'chapter4_2' ? c.cartRoom === 5 && c.cartX >= 680 : c.cartRoom === 1 && c.cartX >= 260;
+  }
+  function storyCartMoving(c, moving) {
+    var index = c.clues.indexOf('rolling');
+    if (!moving && index >= 0) c.clues.splice(index, 1);
+    if (moving && index < 0) c.clues.push('rolling');
+  }
+  function advanceStoryCart(s, dt) {
+    if (!storyCartSection(s)) return;
+    var c = s.chapter;
+    if (c.id === 'chapter4_2' && c.cartRoom === 4 && c.cartX >= 360 && c.cartX <= 660 && storyPulseHigh(s)) {
+      var glove = hasPreparation(s, 'p1', 'railGlove') || hasPreparation(s, 'p2', 'railGlove');
+      c.cartHp = Math.max(0, c.cartHp - dt * (glove ? 1.1 : 2.3));
+      if (c.cartHp <= 0) {
+        finish(s, 'lost');
+        s.message = '运芯车在炉口里烧坏了。';
+        return;
+      }
+    }
+    if (c.clues.indexOf('rolling') < 0) return;
+    var handoff = c.id === 'chapter4_4' && c.cartRoom === 1;
+    var end = handoff ? 260 : c.cartRoom === 5 ? 680 : 840;
+    if (c.id === 'chapter4_2' && c.cartRoom === 3 && !storyNeed(s, s.rooms[4])) {
+      if (c.cartX >= 740) return;
+      end = 740;
+    }
+    c.cartX = Math.min(end, c.cartX + dt * 158);
+    if (storyCartArrived(c)) { storyCartMoving(c, false); return; }
+    if (c.cartX < 840) return;
+    c.cartRoom = c.id === 'chapter4_4' ? 1 : c.cartRoom === 0 ? (c.anchor === 2 ? 2 : 1) :
+      c.cartRoom <= 2 ? 3 : c.cartRoom + 1;
+    c.cartX = 120;
+  }
+  function storyCanal(s) { return s.chapter.id === 'chapter3' && s.room.index === 1; }
+  function storyCanalGeometry(walls, props, raised) {
+    var hasGap = walls.some(function (wall) { return wall.id === 'story-canal-gap'; });
+    var fixProps = props.some(function (p) { return storyFloatProp(p) && p.y !== (raised ? 300 : 430); });
+    if (!walls.some(function (wall) { return wall.id === 'story-canal-north'; })) {
+      walls = walls.concat(
+        Object.assign(rect(390, 28, 180, 236), { id: 'story-canal-north' }),
+        Object.assign(rect(390, 336, 180, 236), { id: 'story-canal-south' }));
+    }
+    if (raised && hasGap) walls = walls.filter(function (wall) { return wall.id !== 'story-canal-gap'; });
+    if (!raised && !hasGap) walls = walls.concat(Object.assign(rect(390, 264, 180, 72), { id: 'story-canal-gap' }));
+    return { walls: walls, props: fixProps ? props.map(function (p) {
+      return storyFloatProp(p) ? Object.assign({}, p, { y: raised ? 300 : 430 }) : p;
+    }) : props };
+  }
+  function storyInDeepWater(s, actor) {
+    // The shallow canal is crossed entirely on its deck. Other flooded
+    // rooms still have a wadeable basin below the drawn waterline.
+    return s.room.deep && s.chapter.water === 2 && !storyCanal(s) &&
+      actor.x >= 40 && actor.x <= W - 40 && actor.y >= 350 && actor.y <= 560 &&
+      !s.interactables.some(function (q) { return q.kind === 'story-air' && dist(actor, q) < 80; });
+  }
+  function storyCanalArrival(s, from, actor) {
+    if (storyCanal(s) && from === 4) actor.x = 282;
+  }
   function storyFox(s) {
     if (s.unlocks && s.unlocks.foxHere) return true;
     var list = s._split && s._split.allCompanions || s.companions;
@@ -319,7 +382,19 @@
       var data = { walls: [], doors: [], portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [], fountains: [], interactables: [] };
       addChapterRoutes(s, room, data, 'story-path-', function (to) { return storyGate(s, room.index, to); }, '往前走', '这边还没开');
       (src.walls || []).forEach(function (w) { data.walls.push(rect(w[0], w[1], w[2], w[3])); });
-      (src.props || []).forEach(function (entry) { data.props.push(prop(s, entry[0], entry[1], entry[2])); });
+      (src.props || []).forEach(function (entry, index) {
+        var object = prop(s, entry[0], entry[1], entry[2]);
+        if (s.chapter.id === 'chapter3' && room.index === 1) object.id = 'story-float-' + index;
+        data.props.push(object);
+      });
+      if (s.chapter.id === 'chapter3' && room.index === 1) {
+        data.portals.find(function (gate) { return gate.target === 4; }).x = 282;
+        // Put the southern doorway on the west bank so it remains reachable at low water.
+        data.doors.find(function (door) { return door.id === 'door-south'; }).x = 238;
+        var bank = data.walls.filter(function (wall) { return wall.y === H - 28 && wall.h === 28 && wall.w > 28; });
+        bank[0].w = 226; bank[1].x = 338; bank[1].w = W - 338;
+        data.walls = storyCanalGeometry(data.walls, data.props, false).walls;
+      }
       (src.foes || []).forEach(function (f, index) {
         var e = enemy(s, f.kind, f.x, f.y);
         e.name = f.name;
@@ -360,12 +435,36 @@
       var portal = s.portals.find(function (p) { return door.id === 'door-' + p.direction; });
       if (portal) { door.locked = !portal.active; door.label = door.locked ? '这边还没开' : '往前走'; }
     });
+    if (storyCanal(s)) {
+      var geometry = storyCanalGeometry(s.walls, s.props, c.water > 0);
+      s.walls = geometry.walls;
+      s.props = geometry.props;
+    }
+    if (storyCartSection(s)) {
+      var drive = s.interactables.find(function (q) { return q.kind === 'story-drive'; });
+      if (c.cartRoom !== s.room.index || storyCartArrived(c)) {
+        if (drive) s.interactables = s.interactables.filter(function (q) { return q !== drive; });
+      } else {
+        if (!drive) {
+          drive = { id: 'story-cart-drive', kind: 'story-drive', y: 358, r: 26, used: false };
+          s.interactables = s.interactables.concat(drive);
+        }
+        drive.x = c.cartX;
+        drive.active = playing && c.cartHp > 0;
+        drive.label = c.clues.indexOf('rolling') >= 0 ? '停车' : '开车';
+      }
+    }
     s.interactables.forEach(function (q) {
       if (q.kind === 'story-note') { q.used = c.clues.indexOf(q.clueId) >= 0; q.active = !q.used; }
       if (q.kind === 'story-lamp') q.active = playing && !q.used && c.lamp !== q.lamp;
       if (q.kind === 'story-order' && q.ending === 'true') q.active = playing && !!(s.unlocks && s.unlocks.sevenReady);
       if (q.kind === 'story-goal') {
         q.active = playing && !q.used && (!q.needClue || c.clues.indexOf(q.needClue) >= 0) && (!q.needDown || c.phase === 'down' || c.phase === 'choice');
+        if (c.id === 'chapter4_2' && !storyCartArrived(c)) { q.active = false; q.description = '运芯车还没到轨尾。'; }
+      }
+      if (q.kind === 'story-core' && c.id === 'chapter4_4') {
+        q.active = playing && !q.used && storyCartArrived(c) && c.phase === 'down';
+        q.description = !storyCartArrived(c) ? '先把运芯车送到泄压台。' : '先击退总归炉者。';
       }
       if (q.kind === 'story-vent') q.active = playing && s.enemies.some(function (e) { return e.storyBoss && e.hp > 0; });
     });
@@ -399,8 +498,16 @@
       s.message = '灯油补上了。'; s.messageTime = 3; burst(s, 'spark', target.x, target.y, '#9fd4c8', 8); return true;
     }
     if (target.kind === 'story-valve') {
+      if (c.id === 'chapter3' && c.water === 2 && livingParty(s).some(function (actor) {
+        var roomIndex = actor === s.railAlly ? actor.roomIndex : s.playerRooms ? s.playerRooms[actor.id] : s.room.index;
+        return roomIndex === 1 && actor.x + actor.r > 390 && actor.x - actor.r < 570;
+      })) {
+        s.message = '先让桥上的人上岸，再泄水。'; s.messageTime = 3; return false;
+      }
       c.water = (c.water + 1) % 3;
-      s.message = c.water === 0 ? '水放下去了。底舱的门露出来。' : c.water === 1 ? '水涨到箱子底。箱子可以当桥。' : '水满过膝。提灯挨不得这深度。';
+      s.message = c.id === 'chapter3' ? (c.water === 0 ? '水退了。西岸底舱的门露出来了。' :
+        c.water === 1 ? '浮箱接成了桥，可以去东岸。' : '水漫进前面的漂箱廊，浸线机会短路。') :
+        c.water === 0 ? '水退了。' : c.water === 1 ? '水位升了一格。' : '水漫进低处，提灯别沾水。';
       s.messageTime = 4; burst(s, 'steam', target.x, target.y, '#8ec9d4', 10); return true;
     }
     if (target.kind === 'story-flash') {
@@ -432,14 +539,22 @@
       s.messageTime = 4; return true;
     }
     if (target.kind === 'story-switch') {
+      if (c.id === 'chapter4_2' && s.room.index === 0) {
+        if (c.cartRoom !== 0) { s.message = '车已经过了道岔。'; s.messageTime = 3; return false; }
+        c.anchor = target.pair;
+        s.message = c.anchor === 2 ? '道岔已转向下轨。' : '道岔已转向上轨。';
+        s.messageTime = 3; return true;
+      }
       if (storyPulseHigh(s)) { s.message = '高潮还没过去。炉口此刻吞火。'; s.messageTime = 3; return false; }
       storyRemember(s, 'code-set');
       s.message = '低潮。炉口开了，快过。'; s.messageTime = 3; return true;
     }
     if (target.kind === 'story-drive') {
-      storyRemember(s, 'rolling');
-      c.cartRoom = s.room.index;
-      s.message = c.clues.filter(function (id) { return id === 'rolling'; }).length > 1 ? '陶铆：车停一下。' : '陶铆：走。你们盯着脉冲。';
+      if (!storyCartSection(s) || c.cartRoom !== s.room.index || storyCartArrived(c)) return false;
+      var moving = c.clues.indexOf('rolling') < 0;
+      if (moving && c.id === 'chapter4_2' && c.cartRoom === 0 && c.anchor < 0) c.anchor = 1;
+      storyCartMoving(c, moving);
+      s.message = moving ? '陶铆：走。你们盯着脉冲。' : '陶铆：车停下了。';
       s.messageTime = 3; return true;
     }
     if (target.kind === 'story-core') {
@@ -533,26 +648,22 @@
         if (c.link === 1 && c.linkLeft <= 0) { c.link = 0; c.anchor = -1; if (c.hung >= 0 && s.mission.id.indexOf('chapter2') !== 0) c.hung = -1; }
       }
       c.pulse = (c.pulse + dt) % 7;
-      if ((s.mission.id === 'chapter4_2' || s.mission.id === 'chapter4_4') && s.room.hot && storyPulseHigh(s)) {
-        var glove = hasPreparation(s, 'p1', 'railGlove') || hasPreparation(s, 'p2', 'railGlove');
-        c.cartHp = Math.max(0, c.cartHp - dt * (glove ? 1.1 : 2.3));
-        c.cartRoom = s.room.index;
-        if (c.cartHp <= 0) { s.message = '运芯车在炉口里烧穿了。'; s.messageTime = 4; finish(s, 'lost'); return; }
-      }
+      advanceStoryCart(s, dt);
+      if (s.status !== 'playing') return;
     }
     if (s.room.wind && c.lit && globalStep) {
       var gust = Math.floor(s.elapsed / 8);
       if (gust > 0 && s.elapsed - gust * 8 < dt + 0.001) { c.lit = false; s.message = '风把灯吹灭了。'; s.messageTime = 3; }
     }
     if (s.room.deep && c.water >= 2) {
-      Object.keys(s.players).forEach(function (key) {
-        var actor = s.players[key];
-        if (!actor || actor.downed) return;
-        var safe = s.interactables.some(function (q) { return q.kind === 'story-air' && dist(actor, q) < 80; });
+      var wet = aliveCombatants(s).filter(function (actor) { return storyInDeepWater(s, actor); });
+      wet.forEach(function (actor) {
         var moss = s.runBuffs && s.runBuffs.indexOf('moss') >= 0;
-        if (!safe && !moss && Math.floor(s.elapsed * 2) !== Math.floor((s.elapsed - dt) * 2)) damagePlayer(s, actor, 1, 'fire');
+        if (!moss && Math.floor(s.elapsed * 2) !== Math.floor((s.elapsed - dt) * 2)) damagePlayer(s, actor, 1, 'fire');
       });
-      if (c.lit) { c.lit = false; s.message = '深水把提灯浇灭了。'; s.messageTime = 3; }
+      if (c.lit && wet.some(function (actor) { return actor.id === c.bearer; })) {
+        c.lit = false; s.message = '深水把提灯浇灭了。'; s.messageTime = 3;
+      }
     }
   }
   function storyFoe(s, e, p, dt) {
@@ -2318,6 +2429,7 @@
     resetCombat(p); p.invuln = Math.max(p.invuln, 0.9); p.moving = false; p.vx = 0; p.vy = 0;
     split.cooldowns[key] = 0.9;
     if (isTrainChapter(s)) placeTrainArrival(s, p);
+    if (isStory(s)) storyCanalArrival(s, from, p);
     if (collides(s, p.x, p.y, p.r, key, false)) placeEnemyInRoom(s, p, alivePlayers(s).filter(function (other) { return other !== p; }));
     s.companions.filter(function (fox) { return fox.ownerId === key; }).forEach(function (fox) { placeCompanion(s, fox); });
     refreshProgress(s);
@@ -2529,6 +2641,7 @@
         if (s.mode === 'chapter' && initial) { p.x = 180; p.y = 276 + i * 48; }
         if (isTrainChapter(s) && initial) { p.x = 150 + i * 55; p.y = 390; }
       }
+      if (isStory(s)) storyCanalArrival(s, previous && previous.index, p);
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
     if (s.mode === 'random') alivePlayers(s).forEach(function (p) {
@@ -3003,7 +3116,15 @@
         s.hint = run.lit ? '灯油 ' + Math.ceil(run.oil) : s.room.dark ? 'E 点灯' : '';
         if (run.alerted) s.hint = '惊动过了';
         if (s.mission.id.indexOf('chapter3') === 0) s.hint = '水位 ' + run.water + (run.alerted ? ' · 已惊动' : '');
-        if (s.mission.id === 'chapter4_2' || s.mission.id === 'chapter4_4') s.hint = (storyPulseHigh(s) ? '脉冲高潮' : '脉冲低潮') + ' · 车 ' + Math.ceil(run.cartHp);
+        if (storyCartSection(s)) {
+          s.hint = s.rooms[run.cartRoom].name + ' · 车体 ' + Math.ceil(run.cartHp) + '/14';
+          if (run.id === 'chapter4_2') {
+            s.objective = storyCartArrived(run) ? '到轨尾交付运芯车' :
+              run.cartRoom === 0 ? '选条轨道，到车边叫陶铆发车' :
+              run.cartRoom === 3 ? '趁脉冲低潮打开炉口' : '跟上运芯车，红线里别停车';
+            s.hint += storyPulseHigh(s) ? ' · 高潮' : ' · 低潮';
+          } else if (!storyCartArrived(run)) s.objective = '到车边发车，送到泄压台';
+        }
         return;
       }
       if (isTrainChapter(s)) {
@@ -3424,6 +3545,7 @@
       event(s, status === 'won' ? 'practice-complete' : 'defeat'); return;
     }
     if (s.mode === 'chapter') s.chapter.phase = status === 'won' ? 'complete' : 'failed';
+    if (storyCartSection(s)) storyCartMoving(s.chapter, false);
     if (isRailChapter(s)) { s.chapter.railPower = 0; s.chapter.railCooldown = 0; }
     if (status === 'won' && !s.rewardGranted) {
       s.rewardGranted = true;
@@ -3592,6 +3714,9 @@
       if (!target.active) {
         s.message = ['chapter-sluice', 'timber-brake', 'rail-route', 'route-winch'].indexOf(target.kind) >= 0 ? target.description :
           isTrainChapter(s) && target.kind.indexOf('train-') === 0 ? target.description || '先把这一站的事办好，再开车。' :
+          isStory(s) && target.kind.indexOf('story-') === 0 ? target.description ||
+            (target.ending === 'true' ? '重明令的格子还是暗的。七盏秘灯还没齐。' :
+              target.needClue ? '还有话没听完。' : '还没到操作的时候。') :
           target.kind === 'refuge-relic' ? '本局遗物已齐全，仍可在另一盏灯旁歇息' :
           target.kind === 'timber-extraction' ? '工人：先让那台吊木机停下来，我们才能安心撤。' :
           target.kind === 'rail-switch' ? '巡轨守卫已经停下，电闸断开了。' :
@@ -3658,7 +3783,7 @@
       if (target.kind === 'beacon') return startWave(s);
       if (target.kind === 'extraction') { target.used = true; target.active = false; finish(s, 'won'); return true; }
     }
-    var nearest = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown && !q.eventSeal &&
+    var nearest = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown && !q.eventSeal && !storyFloatProp(q) &&
       dist(p, q) < 74; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (nearest) {
@@ -4974,7 +5099,7 @@
       }
       return;
     }
-    if (e.storyRole === 'damp' && s.room.deep && s.chapter.water >= 2) {
+    if (e.storyRole === 'damp' && storyInDeepWater(s, e)) {
       e.windup = 0; e.chargeTime = 0; e.attack = '';
       e.stun = Math.max(e.stun, 0.4);
       return;
@@ -5475,7 +5600,7 @@
         special.kind === 'extraction' ? '补给尚未齐全：返回前 3 间房搜索蓝箱' : '守住当前波次后可操作信标';
       return 'E · ' + special.label + (special.kind === 'relic' && s.mode !== 'random' ? '（同组只能选一件）' : '');
     }
-    var near = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown &&
+    var near = s.props.filter(function (q) { return !q.destroyed && !q.carriedBy && !q.thrown && !storyFloatProp(q) &&
       dist(p, q) < 74; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (near) return 'E · 搬起' + ({ crate: '木箱', barrel: '炸药桶', water: '水桶', core: '炉芯' })[near.kind];
@@ -5553,7 +5678,7 @@
         if (s.runBuffs.indexOf('swift') >= 0) speed *= 1.15;
         if (p.relayBoost > 0) speed *= 1.2;
         if (p.sneaking) speed *= 0.55;
-        if (isStory(s) && s.room.deep && s.chapter.water >= 2) speed *= 0.62;
+        if (isStory(s) && storyInDeepWater(s, p)) speed *= 0.62;
         if (isStory(s) && s.chapter.link < 2 && s.enemies.some(function (e) { return e.storyRole === 'scan' && e.hp > 0 && dist(e, p) < 240; })) speed *= 0.72;
         if (s.mode === 'random' && s.room && s.room.mood === 'flood') speed *= 0.82;
         move(s, p, mx * speed * dt, my * speed * dt, false);
