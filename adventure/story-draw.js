@@ -34,7 +34,7 @@
     var x = num(e.x), y = num(e.y);
     var face = num(e.chargeTime) > 0 ? Math.atan2(num(e.chargeY), num(e.chargeX, 1)) : facing(e);
     var word = WORDS[attack] || '';
-    var labelX = x, labelY = y - (e.kind === 'grandfurnace' ? 78 : 58);
+    var labelX = x, labelY = e.storyBoss ? (y > 116 ? y - 101 : y + 35) : y - 64;
     c.save();
     if (num(e.chargeTime) > 0 || attack === 'lunge') {
       var reach = e.kind === 'grandfurnace' ? 168 : 132;
@@ -108,7 +108,7 @@
     }
     if (!warn) return;
     var left = warn.x < view.x, x = left ? 14 : view.w - 14;
-    var y = Math.min(view.h - 45, Math.max(125, warn.y - view.y));
+    var y = Math.min(view.h - 45, Math.max(165, warn.y - view.y));
     var sign = left ? 1 : -1;
     c.save();
     box(c, left ? x - 7 : x - 57, y - 12, 64, 24, '#172731ef');
