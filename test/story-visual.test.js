@@ -26,6 +26,7 @@ function canvas(width = 960, height = 600) {
 const context = { window: {}, AdventureEngine: E,
   document: { createElement: () => canvas() }, performance: { now: () => 1000 } };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../adventure/story-draw.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../adventure/renderer.js'), 'utf8'), context);
 const renderer = context.window.AdventureRenderer;
 function draw(state, options = {}) {
@@ -89,4 +90,34 @@ test('water and pulse tints follow the current room instead of the shared chapte
   assert.ok(draw(train).some(call => call.method === 'fillRect' && call.color === '#ff6a3a'));
   train.runBuffs.push('pulsering');
   assert.equal(draw(train).some(call => call.method === 'fillRect' && call.color === '#ff6a3a'), false);
+});
+
+test('story slashes and hooks draw the reach and angle used by the attack', () => {
+  const s = state('chapter3_4'); E.enterRoom(s, 2, true);
+  const surveyor = s.enemies.find(e => e.kind === 'surveyor');
+  Object.assign(surveyor, { attack: 'hook', windup: .35, facing: Math.PI });
+  assert.ok(draw(s).some(call => call.method === 'arc' &&
+    call.args[0] === surveyor.x && call.args[1] === surveyor.y && call.args[2] === 220 &&
+    Math.abs(call.args[4] - call.args[3] - 1.1) < .001));
+  const finale = state('chapter5_2');
+  const hengshi = finale.enemies.find(e => e.kind === 'wardenblade');
+  Object.assign(hengshi, { attack: 'slash', windup: .32, facing: Math.PI });
+  assert.ok(draw(finale).some(call => call.method === 'arc' && call.args[0] === hengshi.x &&
+    call.args[2] === hengshi.r + finale.players.p1.r + 30 &&
+    Math.abs(call.args[4] - call.args[3] - 1.8) < .001));
+});
+
+test('a cropped-incoming hook gets a visible edge warning and disappears when turned away', () => {
+  const s = state('chapter3_4'); E.enterRoom(s, 2, true);
+  const player = s.players.p1, surveyor = s.enemies.find(e => e.kind === 'surveyor');
+  Object.assign(player, { x: 420, y: 320 });
+  Object.assign(surveyor, { x: 625, y: 320, attack: 'hook', windup: .35, facing: Math.PI });
+  const view = { x: 225, y: 0, w: 390, h: 600 };
+  const banner = calls => calls.find(q => q.method === 'fillRect' && q.color === '#172731ef');
+  assert.deepEqual(banner(draw(s, { view })).args, [319, 308, 64, 24]);
+  assert.equal(banner(draw(s)), undefined, 'full-width play has no edge marker');
+  surveyor.facing = 0;
+  assert.equal(banner(draw(s, { view })), undefined);
+  surveyor.facing = Math.PI; surveyor.stun = .3;
+  assert.equal(banner(draw(s, { view })), undefined, 'interrupted windup has no edge marker');
 });

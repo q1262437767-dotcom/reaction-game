@@ -2548,7 +2548,6 @@
       c.beginPath(); c.ellipse(x, y + 6, r + 7, (r + 7) * .47, 0, 0, Math.PI * 2); c.stroke();
     }
     const storyMarked = typeof AdventureStoryDraw !== 'undefined' && AdventureStoryDraw.owns(kind);
-    if (storyMarked && (e.windup > 0 || e.chargeTime > 0)) AdventureStoryDraw.telegraph(c, e, time);
     if (e.windup > 0 && !e.rhythm && !storyMarked) {
       if (e.attack === 'ring') {
         const rr = boss ? 104 : 38;
@@ -4408,6 +4407,10 @@
     const enemies = values(state.enemies);
     const viewTop = num(options.view?.y), viewBottom = viewTop + num(options.view?.h, H);
     const local = state.players?.[localId];
+    const storyDraw = state.status === 'playing' && typeof AdventureStoryDraw !== 'undefined' ? AdventureStoryDraw : null;
+    const storyTells = storyDraw ? enemies.filter(e => storyDraw.owns(e.kind) && storyDraw.activeTell(e)) : [];
+    const paintStoryTells = () => storyTells.forEach(e => storyDraw.telegraph(c, e, enemyTime, local, still));
+    const dark = state.room?.dark || state.mode === 'random' && state.room?.mood === 'dark';
     const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
       e.kind === 'boss' && !e.timber && e.hp > 0 && !e.dead && !e.rhythm && !e.stagger && e.intercept?.remaining > 0 &&
       Number.isFinite(e.intercept.x) && Number.isFinite(e.intercept.y));
@@ -4437,6 +4440,7 @@
     values(state.companions).forEach(fox=>foxCompanion(c,fox,time,state,localId,still));
     if (intercepting) interceptLanding(c, intercepting.intercept);
     enemies.forEach(e => rhythmArea(c, e, state, localId, viewTop));
+    if (!dark) paintStoryTells();
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
@@ -4486,6 +4490,8 @@
     }
     ambient(c, state, time);
     storyDarkness(c, state);
+    // Telegraphs remain legible when a fog or lantern mask hides the attacker.
+    if (dark) paintStoryTells();
     if (state.mode === 'random' && state.room && state.room.mood === 'pulse') {
       alpha(c, (Math.sin(time * .008) + 1) * .06, () => rect(c, 0, 0, W, H, '#ff8a4a'));
     }
@@ -4493,6 +4499,7 @@
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
     resetHudTransform(c, options.view);
+    if (storyDraw && storyTells.length) storyDraw.offscreenWarning(c, storyTells, local, options.view);
     paintTopStatus(c, state, options);
     paintCornerMap(c, state, options, minimap);
     c.restore();
