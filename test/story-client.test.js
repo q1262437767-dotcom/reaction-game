@@ -239,3 +239,37 @@ test('remote water controls change the guest bridge geometry and survive a dropp
   assert.deepEqual(bridgeBoxes(remote.guest).map(p => p.y), restingY);
   assertValid(wire(E.snapshot(E.viewForPlayer(canal, 'p2'), true)), 'dry bridge full refresh');
 });
+
+test('guest receives the inspection hatch opening from two rooms and its full weakpoint time', () => {
+  const state = E.create({ mode: 'chapter', mission: 'chapter3_4', players: 2, seed: 61 });
+  E.enterRoom(state, 1, true, 'p1');
+  E.enterRoom(state, 2, true, 'p2');
+  const remote = channel(state);
+  remote.receive('closed hatch');
+  interactAt(state, 'p1', 'story-link');
+  remote.receive('first end');
+  assert.equal(remote.guest.chapter.link, 1);
+  interactAt(state, 'p2', 'story-link');
+  remote.receive('both ends');
+  assert.equal(remote.guest.chapter.link, 2);
+  assert.equal(remote.guest.enemies.find(e => e.kind === 'surveyor').weakTime, 6);
+  assertValid(wire(E.snapshot(E.viewForPlayer(state, 'p2'), true)), 'full hatch opening refresh');
+});
+
+test('guest receives the finale authorization and can use it without the host leaving the pulse console', () => {
+  const state = E.create({ mode: 'chapter', mission: 'chapter5_2', players: 2, seed: 62 });
+  E.enterRoom(state, 3, true, 'p1');
+  const remote = channel(state);
+  remote.receive('locked orders');
+  const order = view => view.interactables.find(item => item.kind === 'story-order' && item.ending === 'normal');
+  assert.equal(order(remote.guest).active, false);
+  state.chapter.pulse = 0;
+  interactAt(state, 'p1', 'story-switch');
+  remote.receive('remote access granted');
+  assert.equal(order(remote.guest).active, true);
+  assert.ok(remote.guest.chapter.linkLeft > 0);
+  interactAt(state, 'p2', 'story-order', item => item.ending === 'normal');
+  remote.receive('order accepted');
+  assert.equal(remote.guest.chapter.ending, 'normal');
+  assert.equal(remote.guest.status, 'won');
+});

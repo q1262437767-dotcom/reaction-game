@@ -1,6 +1,6 @@
 # 遗迹小队 · Ruin Runners
 
-静态资源 `?v=60`，联机协议 34。第三章浮箱随水位搭桥，第四章运芯车可以发车、停车和换线。联机请双方刷新。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）；已经上线的库不用再跑 SQL。
+静态资源 `?v=61`，联机协议 35。第三章双端接线可打开检线官的护舱，第五章可通过战斗或脉冲终端获得下令机会。联机请双方刷新。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）；已经上线的库不用再跑 SQL。
 
 在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 

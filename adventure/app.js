@@ -1799,7 +1799,8 @@
       if (enemy.coreExposed !== undefined && (!furnaceBoss || enemy.coreExposed !== true || enemy.rhythm != null)) return false;
       const storyWeakTime = storySection(s) && enemy.storyBoss === true &&
         (enemy.kind === 'grandfurnace' && s.mission.id === 'chapter4_4' ? 3.4 :
-          enemy.kind === 'echoguard' && s.mission.id === 'chapter2_4' ? 3.2 : 0);
+          enemy.kind === 'echoguard' && s.mission.id === 'chapter2_4' ? 3.2 :
+            enemy.kind === 'surveyor' && s.mission.id === 'chapter3_4' ? 6 : 0);
       const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : storyWeakTime || 1.6;
       if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, maxWeakTime) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
       if (enemy.pursuit !== undefined) {
@@ -2672,7 +2673,9 @@
     const separated = Number.isInteger(partnerRoom) && partnerRoom !== state.room.index;
     const allyTasks = { investigate: '调查工棚', rendezvous: '站台会合', feeder: '打通配电廊', guard: '支援拨道场', rescue: '接应救援车', route: '一起探路', dispatch: '赶往调度室', signal: '前往冷却站', done: '任务完成' };
     const allyRoom = ally && Number.isInteger(ally.roomIndex) ? state.rooms[ally.roomIndex]?.name : '';
-    const allyTask = ally?.taskReturn ? '赶去救你' : train?.unloaded ? '隔离炉支援' : train ? '守护救援车' : allyTasks[ally?.task] || '同行';
+    const allyTask = ally?.taskReturn ? '赶去救你' : train?.unloaded ? '隔离炉支援' : train ? '守护救援车' :
+      storySection(state) && ally?.task === 'signal' ? '去塔上打灯讯' :
+        ally?.task === 'wire' ? '去对端接线' : allyTasks[ally?.task] || '同行';
     putText('hud-team', ally ? (ally.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
       `阿禾 ${ally.hp} / ${ally.maxHp}${ally.task ? ' · ' + allyTask : ''}`) :
       separated ? `搭档 · ${state.rooms[partnerRoom].name}` :
@@ -2694,8 +2697,15 @@
         if (!opening || enemy.weakTime > opening.weakTime) opening = enemy;
       }
     }
-    putHidden('hud-opportunity', !opening || paused || tutorialPending || remoteTutorialPending || hasDialog() || !playing());
-    putText('hud-opportunity', opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '');
+    const run = state?.chapter;
+    let opportunity = opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '';
+    if (run?.linkLeft > 0 && ['chapter3_4', 'chapter5_2'].includes(run.id)) {
+      const seconds = Math.ceil(run.linkLeft) + ' 秒';
+      if (run.id === 'chapter3_4') opportunity = (run.link === 1 ? '等待对端 · ' : '护舱已开 · ') + seconds;
+      else if (run.link === 2 && run.phase !== 'down') opportunity = '终端已放行 · ' + seconds;
+    }
+    putHidden('hud-opportunity', !opportunity || paused || tutorialPending || remoteTutorialPending || hasDialog() || !playing());
+    putText('hud-opportunity', opportunity);
     let route = chapter ? `第一节 · 借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => BUFF_LABELS[id] || '').filter(Boolean).join(' / ') : ''}` : '';
     if (chapter && state.chapter.id === 'chapter1_2') route = `第二节 · 木场求援 · 记录 ${state.chapter.clues.length} / 2${state.chapter.workerFreed ? ' · 工人已脱困' : ''}`;
     if (chapter && state.chapter.id === 'chapter1_3') route = `第三节 · 借走的主芯 · 记录 ${state.chapter.clues.length} / 2${state.chapter.bossDefeated ? ' · 转车台已打通' : ''}`;

@@ -252,6 +252,21 @@
     var wide = s.runBuffs && s.runBuffs.indexOf('pulsering') >= 0;
     return (s.chapter.pulse % 7) >= (wide ? 5.2 : 4);
   }
+  function finaleWindow(s) {
+    return s.chapter.id === 'chapter5_2' && s.chapter.link === 2 && s.chapter.linkLeft > 0;
+  }
+  function finaleOrderReady(s) {
+    return s.chapter.phase === 'down' || finaleWindow(s);
+  }
+  function finaleOrderBlock(s, target) {
+    if (target.ending === 'true' && !(s.unlocks && s.unlocks.sevenReady)) return '七盏秘灯还没齐。';
+    return finaleOrderReady(s) ? '' : '先击退衡石，或到脉冲终端开授权。';
+  }
+  function finaleConsoleBlock(s) {
+    if (s.chapter.phase === 'down') return '衡石已经停手，回总炉之心下令。';
+    if (finaleWindow(s)) return '授权还开着，抓紧下令。';
+    return storyPulseHigh(s) ? '脉冲太强，再等一拍。' : '';
+  }
   function storyCartSection(s) {
     return isStory(s) && (s.chapter.id === 'chapter4_2' || s.chapter.id === 'chapter4_4');
   }
@@ -425,6 +440,36 @@
     });
     s.mission.name = def.name; s.mission.goal = def.goal; s.mission.total = 1;
   }
+  function storySurveyor(s) {
+    var room = s.room.index === 2 ? s : s.roomData[2];
+    return room && room.enemies.find(function (e) { return e.kind === 'surveyor' && e.storyBoss && e.hp > 0; });
+  }
+  function linkSurveyor(s, actor, target) {
+    var c = s.chapter, boss = storySurveyor(s);
+    if (!boss || c.phase === 'down' || c.link >= 2) return false;
+    if (c.link === 1 && c.linkLeft > 0) {
+      if (c.anchor !== s.room.index) {
+        s.message = '这边已经合上了。去另一头。'; s.messageTime = 3; return false;
+      }
+      c.link = 2; c.linkLeft = 6; c.hung = -1; c.anchor = -1;
+      boss.stagger = Math.max(boss.stagger, 1.5);
+      boss.attackCd = Math.max(boss.attackCd, 0.7);
+      boss.windup = 0; boss.chargeTime = 0; boss.attack = '';
+      if (s.room.index === 2) openWeakpoint(s, boss, actor.id, 'counter', c.linkLeft);
+      else boss.weakTime = c.linkLeft;
+      if (s.railAlly && s.railAlly.task === 'wire') s.railAlly.task = 'follow';
+      railAllyReport(s, actor === s.railAlly ? '阿禾：合上了！趁现在打它露出来的护舱。' :
+        '护舱打开了。趁它还没合上，打！');
+      return true;
+    }
+    c.link = 1; c.linkLeft = 12; c.hung = s.room.index; c.anchor = target.pair;
+    if (s.playerCount < 2 && s.railAlly && !s.railAlly.downed) {
+      s.railAlly.task = 'wire';
+      s.message = '阿禾：我去另一头。你看着检线官。';
+    } else s.message = '这一头合上了。十二秒内到另一头。';
+    s.messageTime = 4;
+    return true;
+  }
   function syncStory(s) {
     var c = s.chapter, playing = s.status === 'playing';
     if (playing && c.phase !== 'down' && c.phase !== 'choice' && c.phase !== 'boss') c.phase = c.clues.length ? 'mid' : 'arrive';
@@ -456,8 +501,21 @@
     }
     s.interactables.forEach(function (q) {
       if (q.kind === 'story-note') { q.used = c.clues.indexOf(q.clueId) >= 0; q.active = !q.used; }
+      if (c.id === 'chapter3_4' && q.kind === 'story-link') {
+        q.active = playing && c.phase !== 'down' && c.link !== 2 && (c.link !== 1 || c.anchor === s.room.index);
+        q.description = c.phase === 'down' ? '检线官已经停机。' :
+          c.link === 2 ? '护舱已经打开。' : c.link === 1 && c.anchor !== s.room.index ? '这一头已合上，另一头还没动。' : '';
+      }
       if (q.kind === 'story-lamp') q.active = playing && !q.used && c.lamp !== q.lamp;
-      if (q.kind === 'story-order' && q.ending === 'true') q.active = playing && !!(s.unlocks && s.unlocks.sevenReady);
+      if (c.id === 'chapter5_2' && q.kind === 'story-order') {
+        q.description = finaleOrderBlock(s, q);
+        q.active = playing && !q.description;
+      }
+      if (c.id === 'chapter5_2' && q.kind === 'story-switch') {
+        q.description = finaleConsoleBlock(s);
+        q.active = playing && !q.description;
+        q.label = q.active ? '开启授权（16 秒）' : '脉冲终端';
+      }
       if (q.kind === 'story-goal') {
         q.active = playing && !q.used && (!q.needClue || c.clues.indexOf(q.needClue) >= 0) && (!q.needDown || c.phase === 'down' || c.phase === 'choice');
         if (c.id === 'chapter4_2' && !storyCartArrived(c)) { q.active = false; q.description = '运芯车还没到轨尾。'; }
@@ -525,6 +583,7 @@
       storyRemember(s, 'code-set');
       s.message = '闸开了。灯讯对上了。'; s.messageTime = 4; return true;
     }
+    if (target.kind === 'story-link' && c.id === 'chapter3_4') return linkSurveyor(s, p, target);
     if (target.kind === 'story-link' || target.kind === 'story-tune') {
       if (c.link >= 2) { s.message = '这一头已经接上了。'; s.messageTime = 2; return true; }
       if (c.link === 1 && c.linkLeft > 0 && c.hung !== s.room.index && c.hung >= 0) {
@@ -539,6 +598,13 @@
       s.messageTime = 4; return true;
     }
     if (target.kind === 'story-switch') {
+      if (c.id === 'chapter5_2') {
+        var consoleBlock = finaleConsoleBlock(s);
+        if (consoleBlock) { s.message = consoleBlock; s.messageTime = 3; return false; }
+        c.link = 2; c.linkLeft = 16;
+        s.message = '总炉授权打开了。十六秒内回总炉之心下令。'; s.messageTime = 5;
+        return true;
+      }
       if (c.id === 'chapter4_2' && s.room.index === 0) {
         if (c.cartRoom !== 0) { s.message = '车已经过了道岔。'; s.messageTime = 3; return false; }
         c.anchor = target.pair;
@@ -601,20 +667,16 @@
       s.message = (labels[target.relic] || '遗物') + '并入这一局。'; s.messageTime = 3; return true;
     }
     if (target.kind === 'story-order') {
-      if (target.ending === 'true' && !(s.unlocks && s.unlocks.sevenReady)) {
-        s.message = '重明令的格子是暗的。七盏秘灯还没齐。'; s.messageTime = 4; return false;
-      }
-      var partnerThere = s.playerCount < 2 || c.link >= 2 || Object.keys(s.players).some(function (id) {
-        return id !== p.id && s.playerRooms && s.playerRooms[id] !== s.room.index;
-      });
-      if (!partnerThere) { s.message = '一个人过招，另一个人得在终端上。'; s.messageTime = 3; return false; }
+      var blocked = finaleOrderBlock(s, target);
+      if (blocked) { s.message = blocked; s.messageTime = 4; return false; }
       c.ending = target.ending;
       s.message = target.ending === 'true' ? '重明令送进去了。灯路会重新认人。' : '完结令送进去了。回收停，总炉封上。';
       storyWin(s); return true;
     }
     if (target.kind === 'story-smash') {
       if (c.ending !== 'warn') {
-        c.ending = 'warn'; c.phase = 'choice';
+        c.ending = 'warn';
+        if (c.phase !== 'down') c.phase = 'choice';
         var warning = book && book.note('ash-warn');
         s.message = warning ? warning.text : '再确认一次。这一下会灭掉许多灯。';
         s.messageTime = 8; return true;
@@ -645,6 +707,16 @@
       }
       if (c.linkLeft > 0) {
         c.linkLeft = Math.max(0, c.linkLeft - dt);
+        if (c.id === 'chapter3_4') {
+          // The window elapses even if nobody is currently in the arena.
+          var surveyor = c.link === 2 ? storySurveyor(s) : null;
+          if (surveyor) surveyor.weakTime = c.linkLeft;
+          if (c.linkLeft <= 0) {
+            c.link = 0; c.anchor = -1; c.hung = -1;
+            if (s.railAlly && s.railAlly.task === 'wire') s.railAlly.task = 'follow';
+          }
+        }
+        if (c.id === 'chapter5_2' && c.link === 2 && c.linkLeft <= 0) c.link = 0;
         if (c.link === 1 && c.linkLeft <= 0) { c.link = 0; c.anchor = -1; if (c.hung >= 0 && s.mission.id.indexOf('chapter2') !== 0) c.hung = -1; }
       }
       c.pulse = (c.pulse + dt) % 7;
@@ -695,6 +767,17 @@
   }
   function storyAllyGoal(s, ally) {
     var c = s.chapter, owner = partyPlayers(s).p1;
+    if (c.id === 'chapter3_4' && ally.task === 'wire') {
+      if (c.link === 1 && c.anchor >= 0 && c.phase !== 'down') {
+        var surveyorTerminal = ally.roomIndex === c.anchor ?
+          s.interactables.find(function (q) { return q.kind === 'story-link' && q.active; }) : null;
+        if (!surveyorTerminal) return { roomIndex: c.anchor, x: 480, y: 300, combat: false };
+        if (dist(ally, surveyorTerminal) >= 68 || !foxSight(s, ally, surveyorTerminal, 3))
+          return { roomIndex: c.anchor, x: surveyorTerminal.x, y: surveyorTerminal.y, combat: false };
+        linkSurveyor(s, ally, surveyorTerminal);
+      }
+      ally.task = 'follow';
+    }
     if ((ally.task === 'signal' || ally.task === 'wire') && c.anchor >= 0) {
       if (ally.roomIndex === c.anchor) {
         if (ally.task === 'signal') {
@@ -3923,6 +4006,10 @@
   }
   function damageEnemy(s, e, amount, owner, weapon, quietHit, earnedCounter) {
     if (e.hp <= 0) return 0;
+    if (e.kind === 'surveyor' && s.chapter && s.chapter.id === 'chapter3_4' && s.chapter.link === 2 &&
+        s.chapter.linkLeft > 0 && partyPlayers(s)[owner] && /^(blade|spear|pistol|scatter)$/.test(weapon)) {
+      amount += Math.max(1, Math.ceil(amount * 0.5));
+    }
     if (e.trainReturner && !earnedCounter && e.stagger <= 0 && e.weakTime <= 0 &&
         /^(blade|spear|pistol|scatter)$/.test(weapon)) {
       amount *= 0.5;
@@ -3968,7 +4055,8 @@
       event(s, 'boss-phase', { enemyId: e.id, stage: 2, x: e.x, y: e.y });
     }
     if (e.hp <= 0) {
-      if (e.storyBoss && isStory(s) && s.chapter.phase !== 'down' && s.chapter.phase !== 'choice') {
+      if (e.storyBoss && isStory(s) && s.chapter.phase !== 'down' &&
+          (s.chapter.phase !== 'choice' || s.chapter.id === 'chapter5_2')) {
         s.chapter.phase = 'down';
         s.message = e.name + '停住了。'; s.messageTime = 4;
       }
@@ -4974,7 +5062,7 @@
     e.stun = Math.max(e.stun, 0.95);
     var lines = {
       echoguard: { 2: '回声开始吹灯。看准气口，水能浇灭灯腔。', 3: '它往亮处跳。先看落点，再闪或招架。' },
-      surveyor: { 2: '扫描收成钩索。对着它招架，钩子会弹开。', 3: '护舱大开。钩和光一起来，仍能招架。' },
+      surveyor: { 2: '扫描收成钩索。对着它招架，钩子会弹开。', 3: '钩和光一起上了。看准再挡，或者再拉一次闸。' },
       grandfurnace: { 2: '它改砸地。退出圈，或贴身把这一拍招架掉。', 3: '它要吞主芯。这一口很慢，闪或招架。' },
       wardenblade: { 2: '衡石收刃。程序的火从他身后喷出来。', 3: '炉口按程序砸下来。圈是实的，人要让开。' }
     };
@@ -5111,11 +5199,6 @@
     }
     if (e.kind === 'pulseling' && !storyPulseHigh(s)) {
       e.windup = 0; e.chargeTime = 0; e.attack = '';
-      return;
-    }
-    if (e.kind === 'surveyor' && s.chapter.link >= 2 && !e.opened) {
-      e.opened = 1; e.stagger = 2.1; e.windup = 0; e.chargeTime = 0;
-      s.message = '线接上了。扫描停了一拍，护舱敞着。'; s.messageTime = 3.2;
       return;
     }
     if (!p) return;
@@ -5594,6 +5677,7 @@
     if (special) {
       if (!special.active && ['chapter-sluice', 'timber-brake', 'rail-route', 'route-winch'].indexOf(special.kind) >= 0) return special.description || '';
       if (!special.active && isTrainChapter(s) && special.kind.indexOf('train-') === 0) return special.description || '';
+      if (!special.active && isStory(s) && special.kind.indexOf('story-') === 0 && special.description) return special.description;
       if (!special.active) return special.kind === 'refuge-relic' ? '遗物已齐全，可在另一盏灯旁歇息' : special.kind === 'chapter-fire' ? '炉心仍在暴走' :
         special.kind === 'timber-extraction' ? '先救出工人，让吊木守卫停下来' :
         special.kind === 'chapter-lamp' ? '归途灯还缺火种' : special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
