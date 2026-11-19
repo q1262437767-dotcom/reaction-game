@@ -6,6 +6,11 @@
   const relicColors = { pierce: '#a0c8df', swift: '#b9d698', vigor: '#e3a38a', resonance: '#e5c88a', riposte: '#edb6a0', decoy: '#a8d6cc' };
   const styleColors = { echo: '#d5c4ec', pursuit: '#edcf91', phantom: '#b0dfd2' };
   const styleNames = { echo: '回响反击', pursuit: '闪身射击', phantom: '残影牵制' };
+  const weaponLabels = {
+    blade: '近战 · 旅人短刃', spear: '近战 · 遗迹长枪', hook: '近战 · 拖钩刃',
+    pistol: '远程 · 手枪', scatter: '远程 · 散射枪', echo: '远程 · 回声灯铳', vent: '远程 · 泄压筒'
+  };
+  const weaponEffects = new Set(['echo-lamp', 'hook-latch', 'hook-drag', 'vent-shot', 'vent-break']);
   const floorCache = new Map();
   const glowCache = new Map();
   const layerCache = new Map();
@@ -1849,7 +1854,30 @@
     if (p.hp > 0 && p.maxHp && p.hp < p.maxHp) bar(c, x, y - 23, 24, p.hp / p.maxHp, '#b19b67');
   }
   function bar(c, x, y, width, ratio, color, height = 3) { rect(c, x - width / 2 - 1, y - 1, width + 2, height + 2, '#132828'); rect(c, x - width / 2, y, width, height, '#283e36'); rect(c, x - width / 2, y, width * Math.max(0, Math.min(1, ratio)), height, color); }
+  function storyGun(c, x, y, angle, kind) {
+    c.save(); c.translate(x, y); c.rotate(angle || 0);
+    rect(c, 4, -4, 8, 12, '#142a2d'); rect(c, 6, 1, 5, 7, '#795c48');
+    rect(c, 7, 3, 3, 2, '#bd9968'); rect(c, 4, -2, 5, 5, '#d6b38a');
+    if (kind === 'echo') {
+      // The blue glass chamber is the same light used by the deployed lure.
+      rect(c, 8, -8, 17, 15, '#13283a'); rect(c, 10, -7, 13, 11, '#577981');
+      rect(c, 11, -6, 10, 1, '#c7cfad'); rect(c, 12, -4, 8, 7, '#5361a6');
+      rect(c, 14, -5, 5, 7, '#89cfff'); rect(c, 15, -4, 3, 5, '#e4f7ff');
+      rect(c, 22, -5, 10, 9, '#142839'); rect(c, 24, -4, 6, 6, '#8a9fa4');
+      rect(c, 29, -5, 3, 7, '#33435c'); rect(c, 29, -4, 2, 2, '#c2d1cb');
+    } else {
+      // Wider than the rifle and rounded at the shoulder, with a bronze valve.
+      rect(c, 7, -7, 19, 14, '#192b2d'); rect(c, 10, -9, 13, 16, '#1a3035');
+      rect(c, 9, -6, 15, 11, '#638b83'); rect(c, 11, -7, 10, 4, '#a5bba0');
+      rect(c, 10, 2, 12, 3, '#43655e'); rect(c, 19, -7, 3, 12, '#be9867');
+      rect(c, 19, -6, 3, 3, '#e6c780'); rect(c, 24, -5, 9, 10, '#313d3a');
+      rect(c, 24, -4, 8, 2, '#c5aa78'); rect(c, 31, -4, 3, 7, '#736b54');
+      rect(c, 32, -2, 2, 3, '#142a30');
+    }
+    c.restore();
+  }
   function gun(c, x, y, angle, kind, color = '#b8b99a', enemy = false) {
+    if (kind === 'echo' || kind === 'vent') { storyGun(c, x, y, angle, kind); return; }
     c.save(); c.translate(Math.round(x), Math.round(y)); c.rotate(angle || 0); const length = kind === 'scatter' ? 23 : enemy ? 14 : 17;
     rect(c, 4, -4, length, 8, '#152928'); rect(c, 6, -3, length - 2, 5, enemy ? '#aa9970' : color); rect(c, 7, -3, length - 3, 2, '#d0d5b2'); rect(c, 6, 2, 5, 5, '#735945'); rect(c, 4, -2, 4, 5, '#d6b38a');
     if (kind === 'scatter') { rect(c, length + 1, -5, 4, 9, '#52675b'); rect(c, 12, 2, 7, 3, '#8f7050'); }
@@ -1897,6 +1925,20 @@
     rect(c, 37 + extension, -4, 2, 2, '#edd19c');
     c.restore();
   }
+  function hookBlade(c, x, y, angle, guarding, striking) {
+    c.save(); c.translate(x, y); c.rotate(angle + (guarding ? -.8 : 0));
+    const extension = striking && !guarding ? 4 : 0;
+    c.translate(extension, 0);
+    const hook = [[9, 1], [24, 1], [31, -3], [31, -9], [27, -13], [21, -13], [17, -9]];
+    c.lineJoin = 'round';
+    path(c, hook, '#182b2e', 9);
+    path(c, hook, '#8c9e95', 6);
+    path(c, [[12, -1], [23, -1], [29, -4], [29, -9], [26, -11], [21, -11], [17, -9]], '#e4dbc0', 2);
+    rect(c, 4, -4, 10, 8, '#263436'); rect(c, 5, -3, 7, 6, '#a47b4d');
+    rect(c, 7, -4, 2, 8, '#d9aa6c'); rect(c, 11, -5, 3, 10, '#b58c58');
+    rect(c, 11, -4, 3, 2, '#f0cb8b'); rect(c, 4, -2, 4, 4, '#d4b28a');
+    c.restore();
+  }
   function decoy(c, d, time) {
     if (!d || num(d.ttl) <= 0) return;
     const x=num(d.x),y=num(d.y),opacity=Math.min(.42,num(d.ttl)*.6);
@@ -1906,6 +1948,51 @@
       rect(c,x-6,y+7,4,9,'#b3d6c4');rect(c,x+3,y+7,4,9,'#b3d6c4');
       const scan=(time*.015+hash(d.id))%37;path(c,[[x-11,y-29+scan],[x+11,y-29+scan]],'#edffe3',2);
     });
+  }
+  function echoLamp(c, lamp, time, still) {
+    const ttl = num(lamp.ttl);
+    if (ttl <= 0) return;
+    const x = num(lamp.x), y = num(lamp.y);
+    const flicker = still ? 0 : Math.floor(time / 150 + hash(lamp.id) % 7) % 3;
+    const offset = flicker === 1 ? -2 : flicker === 2 ? 2 : 0;
+    alpha(c, Math.min(1, ttl * 3.2), () => {
+      ellipse(c, x, y + 3, 18, 8, '#172844b8');
+      glow(c, x, y - 6, 31, '#667aeb62');
+      c.strokeStyle = '#86acfa'; c.lineWidth = 1;
+      c.beginPath(); c.ellipse(x, y + 3, 16, 7, 0, .12, Math.PI * 1.9); c.stroke();
+      rect(c, x - 6, y - 6, 12, 8, '#26374e'); rect(c, x - 4, y - 5, 8, 3, '#89a9c1');
+      rect(c, x - 3 + offset, y - 14, 6, 9, '#7384e3');
+      rect(c, x - 1 - offset, y - 17, 3, 10, '#b7deff');
+      rect(c, x - 5 - offset, y - 11, 10, 2, '#a1b5fa'); rect(c, x, y - 12, 2, 6, '#e4f5ff');
+      rect(c, x - 11, y + 2, 4, 2, '#c3daff'); rect(c, x + 7, y + 2, 4, 2, '#c3daff');
+    });
+  }
+  function roomEchoLamps(c, state, time, still) {
+    for (const lamp of values(state.decoys)) if (lamp.kind === 'echo-lamp') echoLamp(c, lamp, time, still);
+  }
+  function hookTethers(c, state) {
+    for (const player of roomPlayers(state)) {
+      if (!player.hookProp || !(player.hookTime > 0) || player.dead || player.downed) continue;
+      const p = values(state.props).find(prop => prop.id === player.hookProp &&
+        !prop.carriedBy && !prop.destroyed && (prop.hp == null || prop.hp > 0));
+      if (!p) continue;
+      const x = num(player.x), y = num(player.y) - 5, tx = num(p.x), ty = num(p.y);
+      const dx = tx - x, dy = ty - y, length = Math.hypot(dx, dy);
+      if (length < 1) continue;
+      const links = Math.min(18, Math.floor(length / 9));
+      alpha(c, Math.min(1, player.hookTime * 3), () => {
+        path(c, [[x, y], [tx, ty]], '#222d30', 4);
+        path(c, [[x, y], [tx, ty]], '#ad8c67', 1.5);
+        for (let i = 1; i <= links; i++) {
+          const t = i / (links + 1), lx = x + dx * t, ly = y + dy * t;
+          rect(c, lx - 1, ly - 1, 3, 2, i % 2 ? '#e4c897' : '#8f8e72');
+        }
+        const r = num(p.r, 13) + 3;
+        for (const side of [-1, 1]) {
+          path(c, [[tx + side * (r - 5), ty + 12], [tx + side * r, ty + 12], [tx + side * r, ty + 7]], '#f0c790', 2);
+        }
+      });
+    }
   }
   function foxBody(c, fox, time, still = false, caged = false) {
     const mode = caged ? 'idle' : fox.mode, pouncing = mode === 'pounce', sniffing = mode === 'sniff', sitting = mode === 'idle';
@@ -2034,25 +2121,31 @@
     rect(c, -7, -31, 11, 2, light); rect(c, -6, -29, 3, 4, '#75ac9d'); rect(c, 5, -29, 3, 5, dark);
     rect(c, -12, -23, 25, 4, '#83b2a0'); rect(c, -11, -23, 20, 1, '#d9dfb9'); rect(c, -11, -21, 23, 2, dark);
     rect(c, -8, -25, 17, 2, '#51483c'); rect(c, 4, -30, 3, 6, '#dec68a'); rect(c, 5, -30, 1, 3, '#fff0c4');
-    const melee = p.weapon === 'blade' || p.weapon === 'spear';
+    const melee = p.weapon === 'blade' || p.weapon === 'spear' || p.weapon === 'hook';
     if (p.weapon === 'spear') spear(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
+    else if (p.weapon === 'hook') hookBlade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
     if (state.runUpgrades && state.runUpgrades.tempered) {
       // Warm steel follows the equipped weapon; a stowed second weapon never
       // reappears on the player's back and the HUD gains no permanent panel.
-      const reach = p.weapon === 'spear' ? 62 : p.weapon === 'blade' ? 30 : p.weapon === 'scatter' ? 24 : 18;
+      const reach = { spear: 62, blade: 30, hook: 25, scatter: 24, echo: 25, vent: 23 }[p.weapon] || 18;
       c.save(); c.rotate(facing - (p.guarding && !melee ? .65 : p.guarding ? .8 : 0));
       path(c,[[reach-5,-4],[reach+3,-4]],'#e8b467',1);
       rect(c,reach,-5,2,2,'#ffe0a0'); c.restore();
     }
-    if (!melee && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
+    if ((p.weapon === 'pistol' || p.weapon === 'scatter') && p.fireCd > (p.weapon === 'scatter' ? .48 : .155)) {
       c.save(); c.translate(Math.cos(facing) * (p.weapon === 'scatter' ? 31 : 25), -3 + Math.sin(facing) * (p.weapon === 'scatter' ? 31 : 25)); c.rotate(facing);
       rect(c,-2,-4,10,8,'#f3d496');rect(c,2,-2,10,4,'#fff3c6');rect(c,2,-7,4,14,'#f3d496');c.restore();
       if(p.weapon==='scatter')for(const side of [-1,1]){
         const angle=facing+side*.24;
         path(c,[[Math.cos(angle)*34,-3+Math.sin(angle)*34],[Math.cos(angle)*53,-3+Math.sin(angle)*53]],'#edc89090',2);
       }
+    }
+    if (p.weapon === 'echo' && p.fireCd > .61) {
+      c.save(); c.translate(0, -3); c.rotate(facing);
+      rect(c, 30, -2, 9, 4, '#9bbfff'); rect(c, 35, -1, 9, 2, '#e4f6ff');
+      rect(c, 32, -5, 2, 10, '#81a8e180'); c.restore();
     }
     c.restore();
     if (p.guarding) {
@@ -3318,10 +3411,10 @@
     // A retained history can arrive again in every network snapshot. Rendering is
     // a pure function of simulation age: it never restarts an effect on receipt.
     const local = source.filter(event => !state.players?.[event.playerId] || playerInRoom(state, event.playerId) ||
-      !['perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'weapon-switch',
-        'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'decoy', 'rail-shock'].includes(event.type));
+      !(weaponEffects.has(event.type) || ['perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break',
+        'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'decoy', 'rail-shock'].includes(event.type)));
     return local.slice(-24).map(e => ({ event: e, age: num(state.time) - num(e.time, -10) }))
-      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open','train-hit'].includes(event.type));
+      .filter(({ event, age }) => age >= 0 && age <= (event.type === 'boss-phase' || event.type === 'core-deliver' || event.type === 'hunt-defeated' || event.type === 'weapon-broken' ? 1 : /^event-|^supply-collected$|^hunt-|^weapon-tempered$|^storehouse-open$|^wall-breached$|^fox-rescued$|^style-formed$|^refuge-chosen$|^boss-overload-open$/.test(event.type) ? .85 : .62) && (weaponEffects.has(event.type) || ['rhythm-windup','rhythm-beat','perfect-parry','perfect-dodge','mikiri','counterattack','guard-break','fireball-reflected','hook-reflected','hook-pull','weapon-tempered','storehouse-open','wall-breached','spear-thrust','lantern-guard','fox-rescued','fox-assist','fox-sniff','boss-phase','event-start','event-complete','supply-collected','decoy','core-throw','core-catch','core-deliver','core-knock','hunt-arrival','hunt-lured','hunt-defeated','weapon-switch','weapon-broken','ranged-block','melee-block','player-hit','enemy-hit','weakpoint-open','weakpoint-hit','posture-break','scatter-push','environment-hit','refuge-chosen','style-formed','style-trigger','boss-overload-open','train-hit'].includes(event.type)));
   }
   function furnaceCoreHit(e) {
     return e.type === 'weakpoint-hit' && e.source === 'furnace-core';
@@ -3452,9 +3545,53 @@
     });
     return true;
   }
+  function storyWeaponEffect(c, e, age, still) {
+    const x = num(e.x), y = num(e.y), duration = e.type === 'vent-break' ? .62 : .38;
+    if (age > duration) return;
+    const ratio = age / duration, phase = still ? .28 : ratio;
+    alpha(c, 1 - ratio, () => {
+      if (e.type === 'echo-lamp') {
+        const reach = 8 + phase * 21;
+        c.strokeStyle = '#9ebdff'; c.lineWidth = 1.5; c.beginPath();
+        c.ellipse(x, y + 2, reach, reach * .43, 0, 0, Math.PI * 2); c.stroke();
+      } else if (e.type === 'vent-shot') {
+        c.save(); c.translate(x, y - 3); c.rotate(num(e.angle));
+        // A short mechanical jet travels in the spray cone before it fades.
+        const flight = still ? .84 : Math.min(1, age / .10);
+        for (const n of [-2, -1, 0, 1, 2]) {
+          const front = 43 + flight * 53 - Math.abs(n) * 4, spread = 6 + flight * 15;
+          const row = n * spread;
+          path(c, [[32, n * 1.6], [front * .74, row * .6], [front, row]], '#b1d2cb70', 3.5);
+          rect(c, front - 5, row, 7, 2, '#d4e3d6c0');
+          if (n % 2 === 0) rect(c, front + 3, row - 1, 4, 2, '#c4e2d3ae');
+        }
+        if (age < .12) { rect(c, 33, -4, 14, 8, '#b1d9d0'); rect(c, 34, -2, 14, 4, '#f1f2d8'); }
+        c.restore();
+      } else if (e.type === 'vent-break') {
+        glow(c, x, y - 9, 26, '#d6ede633');
+        for (const side of [-1, 1]) {
+          const front = x + side * (9 + phase * 22);
+          path(c, [[x + side * 7, y - 12], [front, y - 15 - phase * 10], [front + side * 3, y - 8 - phase * 10]], '#dbebd7', 2);
+        }
+        impactLabel(c, '护板松开', x, y - 61 - phase * 10, '#e3ebc5', 11);
+      } else if (e.type === 'hook-latch' || e.type === 'hook-drag') {
+        const dragged = e.type === 'hook-drag';
+        if (dragged && Number.isFinite(e.fromX) && Number.isFinite(e.fromY)) {
+          const startX = e.fromX + (x - e.fromX) * phase, startY = e.fromY + (y - e.fromY) * phase;
+          c.setLineDash([5, 3]); path(c, [[startX, startY + 6], [x, y + 6]], '#d7af7eac', 2); c.setLineDash([]);
+        }
+        const reach = dragged ? 14 + phase * 7 : 11 + phase * 4;
+        for (const side of [-1, 1]) {
+          path(c, [[x + side * reach, y - 8], [x + side * reach, y + 4], [x + side * (reach - 5), y + 4]], '#efd0a1', 2);
+        }
+        if (dragged) ellipse(c, x, y + 12, reach, 5, '#d9ac7c34');
+      }
+    });
+  }
   function combatEffects(c, events, state, still) {
     for (const {event:e, age} of events) {
       if (e.type === 'rhythm-windup') continue;
+      if (weaponEffects.has(e.type)) { storyWeaponEffect(c, e, age, still); continue; }
       if (e.type === 'train-hit') {
         if (!trainChapter(state) || age > .48) continue;
         const x = num(e.x), y = num(e.y), progress = still ? .25 : age / .48;
@@ -3467,7 +3604,7 @@
         });
         continue;
       }
-      if (e.type === 'weakpoint-open' && events.some(other => other.event.type === 'boss-overload-open' && other.event.enemyId === e.enemyId && Math.abs(other.age - age) < .09)) continue;
+      if (e.type === 'weakpoint-open' && events.some(other => ['boss-overload-open', 'vent-break'].includes(other.event.type) && other.event.enemyId === e.enemyId && Math.abs(other.age - age) < .09)) continue;
       if (e.kind === 'breach' && e.type === 'event-complete') continue;
       if (e.kind === 'storehouse' && (e.type === 'event-start' || e.type === 'event-complete' && events.some(other=>other.event.type==='storehouse-open'&&other.event.room===e.room))) continue;
       if(tacticsEffect(c,e,age,events,state,still))continue;
@@ -3596,7 +3733,7 @@
           if(broken){for(const side of [-1,1])path(c,[[x+side*9,y-9],[x+side*(14+ratio*11),y-14-ratio*9]],color,2);}
           else if(blocked){c.strokeStyle=color;c.lineWidth=2;c.setLineDash([4,4]);c.beginPath();c.arc(x,y,22+ratio*10,0,Math.PI*2);c.stroke();c.setLineDash([]);}
           // A break can accompany the same block: show its single useful label.
-          if(!blocked||!e.broken){const name=broken?'远程武器损坏':blocked?'半效格挡':e.weapon==='spear'?'近战 · 遗迹长枪':e.weapon==='blade'?'近战 · 旅人短刃':e.weapon==='scatter'?'远程 · 散射枪':'远程 · 手枪';label(c,name,x,y-57-ratio*10,color,broken?12:10);}
+          if(!blocked||!e.broken){const name=broken?'远程武器损坏':blocked?'半效格挡':weaponLabels[e.weapon] || weaponLabels.pistol;label(c,name,x,y-57-ratio*10,color,broken?12:10);}
           if(blocked&&num(e.damage)>0)impactLabel(c,damageText(e.damage),x+20,y+25-(still?.25:ratio)*9,'#f0a18b',11);
         });
         continue;
@@ -4568,8 +4705,9 @@
     for (const [x, y] of [[77, 53], [883, 53], [77, 553], [883, 553]]) lantern(c, x, y, still ? 0 : time, .85);
     values(state.companions).forEach(fox => foxCompanion(c, fox, time, state, localId, still));
     values(state.enemies).forEach(e => rhythmArea(c, e, state, localId));
+    hookTethers(c, state);
     const sprites = [
-      ...values(state.decoys).map(d => ({ y: num(d.y), draw: () => decoy(c, d, time) })),
+      ...values(state.decoys).filter(d => d.kind !== 'echo-lamp').map(d => ({ y: num(d.y), draw: () => decoy(c, d, time) })),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0)).map(p => ({ y: p.y, draw: () => paintProp(c, p, time) })),
       ...values(state.walls).filter(w => w.timberCart).map(w => ({ y: num(w.y) + num(w.h) / 2, draw: () => timberCart(c, w, state) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => timberInteractable(c, item, time, state, localId, still) })),
@@ -4579,7 +4717,8 @@
     sprites.sort((a, b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b, state));
     if (state.status === 'playing') { values(state.particles).forEach(p => particle(c, p, time)); combatEffects(c, events, state, still); aimReticle(c, state.players && state.players[localId], time); }
-    ambient(c, state, time); c.restore();
+    ambient(c, state, time);
+    roomEchoLamps(c, state, time, still); c.restore();
     if (motion.flash > 0) alpha(c, motion.flash, () => rect(c, 0, 0, W, H, '#fff0c4'));
     resetHudTransform(c, options.view);
     paintCornerMap(c, state, options, timberMap); c.restore();
@@ -4632,9 +4771,10 @@
     if (intercepting) interceptLanding(c, intercepting.intercept);
     enemies.forEach(e => rhythmArea(c, e, state, localId, viewTop));
     if (!dark) paintStoryTells();
+    hookTethers(c, state);
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
-      ...values(state.decoys).map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
+      ...values(state.decoys).filter(d => d.kind !== 'echo-lamp').map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
       ...(route && state.room.index === 0 ? [{ y: 255, draw: () => railInteractable(c,
         { kind: 'rail-car', x: 705, y: 255, active: false, used: true }, enemyTime, state, localId, still) }] : []),
       ...(train && state.chapter.cart?.roomIndex === state.room.index ? [{ y: num(state.chapter.cart.y) + 9,
@@ -4684,6 +4824,8 @@
     }
     ambient(c, state, time);
     storyDarkness(c, state);
+    // A false lamp remains visible without punching a light hole in the fog.
+    roomEchoLamps(c, state, enemyTime, still);
     // Telegraphs remain legible when a fog or lantern mask hides the attacker.
     if (dark) paintStoryTells();
     if (state.mode === 'random' && state.room && state.room.mood === 'pulse') {

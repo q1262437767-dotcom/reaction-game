@@ -5,6 +5,6 @@ const test = require('node:test');
 
 require('../adventure/net.js');
 
-test('coop protocol is 36', () => {
-  assert.equal(global.AdventureNet.protocolVersion, 36);
+test('coop protocol is 37', () => {
+  assert.equal(global.AdventureNet.protocolVersion, 37);
 });

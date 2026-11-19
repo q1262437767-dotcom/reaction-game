@@ -14,6 +14,23 @@
   const HAPTIC_STORE = 'ruins-squad-haptics-v1';
   const JOYSTICK_STORE = 'ruins-squad-joystick-v1';
   const MELEE_STORE = 'ruins-squad-melee-choice-v1';
+  const MELEE_WEAPONS = {
+    blade: { name: '旅人短刃', short: '短刃', description: '近身快速出刀，精准化解后可接反击。' },
+    spear: { name: '遗迹长枪', short: '长枪', description: '枪尖刺得更远，精准化解后可接贯穿追刺。', chapter: '第一章第一节', unlocked: C.canUseSpear },
+    hook: { name: '拖钩刃', short: '拖钩刃', description: '出刀挂住木箱或桶，向外闪避时把它拖向刚才站的位置。', chapter: '第三章第四节', unlocked: C.canUseHook }
+  };
+  const RANGED_WEAPONS = {
+    pistol: { name: '旅人手枪', short: '手枪', description: '连续射击，适合追打露出来的破绽。' },
+    scatter: { name: '散射枪', short: '散射枪', description: '贴身命中可击退敌人。', chapter: '营地工坊', unlocked: profile => profile.scatter },
+    echo: { name: '回声灯铳', short: '回声灯铳', description: '往空地打出假灯，引敌扑过去。用摇杆或方向键朝投放处走一步再射。', chapter: '第二章第四节', unlocked: C.canUseEcho },
+    vent: { name: '泄压筒', short: '泄压筒', description: '靠近重型机械，趁它蓄力时喷开护板。', chapter: '第四章第四节', unlocked: C.canUseVent }
+  };
+  const meleeIds = Object.keys(MELEE_WEAPONS), rangedIds = Object.keys(RANGED_WEAPONS), weaponIds = [...meleeIds, ...rangedIds];
+  const eventWeapons = { 'echo-lamp': 'echo', 'hook-latch': 'hook', 'hook-drag': 'hook', 'vent-shot': 'vent', 'vent-break': 'vent' };
+  const touchAttack = {
+    blade: ['斩', '攻击'], spear: ['刺', '刺击'], hook: ['钩', '出刀或钩住道具'],
+    pistol: ['射', '射击'], scatter: ['射', '射击'], echo: ['灯', '发射回声假灯'], vent: ['喷', '喷射泄压']
+  };
   const HUD_STORE = L.HUD_LANDSCAPE;
   let touchPreference = readTouchPreference(), touchSeen = false, joystickId = null;
   let meleeChoice = readMeleeChoice();
@@ -84,7 +101,7 @@
   }
   function chapterEndingCaption() {
     const age = chapterEnding.age;
-    const line = state.chapter.id === 'chapter1_5' ? (age < 2 ? '陶铆：人都进来了。主芯也稳住了。' : age < 4.5 ? '老岑：看见灯了！慢慢走，营地这边有人接。' : '阿禾：灯路接上了。等等，北边那盏蓝灯是谁点的？') : age < 1.5 ? '灯亮了，东边传来了脚步声。' : age < 6.5 ? '阿禾：老岑！我们回来了！他腿伤了，快搭把手。' : age < 9 ? '老岑：哎，来了！先扶他坐下。' : '阿禾：等等……旧木场那边，是不是有人在打灯？';
+    const line = state.chapter.id === 'chapter1_5' ? (age < 2 ? '陶铆：人都进来了。主芯也稳住了。' : age < 4.5 ? '老岑：看见灯了！慢慢走，营地这边有人接。' : '阿禾：灯路接上了。等等，北边那盏蓝灯是谁点的？') : age < 1.5 ? '灯亮了，东边传来了脚步声。' : age < 6.5 ? '阿禾：老岑！我们回来了！他腿伤了，快搭把手。' : age < 9 ? '老岑：哎，来了！先扶他坐下。' : age < 12 ? '阿禾：等等……旧木场那边，是不是有人在打灯？' : '老岑：拿上这杆巡路枪。木场还有人等着你们去接。';
     if ($('chapter-ending-line').textContent !== line) $('chapter-ending-line').textContent = line;
   }
   function finishChapterEnding() {
@@ -92,7 +109,7 @@
     clearChapterEnding(); clearInput(); presentResults();
   }
   function beginChapterEnding() {
-    chapterEnding = { runId, age: 0, last: 0, duration: state.chapter.id === 'chapter1_5' ? 7 : 12 };
+    chapterEnding = { runId, age: 0, last: 0, duration: state.chapter.id === 'chapter1_5' ? 7 : 15 };
     clearTimeout(toastTimer); $('toast').hidden = true;
     $('interaction-hint').hidden = true; $('end-screen').hidden = true;
     $('chapter-ending').hidden = false;
@@ -143,7 +160,10 @@
     catch (_) { return 'fixed'; }
   }
   function readMeleeChoice() {
-    try { return localStorage.getItem(MELEE_STORE) === 'spear' ? 'spear' : 'blade'; }
+    try {
+      const value = localStorage.getItem(MELEE_STORE);
+      return meleeIds.includes(value) ? value : 'blade';
+    }
     catch (_) { return 'blade'; }
   }
   function defaultHudLayout() {
@@ -853,6 +873,14 @@
         tone(330, .17, .035, 'triangle', 0, 100);
       } else if (event.type === 'spear-thrust' && !event.perfect) {
         if (soundReady('spear', event.time, .18)) tone(490, .075, .018, 'triangle', 0, 190);
+      } else if (event.type === 'echo-lamp') {
+        tone(790, .11, .026, 'sine', 0, 1150); tone(1250, .17, .017, 'triangle', .08, 710);
+      } else if (event.type === 'hook-latch' || event.type === 'hook-drag') {
+        tone(event.type === 'hook-latch' ? 650 : 270, .12, .024, 'triangle', 0, 135);
+      } else if (event.type === 'vent-shot') {
+        tone(140, .16, .019, 'sawtooth', 0, 65);
+      } else if (event.type === 'vent-break') {
+        tone(520, .13, .033, 'triangle', 0, 200); tone(940, .11, .017, 'sine', .03);
       } else if (event.type === 'lantern-guard') {
         if (soundReady('lantern', event.time, .16)) tone(720, .065, .014, 'sine', 0, 430);
       } else if (event.type === 'fox-rescued') {
@@ -909,7 +937,7 @@
       } else if (event.type === 'weapon-broken') {
         tone(155, .2, .03, 'sawtooth', 0, 45);
         if (event.playerId === localId()) {
-          const melee = state.players[localId()]?.weapons.melee === 'spear' ? '长枪' : '短刃';
+          const melee = MELEE_WEAPONS[state.players[localId()]?.weapons.melee || 'blade'].short;
           toast(state.mode === 'random' ? `远程武器已损坏，已切回${melee}；封闭仓库可修复。` : `远程武器已损坏，已切回${melee}；下次出发恢复。`);
         }
       } else if (event.type === 'ranged-block') {
@@ -982,8 +1010,28 @@
       tone(attack.type === 'sweep' ? 790 : attack.type === 'quake' ? 440 : attack.type === 'thrust' ? 1480 : 1180, .075, .04, 'triangle');
     }
   }
-  function selectedWeapon() { return camp.scatter && $('start-loadout').value === 'scatter' ? 'scatter' : 'pistol'; }
-  function selectedMelee() { return C.canUseSpear(camp) && meleeChoice === 'spear' ? 'spear' : 'blade'; }
+  function canEquip(weapon, profile = camp) { return !!weapon && (!weapon.unlocked || weapon.unlocked(profile)); }
+  function selectedWeapon() {
+    const id = $('start-loadout').value;
+    return canEquip(RANGED_WEAPONS[id]) ? id : 'pistol';
+  }
+  function selectedMelee() { return canEquip(MELEE_WEAPONS[meleeChoice]) ? meleeChoice : 'blade'; }
+  function updateWeaponChoices(locked) {
+    for (const [control, weapons, selected] of [
+      ['start-melee', MELEE_WEAPONS, selectedMelee()], ['start-loadout', RANGED_WEAPONS, selectedWeapon()]
+    ]) {
+      const select = $(control);
+      select.disabled = locked;
+      for (const option of select.options) {
+        const weapon = weapons[option.value];
+        option.disabled = !canEquip(weapon);
+        option.textContent = weapon.name + (option.disabled ? ` · ${weapon.chapter}解锁` : '');
+      }
+      select.value = selected;
+    }
+    $('melee-unlock-copy').textContent = locked ? '完成存档同步后可调整携带装备。' : MELEE_WEAPONS[selectedMelee()].description;
+    $('ranged-unlock-copy').textContent = locked ? '' : RANGED_WEAPONS[selectedWeapon()].description;
+  }
   function styleNames(value) {
     return E.activeStyles(value).map(id => E.STYLES.find(style => style.id === id)?.label || id);
   }
@@ -1051,7 +1099,7 @@
         $('tutorial-detail').textContent = '陶铆开车，阿禾守在车边。沿旧线把伤员送到避风车库。车上的装置和沿途机关仍按 E 操作。';
       }
     }
-    if (weaponTutorial) $('tutorial-detail').textContent += ' 每人固定携带一把短刃和一把枪；短刃打失衡，手枪追击暴露的破绽，散射枪近身击退。用枪格挡只减免 50% 伤害，每次实际挡到攻击有 10% 概率损坏，本局只能改用短刃。搬运时仍可静步，但不能格挡。';
+    if (weaponTutorial) $('tutorial-detail').textContent += ' 每人携带一把近战和一把远程。用远程武器格挡只减免 50% 伤害，每次实际挡到攻击有 10% 概率损坏，损坏后会切回近战。搬运时仍可静步，但不能格挡。';
     $('tutorial-dismiss').textContent = rhythmTutorial ? '准备好了，迎战 →' : '知道了，出发 →';
     $('tutorial-panel').hidden = !tutorialPending;
     if ((relayTutorial || huntTutorial) && net && net.connected) net.send({ type: 'pause', reason: 'tutorial', runId, paused: tutorialPending });
@@ -1103,8 +1151,6 @@
     if (!state && net && net.connected && net.role === 'host') net.send({ type: 'lobby', mode: gameMode, mission: mission.id, difficulty: selectedDifficulty() });
   }
   function updateCamp() {
-    const option = $('start-loadout').querySelector('option[value="scatter"]');
-    option.disabled = !camp.scatter; option.textContent = camp.scatter ? '散射枪' : '散射枪 · 待解锁';
     const progress = C.progress(camp);
     const random = selectedGameMode() === 'random', rescue = selectedGameMode() === 'rescue', relay = selectedGameMode() === 'relay', hunt = selectedGameMode() === 'hunt', chapter = selectedGameMode() === 'chapter';
     const chapterDone = chapterProgress();
@@ -1215,13 +1261,7 @@
     if (document.activeElement !== $('companion-name') || !fox.rescued || locked) $('companion-name').value = fox.rescued ? fox.name : '';
     $('companion-status').textContent = locked ? account.needsChoice ? '请先完成账号存档选择。' : '正在同步，稍后可调整。' :
       !fox.rescued ? '随机远征的遗迹支路里，有一只被困的灰尾狐。靠近笼子即可救出。' : playing() ? `${fox.name} · 随行配置在下次出发生效。` : `${fox.name}已回营 · ${fox.equipped ? '下次出发同行' : '留在营地休息'}`;
-    const spearUnlocked = C.canUseSpear(camp), spearOption = $('start-melee').querySelector('option[value="spear"]');
-    spearOption.disabled = !spearUnlocked;
-    spearOption.textContent = spearUnlocked ? '遗迹长枪' : '长枪 · 第一节首通解锁';
-    $('start-melee').disabled = locked;
-    $('start-melee').value = selectedMelee();
-    $('melee-unlock-copy').textContent = locked ? account.needsChoice ? '请先完成账号存档选择，再调整近战。' : '正在读取或同步账号，完成后可调整近战。' :
-      !spearUnlocked ? '完成第一章第一节，解锁遗迹长枪。' : selectedMelee() === 'spear' ? '长枪直线刺击，枪尖更有力；精准化解后按攻击可接贯穿追刺。' : '长枪已解锁，可在近战栏切换；每人携带一把近战和一把远程。';
+    updateWeaponChoices(locked);
     for (const upgrade of C.CAMP_UPGRADES) {
       const button = $('upgrade-' + upgrade.id), owned = departure.upgrades.includes(upgrade.id);
       button.disabled = locked || !C.canPurchaseUpgrade(camp, upgrade.id);
@@ -1381,7 +1421,9 @@
       if (!C.chapterProgress(before).thirdCompleted && C.chapterProgress(after).thirdCompleted) changes.push('找到救援车 · 主炉芯去向已确认');
       if (!C.chapterProgress(before).fourthCompleted && C.chapterProgress(after).fourthCompleted) changes.push('主轨闸已打开 · 冷却站信号已点亮');
       if (!C.chapterProgress(before).fifthCompleted && C.chapterProgress(after).fifthCompleted) changes.push('第一章《归途灯》完成 · 伤员平安');
-      if (!C.canUseSpear(before) && C.canUseSpear(after)) changes.push('遗迹长枪已解锁');
+      for (const weapon of [...Object.values(MELEE_WEAPONS), ...Object.values(RANGED_WEAPONS)]) {
+        if (!canEquip(weapon, before) && canEquip(weapon, after)) changes.push(weapon.name + '已解锁');
+      }
       if (state.mode === 'story') C.MISSIONS.forEach((mission, index) => {
         if (!before.missions[mission.id].clears && after.missions[mission.id].clears) changes.push(`第 ${index + 1} 盏营灯已点亮`);
       });
@@ -1512,7 +1554,11 @@
       $('end-copy').textContent = won ? '归炉者在隔离炉停了机。陶铆把主芯留在炉里，带着伤员循灯回营。老岑站在路口，挨个把人接了回来。' : state.chapter.unloaded ? '把归炉者引到炉口，再开泄压阀。它卸力的时候，才是反击的好机会。' : '有追兵贴到车边时，可以先停车应战。道闸和冷凝水站也有机会补修。';
       $('end-unlocks').textContent = won ? '第一章《归途灯》完。夜色里，北方传来一闪一闪的蓝光。' : '送伤员进车库后，把主芯引向隔离炉。停下归炉者，再回去点灯。';
     }
-    if (!C.canUseSpear(before) && C.canUseSpear(camp)) $('end-unlocks').textContent = '遗迹长枪已解锁，可在出发前选择。' + $('end-unlocks').textContent;
+    if (chapter && ['chapter2_4', 'chapter3_4', 'chapter4_4'].includes(state.chapter.id)) {
+      $('end-title').textContent = won ? mission.name.split(' · ').at(-1) : '这一程还没走完';
+      $('end-copy').textContent = state.message || (won ? mission.goal : '回营整备后再来。');
+      $('end-unlocks').textContent = result.unlocks.filter(unlock => !unlock.startsWith('武器解锁')).join(' · ');
+    }
     $('end-badges').textContent = result.newBadges.length ? '获得徽章：' + result.newBadges.map(id => (C.BADGES.find(badge => badge.id === id) || { name: id }).name).join('、') : '';
     if (state.mode === 'story' && won && C.progress(camp).nextMission) { $('mission-select').value = C.progress(camp).nextMission; showMission(); }
     $('end-restart').disabled = mode === 'guest';
@@ -1832,14 +1878,16 @@
       const rescue = s.foxRescue;
       if (!rescue || typeof rescue !== 'object' || Array.isArray(rescue) || Object.keys(rescue).length !== 2 || !Number.isInteger(rescue.roomIndex) || rescue.roomIndex < 1 || rescue.roomIndex >= s.rooms.length || typeof rescue.rescued !== 'boolean' || s.rooms[rescue.roomIndex].kind === 'boss' || rescue.rescued && !s.rooms[rescue.roomIndex].visited) return false;
     } else if (s.foxRescue !== null) return false;
-    if (!['blade', 'spear'].includes(s.meleeLoadout) || !['blade', 'spear'].includes(s.partnerMeleeLoadout)) return false;
+    if (!meleeIds.includes(s.meleeLoadout) || !meleeIds.includes(s.partnerMeleeLoadout)) return false;
     const preparation = s.preparations;
     if (!preparation || typeof preparation !== 'object' || Array.isArray(preparation) || Object.keys(preparation).length !== 3 || !preparation.p1 || !preparation.p2 || !safeCampLoadout(preparation.p1) || !safeCampLoadout(preparation.p2) || ![null, ...C.RELICS].includes(preparation.startingRelic) || preparation.startingRelic !== null && (!preparation.p1.upgrades.includes('relicCase') || !s.runBuffs.includes(preparation.startingRelic))) return false;
     if (!s.runUpgrades || typeof s.runUpgrades !== 'object' || Array.isArray(s.runUpgrades) || Object.keys(s.runUpgrades).length !== 1 || typeof s.runUpgrades.tempered !== 'boolean' || s.runUpgrades.tempered && s.mode !== 'random') return false;
     for (const p of Object.values(s.players)) {
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.hp) || !Number.isFinite(p.maxHp) || !validRailStun(p, s)) return false;
-      if (!['blade', 'spear', 'pistol', 'scatter'].includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
-      if (!p.weapons || typeof p.weapons !== 'object' || Array.isArray(p.weapons) || Object.keys(p.weapons).length !== 2 || p.weapons.melee !== (p.id === 'p2' ? s.partnerMeleeLoadout : s.meleeLoadout) || !['pistol', 'scatter'].includes(p.weapons.ranged) || !['melee', 'ranged'].includes(p.activeSlot) || typeof p.rangedBroken !== 'boolean' || typeof p.prevSwitch !== 'boolean' || typeof p.sneaking !== 'boolean' || !bounded(p.switchCd, 2) || p.weapon !== p.weapons[p.activeSlot] || p.rangedBroken && p.activeSlot === 'ranged') return false;
+      if (!weaponIds.includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
+      if (!p.weapons || typeof p.weapons !== 'object' || Array.isArray(p.weapons) || Object.keys(p.weapons).length !== 2 || p.weapons.melee !== (p.id === 'p2' ? s.partnerMeleeLoadout : s.meleeLoadout) || !rangedIds.includes(p.weapons.ranged) || !['melee', 'ranged'].includes(p.activeSlot) || typeof p.rangedBroken !== 'boolean' || typeof p.prevSwitch !== 'boolean' || typeof p.sneaking !== 'boolean' || !bounded(p.switchCd, 2) || p.weapon !== p.weapons[p.activeSlot] || p.rangedBroken && p.activeSlot === 'ranged') return false;
+      if ((p.hookProp !== undefined || p.hookTime !== undefined) &&
+          (!shortId(p.hookProp) || !bounded(p.hookTime, 2.5) || p.weapons.melee !== 'hook')) return false;
       if (p.ward != null && (!Number.isInteger(p.ward) || !bounded(p.ward, 1))) return false;
       if (p.relayBoost != null && !bounded(p.relayBoost, 3)) return false;
     }
@@ -1885,7 +1933,7 @@
       if (bullet.hook && (bullet.friendly !== false || bullet.weapon !== null || bullet.volleyId !== null || !shortId(bullet.owner) || !bounded(bullet.ttl, 5) || !Number.isFinite(bullet.vx) || !Number.isFinite(bullet.vy) || Math.abs(bullet.vx) > 2000 || Math.abs(bullet.vy) > 2000 || !s.enemies.some(enemy => enemy.id === bullet.owner && enemy.hp > 0 && (s.mode === 'random' && enemy.kind === 'hookwarden' || s.mode === 'chapter' && s.mission.id === 'chapter1_2' && enemy.kind === 'boss' && !!enemy.timber)))) return false;
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open', 'rail-shock', 'train-hit'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'echo-lamp', 'hook-latch', 'hook-drag', 'vent-shot', 'vent-break', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open', 'rail-shock', 'train-hit'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
       if (!validRailShock(event, s)) return false;
       if (event.type === 'train-hit' && (!trainSection(s) || s.chapter?.cart?.roomIndex !== s.room.index ||
@@ -1899,8 +1947,15 @@
       if (event.type === 'fox-rescued' && (s.mode !== 'random' || !s.foxRescue || !s.foxRescue.rescued || !['p1', 'p2'].includes(event.playerId) || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'fox-assist' && (!['p1', 'p2'].includes(event.playerId) || !shortId(event.enemyId) || !['bite', 'counter'].includes(event.assistKind) || !Number.isInteger(event.amount) || !bounded(event.amount, event.assistKind === 'counter' ? 3 : 1) || event.amount < 1 || !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
       if (event.type === 'spear-thrust' && (!['p1', 'p2'].includes(event.playerId) || event.enemyId !== null && !shortId(event.enemyId) || event.weapon !== 'spear' || typeof event.perfect !== 'boolean' || !Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4 || !bounded(event.range, 250))) return false;
-      if (event.type === 'lantern-guard' && (s.mode !== 'random' || !shortId(event.enemyId) || !shortId(event.sourceId) || event.enemyId === event.sourceId || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, 'blade', 'spear', 'pistol', 'scatter'].includes(event.weapon) || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount < 1 || !Number.isInteger(event.reduced) || !bounded(event.reduced, 1000) || event.reduced < 1)) return false;
-      if (event.type === 'counterattack' && event.weapon != null && !['blade', 'spear'].includes(event.weapon)) return false;
+      const armedEvent = eventWeapons[event.type];
+      if (armedEvent && (!['p1', 'p2'].includes(event.playerId) || event.weapon !== armedEvent ||
+          s.players[event.playerId].weapons[armedEvent === 'hook' ? 'melee' : 'ranged'] !== armedEvent ||
+          !bounded(event.x, 960) || !bounded(event.y, 600))) return false;
+      if (armedEvent === 'hook' && (!shortId(event.propId) || event.type === 'hook-drag' && (!bounded(event.fromX, 960) || !bounded(event.fromY, 600)))) return false;
+      if (event.type === 'vent-shot' && (!Number.isFinite(event.angle) || Math.abs(event.angle) > Math.PI * 4)) return false;
+      if (event.type === 'vent-break' && !shortId(event.enemyId)) return false;
+      if (event.type === 'lantern-guard' && (s.mode !== 'random' || !shortId(event.enemyId) || !shortId(event.sourceId) || event.enemyId === event.sourceId || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, ...weaponIds].includes(event.weapon) || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount < 1 || !Number.isInteger(event.reduced) || !bounded(event.reduced, 1000) || event.reduced < 1)) return false;
+      if (event.type === 'counterattack' && event.weapon != null && !meleeIds.includes(event.weapon)) return false;
       if (event.type === 'counterattack' && event.amount != null && (!Number.isInteger(event.amount) || !bounded(event.amount, 1000))) return false;
       if (event.type === 'hook-reflected' && (!shortId(event.enemyId) || !['p1', 'p2'].includes(event.playerId))) return false;
       if (event.type === 'hook-pull' && (!shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || !['player', 'enemy', 'prop'].includes(event.target) || !bounded(event.amount, 1000) || event.propId != null && !shortId(event.propId) || event.target === 'prop' && !shortId(event.propId) || event.target !== 'prop' && !['p1', 'p2'].includes(event.playerId))) return false;
@@ -1912,11 +1967,11 @@
         if (!routeBreach && (s.mode !== 'random' || event.kind !== 'breach' || !Number.isInteger(event.room) || event.room !== s.room.index || s.rooms[event.room]?.eventKind !== 'breach' || !shortId(event.wallId) || !shortId(event.enemyId) || s.roomEvent?.kind !== 'breach' || s.roomEvent.stage !== 'complete' || event.wallId !== s.roomEvent.wallId || event.enemyId !== s.roomEvent.guardianId)) return false;
       }
       if (event.type === 'core-catch' && typeof event.perfect !== 'boolean') return false;
-      if (['weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block'].includes(event.type) && (!['p1', 'p2'].includes(event.playerId) || event.weapon != null && !['blade', 'spear', 'pistol', 'scatter'].includes(event.weapon) || event.slot != null && !['melee', 'ranged'].includes(event.slot) || event.perfect != null && typeof event.perfect !== 'boolean' || event.broken != null && typeof event.broken !== 'boolean' || event.damage != null && !bounded(event.damage, 100))) return false;
+      if (['weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block'].includes(event.type) && (!['p1', 'p2'].includes(event.playerId) || event.weapon != null && !weaponIds.includes(event.weapon) || event.slot != null && !['melee', 'ranged'].includes(event.slot) || event.perfect != null && typeof event.perfect !== 'boolean' || event.broken != null && typeof event.broken !== 'boolean' || event.damage != null && !bounded(event.damage, 100))) return false;
       if (event.type === 'player-hit' && (!['p1', 'p2'].includes(event.playerId) || !bounded(event.damage, 100) || !bounded(event.hp, 100) || !['combo', 'thrust', 'sweep', 'quake', 'rush', 'charge', 'melee', 'bullet', 'fire', 'fireball', 'hook'].includes(event.source))) return false;
       if (['enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit'].includes(event.type)) {
-        if (event.enemyId !== null && !shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, 'blade', 'spear', 'pistol', 'scatter'].includes(event.weapon)) return false;
-        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', 'blade', 'spear', 'pistol', 'scatter', 'furnace-core', 'rail'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
+        if (event.enemyId !== null && !shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, ...weaponIds].includes(event.weapon)) return false;
+        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', ...weaponIds, 'furnace-core', 'rail'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
         if (event.source === 'furnace-core') {
           if (!furnaceRoom || !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600)) return false;
           if (event.type === 'weakpoint-open') {
@@ -1926,7 +1981,12 @@
         }
         if (!validRailHit(event, s)) return false;
         if (event.type === 'environment-hit' && (!['rush', 'fireball', 'quake', 'explosion', 'rail'].includes(event.source) || !['prop', 'enemy'].includes(event.target))) return false;
-        if (event.source === 'quake' && (event.type !== 'environment-hit' || event.target !== 'enemy' || !shortId(event.enemyId) || event.playerId !== null || event.weapon !== null || !Number.isInteger(event.amount) || !bounded(event.amount, 1000) || event.amount <= 0 || event.propId !== undefined)) return false;
+        if (event.source === 'quake') {
+          if (event.type !== 'environment-hit' || event.playerId !== null || event.weapon !== null) return false;
+          if (event.target === 'prop' && (event.enemyId !== null || !shortId(event.propId) || event.amount !== undefined)) return false;
+          if (event.target === 'enemy' && (!shortId(event.enemyId) || !Number.isInteger(event.amount) ||
+              !bounded(event.amount, 1000) || event.amount <= 0 || event.propId !== undefined)) return false;
+        }
       }
     }
     if (s.roomEvent != null) {
@@ -1949,7 +2009,10 @@
       if (wall.breachWall != null && typeof wall.breachWall !== 'boolean' || wall.breachFrame != null && typeof wall.breachFrame !== 'boolean') return false;
       if ((wall.breachWall || wall.breachFrame) && (s.mode !== 'random' || s.roomEvent?.kind !== 'breach' || !bounded(wall.x, 960) || !bounded(wall.y, 600) || !bounded(wall.w, 960) || wall.w === 0 || !bounded(wall.h, 600) || wall.h === 0 || wall.x + wall.w > 960 || wall.y + wall.h > 600 || wall.breachWall && (!shortId(wall.id) || wall.id !== s.roomEvent.wallId))) return false;
     }
-    for (const prop of s.props) if (prop.eventSeal != null && (typeof prop.eventSeal !== 'boolean' || prop.eventSeal && (prop.kind !== 'crate' || !s.roomEvent || s.roomEvent.kind !== 'storehouse' || prop.id !== s.roomEvent.sealId || prop.carriedBy || prop.thrown))) return false;
+    for (const prop of s.props) {
+      if (prop.eventSeal != null && (typeof prop.eventSeal !== 'boolean' || prop.eventSeal && (prop.kind !== 'crate' || !s.roomEvent || s.roomEvent.kind !== 'storehouse' || prop.id !== s.roomEvent.sealId || prop.carriedBy || prop.thrown))) return false;
+      if (prop.hookTrapUntil !== undefined && (prop.kind !== 'barrel' || !bounded(prop.hookTrapUntil, 86405))) return false;
+    }
     for (const item of s.interactables) {
       if (typeof item.kind === 'string' && item.kind.startsWith('rescue-') && s.mode !== 'rescue') return false;
       if (typeof item.kind === 'string' && item.kind.startsWith('timber-') && (s.mode !== 'chapter' || s.mission.id !== 'chapter1_2')) return false;
@@ -1961,7 +2024,11 @@
       if (['forge', 'forge-reward', 'storehouse-switch', 'storehouse-cache'].includes(item.kind) && (s.mode !== 'random' || !s.roomEvent || s.roomEvent.kind !== (item.kind.startsWith('forge') ? 'forge' : 'storehouse') || typeof item.active !== 'boolean' || typeof item.used !== 'boolean')) return false;
       if (item.kind === 'breach-cache' && (s.mode !== 'random' || s.roomEvent?.kind !== 'breach' || typeof item.active !== 'boolean' || typeof item.used !== 'boolean' || !shortId(item.id) || !bounded(item.x, 960) || !bounded(item.y, 600))) return false;
     }
-    for (const d of s.decoys) if (!d || typeof d.id !== 'string' || !['p1', 'p2'].includes(d.playerId || d.owner) || !bounded(d.x, 960) || !bounded(d.y, 600) || !bounded(d.ttl, 5)) return false;
+    for (const d of s.decoys) {
+      if (!shortId(d.id) || !['p1', 'p2'].includes(d.playerId || d.owner) || !bounded(d.x, 960) || !bounded(d.y, 600) || !bounded(d.ttl, 5)) return false;
+      if (d.kind !== undefined && (d.kind !== 'echo-lamp' || !['p1', 'p2'].includes(d.playerId) ||
+          s.players[d.playerId].weapons.ranged !== 'echo' || d.r !== 10 || d.ttl > 4)) return false;
+    }
     if (s.room.index >= s.rooms.length || s.rooms.length < 2) return false;
     if (s.mode === 'random' && (s.room.kind !== s.rooms[s.room.index].kind || s.room.encounter !== s.rooms[s.room.index].encounter)) return false;
     const refuges = s.rooms.filter(room => room.kind === 'refuge');
@@ -2181,7 +2248,7 @@
           }
           remoteInput = input; remoteSeq = msg.seq; remoteAt = performance.now();
         }
-      } else if (msg.type === 'loadout' && !playing() && ['pistol', 'scatter'].includes(msg.weapon) && (msg.melee === undefined || ['blade', 'spear'].includes(msg.melee)) && (msg.foxRescued === undefined || typeof msg.foxRescued === 'boolean')) {
+      } else if (msg.type === 'loadout' && !playing() && rangedIds.includes(msg.weapon) && (msg.melee === undefined || meleeIds.includes(msg.melee)) && (msg.foxRescued === undefined || typeof msg.foxRescued === 'boolean')) {
         const preparation = safeCampLoadout(msg.camp), companion = safeCompanion(msg.companion);
         if (preparation && companion !== false && (msg.foxRescued !== false || companion === null)) { remoteWeapon = msg.weapon; remoteMelee = msg.melee || 'blade'; remoteCamp = preparation; remoteCompanion = companion; remoteFoxRescued = msg.foxRescued === true || !!companion; remoteCampReady = true; updateLobbyMenu(); }
       }
@@ -2284,11 +2351,13 @@
   };
   $('practice-start').onclick = beginPractice;
   $('start-loadout').addEventListener('change', () => {
+    updateWeaponChoices(!!(account && (account.busy || account.needsChoice)));
     sendCampLoadout();
   });
   $('start-melee').addEventListener('change', () => {
     if (account && (account.busy || account.needsChoice)) { updateCamp(); return; }
-    meleeChoice = C.canUseSpear(camp) && $('start-melee').value === 'spear' ? 'spear' : 'blade';
+    const id = $('start-melee').value;
+    meleeChoice = canEquip(MELEE_WEAPONS[id]) ? id : 'blade';
     try { localStorage.setItem(MELEE_STORE, meleeChoice); } catch (_) { /* Keep the choice for this page. */ }
     updateCamp();
   });
@@ -2343,7 +2412,7 @@
   $('unlock-scatter').onclick = () => {
     if (storageOK) camp = readCamp();
     if (camp.scatter || camp.coins < 30) { updateCamp(); return; }
-    camp.coins -= 30; camp.scatter = true; writeCamp(); $('start-loadout').value = 'scatter'; toast('散射枪已解锁，下次出发就能使用。');
+    camp.coins -= 30; camp.scatter = true; $('start-loadout').value = 'scatter'; writeCamp(); toast('散射枪已解锁，下次出发就能使用。');
     if (state && state.status !== 'playing' && !$('end-screen').hidden) showResultNext(resultDetails(camp, { profile: camp, duplicate: false }).next);
   };
   function refreshResultPreparation() {
@@ -2481,18 +2550,32 @@
     let aimX = mouse.x, aimY = mouse.y;
     const defending = guardPulse || mouse.guard || touch.guard || keys.has('KeyK') || p && p.guardWindow > 0;
     const coreCarried = p && state.mode === 'relay' && state.relay && p.carry === state.relay.coreId;
+    const buttonsAim = !mouse.down && (!mouse.active || touch.shoot || keys.has('KeyJ'));
     if (coreCarried && !mouse.active) {
       // On touch/keyboard, carrying follows the travel direction rather than aiming at a distant guard.
       const angle = Math.hypot(mx, my) > .05 ? Math.atan2(my, mx) : p.facing || 0;
       aimX = p.x + Math.cos(angle) * 100; aimY = p.y + Math.sin(angle) * 100;
+    } else if (p?.weapon === 'echo' && buttonsAim && !defending) {
+      const angle = Math.hypot(mx, my) > .05 ? Math.atan2(my, mx) : p.facing || 0;
+      aimX = Math.max(0, Math.min(960, p.x + Math.cos(angle) * 145));
+      aimY = Math.max(0, Math.min(600, p.y + Math.sin(angle) * 145));
     } else if (p && !coreCarried && (defending || !mouse.active || touch.shoot || keys.has('KeyJ'))) {
       const enemies = state.enemies.filter(enemy => enemy.hp > 0);
       // Defence follows the imminent blade instead of a stale mouse position.
       const incoming = defending && enemies.filter(enemy => enemy.rhythm && enemy.rhythm.type === 'combo' && enemy.rhythm.phase === 'windup' && enemy.stagger <= 0 && Math.hypot(enemy.x - p.x, enemy.y - p.y) <= enemy.rhythm.range + p.r)
         .sort((a, b) => a.rhythm.remaining - b.rhythm.remaining)[0];
       const nearest = incoming || enemies.reduce((best, enemy) => !best || Math.hypot(enemy.x - p.x, enemy.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? enemy : best, null);
-      aimX = nearest ? nearest.x : p.x + Math.cos(p.facing || 0) * 100;
-      aimY = nearest ? nearest.y : p.y + Math.sin(p.facing || 0) * 100;
+      let target = nearest;
+      if (p.weapon === 'hook' && buttonsAim && !defending && (touch.shoot || keys.has('KeyJ'))) {
+        let distance = Math.min(109, nearest ? Math.hypot(nearest.x - p.x, nearest.y - p.y) : Infinity);
+        for (const prop of state.props) {
+          if (!['crate', 'barrel'].includes(prop.kind) || prop.hp <= 0 || prop.carriedBy || prop.thrown || prop.eventSeal) continue;
+          const candidate = Math.hypot(prop.x - p.x, prop.y - p.y);
+          if (candidate < distance) { target = prop; distance = candidate; }
+        }
+      }
+      aimX = target ? target.x : p.x + Math.cos(p.facing || 0) * 100;
+      aimY = target ? target.y : p.y + Math.sin(p.facing || 0) * 100;
     }
     return { mx, my, aimX, aimY, shoot: mouse.down || touch.shoot || keys.has('KeyJ'), dash: dashPulse || keys.has('Space') || touch.dash, guard: mouse.guard || touch.guard || keys.has('KeyK'), guardPulse, interact: interactPulse || keys.has('KeyE') || touch.interact,
       switchWeapon: keys.has('KeyQ') || touch.switchWeapon, switchPulse };
@@ -2780,8 +2863,8 @@
     putText('hud-team', teamNotice);
     putAttr('hud-team', 'data-urgent', String(!!(ally?.downed || partner?.downed)));
     putHidden('hud-team', !teamNotice || !!(rescue?.guide === partnerId && separated && !partner?.downed));
-    const rangedName = p && p.weapons.ranged === 'scatter' ? '散射枪' : '手枪';
-    const meleeName = p && p.weapons.melee === 'spear' ? '长枪' : '短刃';
+    const rangedName = RANGED_WEAPONS[p?.weapons.ranged || 'pistol'].short;
+    const meleeName = MELEE_WEAPONS[p?.weapons.melee || 'blade'].short;
     putText('hud-melee', meleeName);
     putText('hud-ranged', rangedName + (p && p.rangedBroken ? ' · 已损坏' : ''));
     putAttr('hud-melee', 'data-active', String(!!p && p.activeSlot === 'melee'));
@@ -2798,6 +2881,7 @@
     }
     const run = state?.chapter;
     let opportunity = opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '';
+    if (!opportunity && p?.hookProp && p.hookTime > 0) opportunity = '钩住了 · 闪避拖动';
     if (run?.linkLeft > 0 && ['chapter3_4', 'chapter5_2'].includes(run.id)) {
       const seconds = Math.ceil(run.linkLeft) + ' 秒';
       if (run.id === 'chapter3_4') opportunity = (run.link === 1 ? '等待对端 · ' : '护舱已开 · ') + seconds;
@@ -2824,7 +2908,9 @@
     putText('touch-interact', relay && p && p.carry === state.relay.coreId ? state.room.index === state.relay.extractionRoom && Math.hypot(p.x - 120, p.y - 300) < 76 ? '交' : '掷' : storyLamp ? '灯' : 'E');
     putAttr('touch-interact', 'aria-label', relay ? '拾取、投掷或交付炉芯' : storyLamp ? '点灭提灯，或与眼前的东西互动' : '互动');
     putAttr('touch-guard', 'aria-label', relay ? '接住炉芯、格挡与静步' : '格挡与静步');
-    putText('touch-shoot', p && p.activeSlot === 'ranged' ? '射' : p && p.weapons.melee === 'spear' ? '刺' : '斩');
+    const [attackText, attackLabel] = touchAttack[p?.weapon || 'blade'];
+    putText('touch-shoot', attackText);
+    putAttr('touch-shoot', 'aria-label', attackLabel);
     const switchDisabled = !p || p.rangedBroken;
     if ($('touch-switch').disabled !== switchDisabled) $('touch-switch').disabled = switchDisabled;
     putAttr('touch-switch', 'aria-label', p && p.rangedBroken ? '远程武器损坏，本局无法切换' : p && p.activeSlot === 'ranged' ? '切换为' + meleeName : '切换为' + rangedName);

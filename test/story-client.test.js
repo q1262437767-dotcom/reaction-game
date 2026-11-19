@@ -24,7 +24,8 @@ function clientValidators() {
     'return (globalThis.invalid ||= ' + JSON.stringify((index + 1) + ': ' + line.trim()) + ', false);')).join('\n');
   const context = { E, C };
   vm.createContext(context);
-  vm.runInContext(between('  function safeCampLoadout(', '  function sendCampLoadout(') + diagnostic + `
+  vm.runInContext(between('  const MELEE_WEAPONS', '  const HUD_STORE') +
+    between('  function safeCampLoadout(', '  function sendCampLoadout(') + diagnostic + `
     globalThis.validate = value => { invalid = ''; return { ok: validState(value), reason: invalid }; };
     globalThis.validateGuest = validGuestState;
     globalThis.validateSync = validSync;
@@ -341,4 +342,51 @@ test('rescue validation rejects room spoofing and mismatched survivor deltas', (
   const bogusGuide = wire(validPatch);
   bogusGuide.rescue.guide = 'p1';
   assert.equal(client.validateSync(bogusGuide, guest, baseline), false);
+});
+
+test('story weapon actions travel in full and delta packets to the guest', () => {
+  const state = E.create({ mode: 'chapter', mission: 'chapter2_4', players: 2, seed: 10,
+    loadout: 'blade', meleeLoadout: 'hook', rangedLoadout: 'echo' });
+  for (const id of ['p1', 'p2']) assert.equal(E.enterRoom(state, 2, true, id), true);
+  Object.assign(state.players.p1, { x: 250, y: 160 });
+  Object.assign(state.players.p2, { x: 510, y: 95 });
+  const barrel = E.viewForPlayer(state, 'p1').props.find(prop => prop.kind === 'barrel');
+  const link = channel(state);
+  link.receive('initial equipment');
+  assert.equal(link.guest.players.p1.weapons.melee, 'hook');
+  assert.equal(link.guest.players.p1.weapons.ranged, 'echo');
+
+  E.step(state, { p1: { shoot: true, aimX: barrel.x, aimY: barrel.y } }, 1 / 60);
+  link.receive('hook latch');
+  assert.equal(link.guest.players.p1.hookProp, barrel.id);
+  assert.ok(link.guest.combatEvents.some(event => event.type === 'hook-latch' && event.propId === barrel.id));
+  E.step(state, { p1: { dash: true, mx: 1 } }, 1 / 60);
+  for (let i = 0; i < 30; i++) E.step(state, {}, 1 / 60);
+  link.receive('hook drag');
+  assert.equal(link.guest.players.p1.hookProp, undefined);
+  assert.ok(Math.abs(link.guest.props.find(prop => prop.id === barrel.id).x - 250) < 1);
+  assert.ok(link.guest.combatEvents.some(event => event.type === 'hook-drag' && event.propId === barrel.id));
+
+  E.step(state, { p1: { switchWeapon: true } }, 1 / 60);
+  for (let i = 0; i < 20; i++) E.step(state, {}, 1 / 60);
+  E.step(state, { p1: { shoot: true, aimX: 285, aimY: 130 } }, 1 / 60);
+  link.receive('echo lamp');
+  assert.ok(link.guest.decoys.some(decoy => decoy.kind === 'echo-lamp' && decoy.playerId === 'p1'));
+  assert.ok(link.guest.combatEvents.some(event => event.type === 'echo-lamp' && event.weapon === 'echo'));
+  for (let i = 0; i < 180 && !barrel.destroyed; i++) E.step(state, {}, 1 / 60);
+  link.receive('boss triggered the trap');
+  assert.ok(link.guest.props.find(prop => prop.id === barrel.id).destroyed);
+
+  const vent = E.create({ mode: 'chapter', mission: 'chapter4_4', players: 2, loadout: 'vent', seed: 7 });
+  for (const id of ['p1', 'p2']) assert.equal(E.enterRoom(vent, 1, true, id), true);
+  const boss = E.viewForPlayer(vent, 'p1').enemies.find(enemy => enemy.kind === 'grandfurnace');
+  Object.assign(boss, { windup: 0.23, attack: 'lunge' });
+  Object.assign(vent.players.p1, { x: boss.x - 94, y: boss.y });
+  Object.assign(vent.players.p2, { x: boss.x - 94, y: boss.y - 65 });
+  const ventLink = channel(vent);
+  ventLink.receive('vent gear');
+  E.step(vent, { p1: { shoot: true, aimX: boss.x, aimY: boss.y } }, 1 / 60);
+  ventLink.receive('vent opening');
+  assert.ok(ventLink.guest.enemies.find(enemy => enemy.id === boss.id).weakTime > 1);
+  assert.ok(ventLink.guest.combatEvents.some(event => event.type === 'vent-break' && event.enemyId === boss.id));
 });
