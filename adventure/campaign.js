@@ -41,6 +41,11 @@
   var SECRETS = Object.freeze([
     Object.freeze({ id: 'secret_unlisted', name: '隐藏 · 未登记线', description: '小穗的图上没有这条鬼轨道。检修班在这里失踪。', goal: '在暗处和静步里走完，带回他们的灯芯', reward: 45 })
   ]);
+  var STORY_WEAPON_REWARDS = Object.freeze({
+    chapter2_4: '回声灯铳',
+    chapter3_4: '拖钩刃',
+    chapter4_4: '泄压筒'
+  });
   var CHAPTERS = Object.freeze(CHAPTER_ONE.concat(ARC));
   var STEADY_CART_HP = 10;
   var BADGES = Object.freeze([
@@ -270,6 +275,18 @@
     return normalize(profile).missions.chapter1.clears > 0;
   }
 
+  function canUseEcho(profile) {
+    return normalize(profile).missions.chapter2_4.clears > 0;
+  }
+
+  function canUseHook(profile) {
+    return normalize(profile).missions.chapter3_4.clears > 0;
+  }
+
+  function canUseVent(profile) {
+    return normalize(profile).missions.chapter4_4.clears > 0;
+  }
+
   function validRouteChapter(chapter, status) {
     var c = object(chapter);
     var keys = ['id', 'version', 'phase', 'clues', 'pinTaken', 'bridgeRaised', 'wallBreached', 'gateOpened', 'signalLit'];
@@ -449,6 +466,7 @@
         if (arcRecord.clears === 1) {
           var fresh = ARC.concat(SECRETS).find(function (section) { return section.id === missionId; });
           if (fresh) unlocks.push(fresh.name);
+          if (STORY_WEAPON_REWARDS[missionId]) unlocks.push('武器解锁 · ' + STORY_WEAPON_REWARDS[missionId]);
         }
       }
       return result;
@@ -653,6 +671,7 @@
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, CHAPTER_ONE: CHAPTER_ONE, ARC: ARC, SECRETS: SECRETS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, STORY_RELICS: STORY_RELICS, LAMP_IDS: LAMP_IDS, RECORD_IDS: RECORD_IDS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
     chapterProgress: chapterProgress, journalView: journalView, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, validStoryChapter: validStoryChapter, validRescueRun: validRescueRun, secretOpen: secretOpen, lampsReady: lampsReady, readCoreSeat: readCoreSeat, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    canUseEcho: canUseEcho, canUseHook: canUseHook, canUseVent: canUseVent,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
     validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });

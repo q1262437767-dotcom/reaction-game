@@ -57,6 +57,30 @@ test('story validation rejects a broken chapter and still pays a clean loss noth
   assert.equal(settled.profile.missions.chapter3.clears, 0);
 });
 
+test('story weapons follow their exact handoff sections and are available to older saves', () => {
+  const chapters = [
+    ['chapter2_3', 'chapter2_4', C.canUseEcho, '回声灯铳'],
+    ['chapter3_3', 'chapter3_4', C.canUseHook, '拖钩刃'],
+    ['chapter4_3', 'chapter4_4', C.canUseVent, '泄压筒']
+  ];
+  for (const [previous, section, canEquip, title] of chapters) {
+    const oldUncleared = { v: 2, missions: { [previous]: { clears: 1 } } };
+    const oldCleared = { v: 2, missions: { [section]: { clears: 1 } } };
+    assert.equal(canEquip(oldUncleared), false, title);
+    assert.equal(canEquip(oldCleared), true, title);
+
+    const lost = C.applyResult(oldUncleared, win(section, blank(section, { phase: 'failed' }), { status: 'lost' }), section + '-lost');
+    assert.equal(canEquip(lost.profile), false, title);
+    assert.ok(!lost.unlocks.includes('武器解锁 · ' + title));
+
+    const first = C.applyResult(lost.profile, win(section, blank(section)), section + '-first');
+    assert.equal(canEquip(first.profile), true, title);
+    assert.ok(first.unlocks.includes('武器解锁 · ' + title));
+    const replay = C.applyResult(first.profile, win(section, blank(section)), section + '-replay');
+    assert.ok(!replay.unlocks.includes('武器解锁 · ' + title));
+  }
+});
+
 test('chapter badges, secret lamps, and the three endings settle once', () => {
   let profile = { v: 2, badges: lamps.filter(id => id !== 'echo'), relics: ['decoy'], camp: { companion: { rescued: true, name: '灰尾狐', equipped: true }, records: C.RECORD_IDS } };
   for (const id of ['chapter2', 'chapter2_2', 'chapter2_3']) {

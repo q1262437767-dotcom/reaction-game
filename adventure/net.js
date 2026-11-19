@@ -8,7 +8,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 36;
+  const VERSION = 37;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -35,8 +35,8 @@
     // A current lobby always identifies its mode. Never interpret an old or altered
     // lobby as the default mode; the app validates mission/difficulty and state.
     if (message.type === 'loadout') {
-      if (message.weapon !== 'pistol' && message.weapon !== 'scatter') return false;
-      if (message.melee !== undefined && message.melee !== 'blade' && message.melee !== 'spear') return false;
+      if (!['pistol', 'scatter', 'echo', 'vent'].includes(message.weapon)) return false;
+      if (message.melee !== undefined && !['blade', 'spear', 'hook'].includes(message.melee)) return false;
       if (message.foxRescued !== undefined && typeof message.foxRescued !== 'boolean') return false;
       if (message.companion !== undefined && message.companion !== null) {
         const fox = message.companion;
@@ -87,7 +87,7 @@
       const match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Fall back to the current page cache key. */ }
-    return '?v=63';
+    return '?v=64';
   })();
   let peerLibrary = null;
 

@@ -1,6 +1,6 @@
 # 遗迹小队 · Ruin Runners
 
-静态资源 `?v=63`，联机协议 36。首页、出发整备、对局状态栏、暂停和结算采用新的界面。开始游戏 → 随机远征 → 远征目标 → 失联救援。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）。
+静态资源 `?v=64`，联机协议 37。故事首通解锁武器，旧存档按对应小节的通关记录解锁。第一章《借火归营》获得遗迹长枪，第二章《护灯一晚》获得回声灯铳，第三章《检线》获得拖钩刃，第四章《总归炉者》获得泄压筒。营地可各选一把近战和远程，故事和远征共用。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）。
 
 在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 
