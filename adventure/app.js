@@ -657,8 +657,8 @@
     $('game-wrap').setAttribute('data-menu', screen);
     clearInput();
     if (screen !== 'playing') {
-      const first = { title: 'menu-play', modes: 'mode-chapter', challenges: 'mode-hunt', loadout: 'start-loadout' }[screen];
-      if (first) $(first).focus();
+      const first = { title: 'menu-play', modes: 'mode-chapter', challenges: 'mode-hunt', loadout: 'menu-loadout-back' }[screen];
+      if (first) $(first).focus({ preventScroll: true });
     }
   }
   function lobbyMenu() {
@@ -2704,6 +2704,30 @@
     const el = $(id);
     if (el && el.hidden !== hidden) el.hidden = hidden;
   }
+  function updateVitals(player) {
+    const max = Number.isFinite(player?.maxHp) && player.maxHp > 0 ? player.maxHp : 6;
+    const hp = player ? Math.max(0, Math.min(max, player.hp)) : max;
+    const ward = !!player?.ward && !player.downed;
+    const hpText = Math.round(hp * 10) / 10 + ' / ' + max;
+    const state = player?.downed ? 'down' : hp <= 2 ? 'low' : 'normal';
+    const summary = state === 'down' ? '倒地' : hpText;
+    putText('hud-health', summary);
+    putAttr('hud-vitals', 'aria-label', '生命 ' + hpText + (state === 'down' ? '，倒地' : ward ? '，有护盾' : ''));
+    putAttr('hud-vitals', 'data-state', state);
+    putHidden('hud-ward', !ward);
+    const el = $('hud-health-pips');
+    const segments = Math.min(8, Math.ceil(max));
+    const key = hp + '/' + max;
+    if (!el || hudDom.get('hud-health-pips') === key) return;
+    hudDom.set('hud-health-pips', key);
+    while (el.children.length > segments) el.lastElementChild.remove();
+    while (el.children.length < segments) el.append(document.createElement('i'));
+    const filled = hp / max * segments;
+    for (let index = 0; index < segments; index++) {
+      const ratio = Math.max(0, Math.min(1, filled - index));
+      el.children[index].style.setProperty('--life-fill', (ratio * 100).toFixed(1) + '%');
+    }
+  }
   function hud() {
     const p = state && state.players[localId()];
     const random = state && state.mode === 'random';
@@ -2732,25 +2756,30 @@
     }
     putText('hud-objective', remoteTutorialPending && !tutorialPending ? '等待搭档准备好，一起出发' : hunt ? huntObjective : relay ? state.relay.delivered ? '炉芯已送达' : core && core.carriedBy ? core.carriedBy === localId() ? '炉芯在你手中 · 带回入口' : '搭档携带炉芯 · 掩护撤离' : `炉芯位于${state.rooms[state.relay.coreRoom].name}` : state ? state.objective : '独自探险，或邀请一位搭档');
     putHidden('hud-objective', false);
-    putText('hud-health', p ? `${p.downed ? '倒地' : '♥'.repeat(Math.max(0, Math.ceil(p.hp)))} ${Math.max(0, p.hp)} / ${p.maxHp}${p.ward ? ' ◈' : ''}` : '6 / 6');
-    putText('hud-dash', p && p.railStun > 0 ? `电晕 ${p.railStun.toFixed(1)}s` : p && p.relayBoost > 0 ? `接力加速 ${p.relayBoost.toFixed(1)}s` : p && p.dashCd > 0 ? `闪避 ${p.dashCd.toFixed(1)}s` : '闪避就绪');
+    updateVitals(p);
+    const mobility = p?.railStun > 0 ? 'stunned' : p?.relayBoost > 0 ? 'boosted' : p?.dashCd > 0 ? 'cooling' : 'ready';
+    const mobilityStat = mobility === 'stunned' ? p.railStun : mobility === 'boosted' ? p.relayBoost : p?.dashCd || 0;
+    const mobilityLabel = { stunned: '电晕', boosted: '接力加速', cooling: '闪避冷却', ready: '闪避就绪' }[mobility];
+    const seconds = `${Math.ceil(mobilityStat * 10) / 10} 秒`;
+    putAttr('hud-mobility', 'data-state', mobility);
+    putAttr('hud-mobility', 'aria-label', mobility === 'ready' ? mobilityLabel : `${mobilityLabel} ${seconds}`);
+    putText('hud-dash', mobility === 'ready' ? '闪避' : mobility === 'cooling' ? seconds : `${mobilityLabel} ${seconds}`);
     const train = trainSection(state) ? state.chapter : null;
-    putText('hud-loot', train?.unloaded ? '伤员已安置' : train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 修×${train.repairsLeft}` : `${camp.coins} 星屑`);
-    putText('hud-loot-symbol', train ? '▣' : '◆');
+    putText('hud-loot', train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 维修 ${train.repairsLeft} 次` : '');
+    putHidden('hud-loot', !train || train.unloaded);
     const ally = state?.railAlly;
     const partnerId = localId() === 'p1' ? 'p2' : 'p1';
     const partnerRoom = state?.playerRooms?.[partnerId];
     const separated = Number.isInteger(partnerRoom) && partnerRoom !== state.room.index;
-    const allyTasks = { investigate: '调查工棚', rendezvous: '站台会合', feeder: '打通配电廊', guard: '支援拨道场', rescue: '接应救援车', route: '一起探路', dispatch: '赶往调度室', signal: '前往冷却站', done: '任务完成' };
     const allyRoom = ally && Number.isInteger(ally.roomIndex) ? state.rooms[ally.roomIndex]?.name : '';
-    const allyTask = ally?.taskReturn ? '赶去救你' : train?.unloaded ? '隔离炉支援' : train ? '守护救援车' :
-      storySection(state) && ally?.task === 'signal' ? '去塔上打灯讯' :
-        ally?.task === 'wire' ? '去对端接线' : allyTasks[ally?.task] || '同行';
-    putText('hud-team', ally ? (ally.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
-      `阿禾 ${ally.hp} / ${ally.maxHp}${ally.task ? ' · ' + allyTask : ''}`) :
-      separated ? `搭档 · ${state.rooms[partnerRoom].name}` :
-      state && state.practice ? '招架试炼' : state && Object.keys(state.players).length === 2 ?
-        (mode === 'guest' ? '双人 · 搭档' : '双人 · 队长') : '独自探险');
+    const partner = state?.players?.[partnerId];
+    const partnerLocation = separated ? ` · ${state.rooms[partnerRoom].name}` : '';
+    const teamNotice = ally?.downed ? `阿禾待救${allyRoom ? ' · ' + allyRoom : ''}` :
+      allyRoom && ally.roomIndex !== state.room.index ? `阿禾 · ${allyRoom}` :
+        partner?.downed ? `搭档待救${partnerLocation}` : separated ? `搭档${partnerLocation}` : '';
+    putText('hud-team', teamNotice);
+    putAttr('hud-team', 'data-urgent', String(!!(ally?.downed || partner?.downed)));
+    putHidden('hud-team', !teamNotice || !!(rescue?.guide === partnerId && separated && !partner?.downed));
     const rangedName = p && p.weapons.ranged === 'scatter' ? '散射枪' : '手枪';
     const meleeName = p && p.weapons.melee === 'spear' ? '长枪' : '短刃';
     putText('hud-melee', meleeName);
@@ -2779,22 +2808,11 @@
     }
     putHidden('hud-opportunity', !opportunity || paused || tutorialPending || remoteTutorialPending || hasDialog() || !playing());
     putText('hud-opportunity', opportunity);
-    let route = chapter ? `第一节 · 借火归营 · 记录 ${state.chapter.clues.length} / 3${state.chapter.fireTaken ? ' · 火种已带上' : ''}` : hunt ? `苔火猎场 · 诱敌 ${state.hunt.lures} 次` : relay ? '撤离台 ← 断桥庭院 ← 炉芯密库' : state && state.mission ? `${random ? (state.difficulty === 2 ? '险境' : '') : missionInfo(state.mission.id).name + ' · ' + state.mission.progress + ' / ' + state.mission.total}${state.runBuffs.length ? (random && state.difficulty !== 2 ? '' : ' · ') + state.runBuffs.map(id => BUFF_LABELS[id] || '').filter(Boolean).join(' / ') : ''}` : '';
-    if (chapter && state.chapter.id === 'chapter1_2') route = `第二节 · 木场求援 · 记录 ${state.chapter.clues.length} / 2${state.chapter.workerFreed ? ' · 工人已脱困' : ''}`;
-    if (chapter && state.chapter.id === 'chapter1_3') route = `第三节 · 借走的主芯 · 记录 ${state.chapter.clues.length} / 2${state.chapter.bossDefeated ? ' · 转车台已打通' : ''}`;
-    if (chapter && state.chapter.id === 'chapter1_4') route = `第四节 · 断轨开路 · 记录 ${state.chapter.clues.length} / 2${state.chapter.gateOpened ? ' · 主轨闸已开' : ''}`;
-    if (train?.unloaded) {
-      const beat = { divert: '主芯分流', returner: '隔离炉 · 归炉者', relight: '返回车库点灯', complete: '归途灯已亮' }[train.phase];
-      route = beat ? '第五节 · ' + beat : '第五节 · 末班车';
-    } else if (train) route = `第五节 · 末班车 · ${state.rooms[train.cart.roomIndex].name}${train.phase === 'cooling' ? ' · 冷却 ' + Math.ceil(train.coolingLeft) + 's' : train.cart.moving ? ' · 行驶中' : ' · 停车'}`;
-    if (random && styleNames(state).length) route = '流派 · ' + styleNames(state).join(' / ') + (state.difficulty === 2 ? ' · 险境' : '');
-    if (rescue) {
-      if (rescue.phase === 'search') route = '失联救援 · 前往避难站';
-      else if (rescue.phase === 'escort') {
-        const location = state.rooms[rescue.room].name;
-        route = rescue.guide === localId() ? '伤员随你撤离' : rescue.guide ? `搭档护送 · ${location}` : `伤员在等 · ${location}`;
-        if (rescue.eliteDown) route += ' · 撤离 +8 星屑';
-      } else route = '失联救援';
+    let route = random ? styleNames(state).join(' / ') : '';
+    if (rescue?.phase === 'escort') {
+      const location = state.rooms[rescue.room].name;
+      route = rescue.guide === localId() ? '' : rescue.guide ? `搭档护送 · ${location}` : `伤员在等 · ${location}`;
+      if (rescue.eliteDown) route = [route, '撤离 +8 星屑'].filter(Boolean).join(' · ');
     }
     putText('route-progress', route);
     putHidden('route-progress', !!(state && state.practice) || !route);
