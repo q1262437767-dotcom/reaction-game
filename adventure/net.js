@@ -8,7 +8,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 37;
+  const VERSION = 38;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -87,7 +87,7 @@
       const match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Fall back to the current page cache key. */ }
-    return '?v=64';
+    return '?v=65';
   })();
   let peerLibrary = null;
 
