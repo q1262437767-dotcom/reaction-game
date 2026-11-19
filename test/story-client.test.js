@@ -273,3 +273,72 @@ test('guest receives the finale authorization and can use it without the host le
   assert.equal(remote.guest.chapter.ending, 'normal');
   assert.equal(remote.guest.status, 'won');
 });
+
+test('guest follows the shared rescue across both route layouts and can settle in a separate room', () => {
+  for (const [seed, route] of [[14, [1, 0]], [17, [5, 4, 3, 0]]]) {
+    const state = E.create({ mode: 'rescue', mission: 'salvage', players: 2, seed });
+    const link = channel(state);
+    const view = () => E.viewForPlayer(state, 'p2');
+    link.receive('rescue opening');
+    const verifyRun = label => {
+      link.receive(label);
+      const full = wire(E.snapshot(view(), true));
+      assertValid(full, label + ' full refresh');
+      for (const key of ['x', 'y', 'water']) assert.ok(Math.abs(link.guest.rescue[key] - full.rescue[key]) < .011, label + ' ' + key);
+      for (const key of ['phase', 'guide', 'room', 'eliteId', 'eliteDown']) {
+        assert.equal(link.guest.rescue[key], full.rescue[key], label + ' ' + key);
+      }
+      assert.equal(link.guest.interactables.some(item => item.kind === 'rescue-survivor'),
+        state.status === 'playing' && state.rescue.room === view().room.index, label);
+    };
+    assert.equal(E.enterRoom(state, 2, true, 'p1'), true);
+    interactAt(state, 'p1', 'rescue-survivor');
+    verifyRun('remote pickup');
+    assert.equal(link.guest.rescue.guide, 'p1');
+    assert.equal(E.enterRoom(state, 2, true, 'p2'), true);
+    verifyRun('same room');
+    interactAt(state, 'p2', 'rescue-survivor');
+    verifyRun('guide handoff');
+    assert.equal(link.guest.rescue.guide, 'p2');
+    assert.equal(state.playerRooms.p1, 2, 'the other player stays behind');
+    for (const room of route) {
+      assert.equal(E.enterRoom(state, room, true, 'p2'), true);
+      verifyRun('escort arrives ' + room);
+      assert.equal(link.guest.rescue.room, room);
+    }
+    Object.assign(state.players.p2, { x: 160, y: 300 });
+    for (let i = 0; i < 300 && !view().interactables.find(item => item.kind === 'rescue-extract')?.active; i++) {
+      E.step(state, { p1: {}, p2: {} }, 1 / 60);
+    }
+    assert.equal(view().interactables.find(item => item.kind === 'rescue-extract').active, true);
+    assert.equal(state.playerRooms.p1, 2, 'escorting the survivor does not move the other player');
+    interactAt(state, 'p2', 'rescue-extract');
+    verifyRun('extraction');
+    assert.equal(link.guest.status, 'won');
+    assert.equal(link.guest.playerRooms.p1, 0, 'both players share the extraction result');
+    assert.ok(link.counts.every(count => count > 0), 'used full and cumulative updates');
+  }
+});
+
+test('rescue validation rejects room spoofing and mismatched survivor deltas', () => {
+  const state = E.create({ mode: 'rescue', mission: 'salvage', players: 2, seed: 16 });
+  E.enterRoom(state, 2, true, 'p2');
+  const view = () => E.viewForPlayer(state, 'p2');
+  const guest = wire(E.snapshot(view(), true)), baseline = E.syncBaseline(guest);
+  assert.equal(client.validateGuest(guest), true);
+  const bogusRoute = wire(guest);
+  bogusRoute.rooms[4].neighbors = [2, 5];
+  assert.equal(client.validateGuest(bogusRoute), false);
+  const bogusFull = wire(guest);
+  bogusFull.interactables.find(item => item.kind === 'rescue-survivor').x += 20;
+  assert.equal(client.validateGuest(bogusFull), false);
+  interactAt(state, 'p2', 'rescue-survivor');
+  const validPatch = wire(E.syncDiff(view(), baseline));
+  assert.equal(client.validateSync(validPatch, guest, baseline), true);
+  const bogusWater = wire(validPatch);
+  bogusWater.rescue.water = 9;
+  assert.equal(client.validateSync(bogusWater, guest, baseline), false);
+  const bogusGuide = wire(validPatch);
+  bogusGuide.rescue.guide = 'p1';
+  assert.equal(client.validateSync(bogusGuide, guest, baseline), false);
+});

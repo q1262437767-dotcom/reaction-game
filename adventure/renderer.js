@@ -906,6 +906,79 @@
     label(c, run.lit ? `灯油 ${Math.ceil(num(run.oil))}` : run.alerted ? '已惊动' : `${rooms.filter(room => room.visited).length} / ${rooms.length}`, left + 12, top + height - 12, '#9eb0b8', 8, 'left');
     c.restore();
   }
+  function rescueWater(state) {
+    if (state.rescue?.phase !== 'escort' || state.status !== 'playing') return 'low';
+    const pulse = num(state.rescue.water);
+    return pulse >= 3.6 ? 'surge' : pulse >= 2.5 ? 'warning' : 'low';
+  }
+  function rescueTrack(c, gates) {
+    const hub = [480, 300];
+    for (const gate of gates) {
+      const dx = Math.sign(gate.x - hub[0]), dy = Math.sign(gate.y - hub[1]);
+      if (Math.abs(dx) + Math.abs(dy) !== 1) continue;
+      const length = Math.hypot(gate.x - hub[0], gate.y - hub[1]) + 16;
+      for (let offset = 0; offset < length; offset += 24) {
+        const x = hub[0] + dx * offset, y = hub[1] + dy * offset;
+        rect(c, x - (dy ? 24 : 4), y - (dx ? 24 : 4), dy ? 48 : 8, dx ? 48 : 8, '#363f37');
+        rect(c, x - (dy ? 23 : 3), y - (dx ? 23 : 3), dy ? 44 : 4, dx ? 44 : 4, '#736651');
+      }
+      for (const side of [-13, 13]) {
+        const x = hub[0] - dy * side, y = hub[1] + dx * side;
+        path(c, [[x, y], [x + dx * length, y + dy * length]], '#273634', 6);
+        path(c, [[x, y], [x + dx * length, y + dy * length]], '#95866c', 2);
+      }
+    }
+    rect(c, 453, 273, 54, 54, '#283b37'); rect(c, 457, 277, 46, 46, '#586c5e');
+    rect(c, 463, 283, 34, 34, '#354b43'); rect(c, 468, 288, 24, 3, '#879788');
+  }
+  function rescueCanal(c, state, time, still, actor) {
+    // Keep the wash exactly on the surge collision region.
+    const left = 380, right = 580, top = 70, bottom = 530;
+    const phase = rescueWater(state);
+    const water = phase === 'surge' ? '#2f7587' : phase === 'warning' ? '#3f6267' : '#254650';
+    const edge = phase === 'surge' ? '#c0edf0' : phase === 'warning' ? '#f0cc85' : '#748f89';
+    rect(c, left - 13, top - 11, right - left + 26, bottom - top + 22, '#203736');
+    rect(c, left, top, right - left, bottom - top, water);
+    c.save();
+    c.beginPath(); c.rect(left, top, right - left, bottom - top); c.clip();
+    if (phase !== 'surge') {
+      for (let y = 94; y < bottom; y += 40) {
+        rect(c, left, y, right - left, 2, '#81a89b20');
+        rect(c, 449, y + 2, 62, 15, '#182e3a32');
+      }
+    }
+    const drift = still ? 0 : time * (phase === 'surge' ? .14 : .025);
+    for (let i = 0; i < 30; i++) {
+      const x = left + 12 + (i * 67) % 167, y = top + (i * 29 + drift) % (bottom - top);
+      const tint = phase === 'surge' ? i % 3 ? '#bcf3ee89' : '#dff9eebd' : '#8dc8bf49';
+      path(c, [[x, y], [x + 9, y + 3], [x + 20, y + 2]], tint, phase === 'surge' ? 2 : 1);
+    }
+    c.restore();
+    for (const x of [left, right]) {
+      rect(c, x === left ? x - 9 : x, top, 9, bottom - top, '#475f5c');
+      for (let y = top + 7; y < bottom - 6; y += 28) rect(c, x === left ? x - 8 : x + 1, y, 7, 3, '#899483');
+    }
+    c.save();
+    if (phase === 'warning') c.setLineDash([7, 5]);
+    c.strokeStyle = edge; c.lineWidth = phase === 'low' ? 1 : 2;
+    c.strokeRect(left + .5, top + .5, right - left - 1, bottom - top - 1);
+    c.restore();
+    if (actor && state.rescue.phase === 'escort') {
+      const x = Math.max(334, Math.min(626, actor.x));
+      const y = actor.y < 310 ? actor.y + 67 : actor.y - 78;
+      const next = phase === 'surge' ? '泄洪中' : phase === 'warning' ? '即将泄洪' : '退潮';
+      rect(c, x - 43, y - 10, 86, 20, '#112832eb');
+      label(c, next, x, y, edge, 13);
+    }
+  }
+  function rescueFloor(c, state, time, still, actor) {
+    if (state.mode !== 'rescue' || !state.rescue) return;
+    const index = state.room.index;
+    const tint = ['#2c524442', '#183d5355', '#5e513937', '#5e4a3638', '#5e4a3638', '#5e4a3638', '#632e293d'][index];
+    if (tint) rect(c, 28, 28, W - 56, H - 56, tint);
+    if (index === 1) rescueCanal(c, state, time, still, actor);
+    else if (index >= 3 && index <= 5) rescueTrack(c, values(state.portals));
+  }
   function chapterFloor(c, state, time, still, endingAge) {
     if (state.mode !== 'chapter') return;
     if (state.chapter && /^(chapter[2-5]|secret_)/.test(String(state.chapter.id || ''))) { storyWash(c, state, time); return; }
@@ -1128,13 +1201,15 @@
     if (pressed) glow(c, x, y, 35, '#b6d28420');
   }
   function portalDestination(c, gate, state, localId) {
-    if (state.mode !== 'random' || gate.active === false || !gate.direction) return;
+    if (!['random', 'rescue'].includes(state.mode) || gate.active === false || !gate.direction) return;
     const p = state.players && state.players[localId];
     if (!p || p.downed || Math.hypot(num(p.x) - num(gate.x), num(p.y) - num(gate.y)) >= 104) return;
     if (values(state.interactables).some(item => item.active !== false && !item.used && Math.hypot(num(p.x) - num(item.x), num(p.y) - num(item.y)) < 100)) return;
-    const target = values(state.rooms).find(room => room.index === gate.target && (room.visited || room.discovered));
+    const target = values(state.rooms).find(room => room.index === gate.target && (state.mode === 'rescue' || room.visited || room.discovered));
     if (!target) return;
-    const caption = (target.kind === 'refuge' ? '灯室 · ' : '') + (target.name || '遗迹通道');
+    const rescueHint = state.mode === 'rescue' ?
+      target.index === 1 ? ' · 近路' : target.index >= 3 && target.index <= 5 ? ' · 干路' : target.index === 6 ? ' · 可选' : '' : '';
+    const caption = (target.kind === 'refuge' ? '灯室 · ' : '') + (target.name || '遗迹通道') + rescueHint;
     const x = Math.max(122, Math.min(W - 122, num(gate.x)));
     const y = gate.direction === 'south' ? num(gate.y) - 38 : gate.direction === 'north' ? num(gate.y) + 40 : num(gate.y) - 39;
     const width = Math.min(235, caption.length * 9 + 18);
@@ -1398,6 +1473,8 @@
     }
     if (trainChapter(state) && /^train-/.test(item.kind)) { trainInteractable(c, item, time, state, localId, still); return; }
     if (!item || (item.kind === 'relic' && item.used)) return;
+    if (state.mode === 'rescue' && item.kind === 'rescue-survivor') return;
+    if (state.mode === 'rescue' && item.kind === 'rescue-extract') { rescueExtraction(c, item, state, localId); return; }
     if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
     if (state.mode === 'random' && (item.kind === 'refuge-rest' || item.kind === 'refuge-relic')) { refugeInteractable(c, item, time, state, localId, still); return; }
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
@@ -2014,6 +2091,66 @@
     }
   }
 
+  function rescueExtraction(c, item, state, localId) {
+    const { x, y } = item, done = state.rescue.phase === 'complete', ready = item.active && !item.used;
+    const actor = state.players?.[localId], near = actor && !actor.downed && Math.hypot(actor.x - x, actor.y - y) < 78;
+    const lamp = done || ready ? '#bce7b2' : '#e0be83';
+    shadow(c, x, y, 44, .38);
+    ellipse(c, x, y + 6, 52, 22, '#1f3736');
+    ellipse(c, x, y + 3, 46, 18, done || ready ? '#527365' : '#565d52');
+    c.strokeStyle = lamp; c.lineWidth = 2;
+    c.beginPath(); c.ellipse(x, y + 1, 39, 13, 0, Math.PI * 2); c.stroke();
+    for (const side of [-1, 1]) {
+      const bx = x + side * 39;
+      rect(c, bx - 5, y - 42, 11, 47, '#2e4849');
+      rect(c, bx - 3, y - 40, 6, 42, '#81998a');
+      rect(c, bx - 4, y - 45, 8, 7, lamp);
+    }
+    rect(c, x - 25, y - 48, 50, 13, '#244847');
+    rect(c, x - 23, y - 47, 46, 2, lamp);
+    label(c, done ? '救援完成' : near && ready && state.rescue.guide === localId ? 'E · 撤离' : '撤离站', x, y + 33, lamp, 11);
+  }
+  function rescueSurvivor(c, state, local, time, still, viewTop) {
+    const run = state.rescue, { x, y } = run;
+    const guide = state.players?.[run.guide], traveling = run.phase === 'escort' && guide && !guide.downed;
+    const near = local && !local.downed && Math.hypot(local.x - x, local.y - y) < 78;
+    const step = traveling && !still && guide.moving ? Math.sin(time * .014) * 2 : 0;
+    shadow(c, x, y, 18, .35);
+    if (!traveling && run.phase === 'search') glow(c, x, y + 1, 48, '#d2a97b33');
+    c.save();
+    c.translate(Math.round(x), Math.round(y));
+    if (traveling) {
+      for (const [bx, by] of [[-8, step], [3, -step]]) {
+        rect(c, bx, 2 + by, 7, 10, '#1c2b34');
+        rect(c, bx + 1, 3 + by, 5, 6, '#605349');
+      }
+      rect(c, -11, -16, 23, 23, '#22343a');
+      rect(c, -9, -15, 18, 19, '#806052');
+      rect(c, -8, -13, 6, 15, '#c58d6e');
+      rect(c, -8, -18, 16, 5, '#dba975');
+      path(c, [[-6, -9], [7, 1]], '#e0d4ac', 4);
+      path(c, [[12, -5], [14, 11]], '#b59c71', 3);
+    } else {
+      rect(c, -14, -13, 29, 20, '#24383b');
+      rect(c, -12, -11, 23, 15, '#936f58');
+      rect(c, -10, -11, 16, 4, '#c0806c');
+      rect(c, 4, 1, 13, 7, '#65564b');
+      rect(c, -11, -4, 9, 4, '#dfcfac');
+    }
+    const head = traveling ? -30 : -24;
+    rect(c, -8, head, 16, 14, '#2f3b3e');
+    rect(c, -7, head + 4, 14, 9, '#d9a782');
+    rect(c, -8, head + 1, 16, 5, '#ddd0ac');
+    rect(c, 4, head + 8, 2, 2, '#333c39');
+    c.restore();
+    const titleY = y - 49 < viewTop + 12 ? y + 29 : y - 49;
+    const role = run.phase === 'complete' ? '已获救' : run.phase === 'search' && near ? 'E · 扶起伤员' :
+      traveling && run.guide === local?.id ? '伤员 · 跟随你' :
+        run.phase === 'escort' && near && run.guide !== local?.id ? 'E · 接手护送' : '伤员';
+    const width = Math.max(40, role.length * 11 + 9);
+    rect(c, x - width / 2, titleY - 8, width, 16, '#182d32dd');
+    label(c, role, x, titleY, run.phase === 'complete' ? '#cae7ae' : '#f2d6a1', 10);
+  }
   function railAllyReadout(c, ally, x, y, downed, viewTop) {
     const below = y - 45 < viewTop + 11;
     const nameY = below ? y + 29 : y - 49;
@@ -3889,10 +4026,63 @@
       left + width - 12, top + 166, state.railAlly?.downed ? '#e4a480' : '#bac8ab', 8, 'right');
     c.restore();
   }
+  function rescueMap(c, state) {
+    const run = state.rescue, rooms = values(state.rooms);
+    if (!run || !rooms.length) return;
+    const left = 752, top = 18, width = 190, height = 139;
+    const colors = { canal: '#79b6c8', track: '#baa985', elite: '#e4aa87', exit: '#c2dca7', wounded: '#f0d6a2' };
+    const midX = (Math.min(...rooms.map(room => room.gx)) + Math.max(...rooms.map(room => room.gx))) / 2;
+    const midY = (Math.min(...rooms.map(room => room.gy)) + Math.max(...rooms.map(room => room.gy))) / 2;
+    const points = new Map(rooms.map(room => [room.index, { x: left + 95 + (room.gx - midX) * 47,
+      y: top + 61 + (room.gy - midY) * 27, room }]));
+    c.save();
+    rect(c, left, top, width, height, '#132729eb');
+    c.strokeStyle = '#8195818a'; c.lineWidth = 1; c.strokeRect(left + .5, top + .5, width - 1, height - 1);
+    label(c, '失联救援', left + 11, top + 13, '#dce1c1', 10, 'left');
+    label(c, run.phase === 'search' ? '搜寻' : run.phase === 'escort' ? '护送' : run.phase === 'complete' ? '已撤离' : '未完成',
+      left + width - 11, top + 13, colors.wounded, 9, 'right');
+    for (const point of points.values()) {
+      for (const neighbor of values(point.room.neighbors)) {
+        const other = points.get(neighbor), a = point.room.index, b = neighbor;
+        if (!other || a >= b) continue;
+        const color = b === 6 ? colors.elite : a === 1 || b === 1 ? colors.canal : colors.track;
+        path(c, [[point.x, point.y], [other.x, other.y]], color + (point.room.visited || other.room.visited ? 'a0' : '55'), 2);
+      }
+    }
+    for (const point of points.values()) {
+      const i = point.room.index, current = i === state.room.index;
+      const size = current ? 16 : 12;
+      rect(c, point.x - size / 2 - 2, point.y - size / 2 - 2, size + 4, size + 4, '#132729');
+      rect(c, point.x - size / 2, point.y - size / 2, size, size, current ? '#d9e4c4' : point.room.visited ? '#5d8277' : '#365451');
+      const color = current ? '#334a37' : i === 0 ? colors.exit : i === 6 ? colors.elite : colors.wounded;
+      if (i === 0) path(c, [[point.x - 3, point.y + 4], [point.x - 3, point.y - 4], [point.x + 4, point.y - 2], [point.x - 3, point.y + 1]], color, 1.5);
+      if (i === 6 && !run.eliteDown) {
+        rect(c, point.x - 1, point.y - 4, 2, 5, color);
+        rect(c, point.x - 1, point.y + 2, 2, 2, color);
+      }
+      if (i === run.room && run.phase !== 'complete' && run.phase !== 'failed') {
+        // On the exit or beside another player, keep the wounded marker
+        // outside the center cell so both icons stay visible.
+        const mx = point.x + 11, my = point.y - 8;
+        rect(c, mx - 6, my - 6, 12, 12, '#2c3d3b');
+        rect(c, mx - 1, my - 4, 2, 8, colors.wounded);
+        rect(c, mx - 4, my - 1, 8, 2, colors.wounded);
+      }
+    }
+    mapTeammates(c, state, points);
+    rect(c, left + 12, top + 104, 7, 3, colors.canal);
+    label(c, '旧渠近路', left + 24, top + 105, colors.canal, 8, 'left');
+    rect(c, left + 94, top + 104, 7, 3, colors.track);
+    label(c, '轨道绕行', left + 106, top + 105, colors.track, 8, 'left');
+    const bottom = run.phase === 'escort' ? '带伤员回旗标撤离' : run.phase === 'search' ? '十字为伤员 · ! 为精英' : run.phase === 'complete' ? '伤员已带回' : '救援中断';
+    label(c, bottom, left + 11, top + 124, colors.wounded, 8, 'left');
+    c.restore();
+  }
   function minimap(c, state) {
     if (state.mode === 'chapter') { chapterMap(c, state); return; }
     if (state.mode === 'relay') { relayMap(c, state); return; }
     if (state.mode === 'hunt') { huntMap(c, state); return; }
+    if (state.mode === 'rescue') { rescueMap(c, state); return; }
     if (state.practice || state.mode !== 'random' || !Array.isArray(state.rooms) || !state.rooms.length) return;
     const rooms = state.rooms.filter(room => Number.isFinite(room.gx) && Number.isFinite(room.gy));
     if (!rooms.length) return;
@@ -4419,6 +4609,7 @@
     floor(c, state);
     chapterFloor(c, state, time, still, trainEndingAge);
     expeditionFloor(c, state, time, still);
+    rescueFloor(c, state, time, still, local);
     lanternAuras(c, state);
     // Canal collision strips describe the gap in the floor, not upright walls.
     paintWalls(c, storyCanal(state) ? values(state.walls).filter(w => !/^story-canal-/.test(w.id || '')) : state.walls, coreRoom ? 'core-pillar-west' : '');
@@ -4450,6 +4641,9 @@
         draw: () => trainCar(c, state, enemyTime, localId, still, viewTop) }] : []),
       ...(storyCartChapter(state) && state.chapter.cartRoom === state.room.index ? [{ y: 309,
         draw: () => storyCart(c, state, still, viewTop) }] : []),
+      ...(state.mode === 'rescue' && state.rescue?.room === state.room.index ? [{
+        y: state.rescue.y, draw: () => rescueSurvivor(c, state, local, enemyTime, still, viewTop)
+      }] : []),
       ...(tao ? [{ y: tao.y, draw: () => chapterEndingCivilian(c, tao.x, tao.y, 'helper', tao.gait) }] : []),
       ...values(state.props).filter(p => !p.carriedBy && !p.destroyed && (p.hp == null || p.hp > 0) && (p.kind !== 'core' || !state.relay || !state.relay.delivered && state.relay.coreRoom === (state.room && state.room.index))).map(p => ({
         y: storyFloatingBox(p, state) ? p.y - 40 : p.y,

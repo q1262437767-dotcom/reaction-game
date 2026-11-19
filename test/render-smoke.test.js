@@ -72,6 +72,7 @@ test('drawing every mission room does not throw', () => {
     visit(spec.mission, state);
   }
   visit('random', E.create({ mode: 'random', players: 1, seed: 3, mission: 'ember', difficulty: 1 }));
+  visit('rescue', E.create({ mode: 'rescue', players: 1, seed: 62 }));
   visit('relay', E.create({ mode: 'relay', players: 1, seed: 4 }));
   visit('hunt', E.create({ mode: 'hunt', players: 1, seed: 5 }));
   const ctx = fakeCanvas(960, 600).getContext('2d');
