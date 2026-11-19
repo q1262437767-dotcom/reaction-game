@@ -3314,7 +3314,7 @@
       path(c, [[x - 12, -8], [x, 0], [x - 12, 8]], color + 'd9', 3);
     }
   }
-  function rhythmArea(c, e, state, localId, viewTop = 0) {
+  function rhythmArea(c, e, state, localId, viewTop = 0, dark = false) {
     const r = e && e.rhythm;
     if (!r || e.hp <= 0 || e.dead || !rhythmColors[r.type] || !['windup','active'].includes(r.phase)) return;
     const x = num(e.x), y = num(e.y), radius = Math.max(1, Math.min(1100, num(r.range, 100)));
@@ -3347,7 +3347,7 @@
     } else if (r.type === 'hook') {
       // A narrow locked lane plus hooked arrowheads identifies a travelling
       // chain. Its edge uses the engine's exact 430px range and .18rad arc.
-      shape();c.fillStyle=color+(active?'27':'0d');c.fill();
+      shape();c.fillStyle=color+(dark?(active?'17':'08'):(active?'27':'0d'));c.fill();
       c.strokeStyle=color+(active?'da':'75');c.lineWidth=active?3:1;
       if(!active)c.setLineDash([8,7]);shape();c.stroke();c.setLineDash([]);
       path(c,[[num(e.r,20)+8,0],[radius,0]],color+'68',1.5);
@@ -3357,11 +3357,11 @@
       }
     } else if (r.type === 'fireball') {
       // This line previews a travelling projectile, not an instant floor-wide hit.
-      path(c,[[num(e.r,20)+8,0],[radius,0]],color+'28',12);
+      path(c,[[num(e.r,20)+8,0],[radius,0]],color+(dark?'14':'28'),12);
       if(!active)c.setLineDash([9,7]);path(c,[[num(e.r,20)+8,0],[radius,0]],color+(active?'cf':'88'),2);c.setLineDash([]);
       for(let i=1;i<=3;i++){const dx=radius*(.22+i*.19);path(c,[[dx-7,-5],[dx,0],[dx-7,5]],color+'a0',2);}
     } else {
-      shape(); c.fillStyle = color + (active ? '38' : '13'); c.fill();
+      shape(); c.fillStyle = color + (dark ? (active ? '1c' : '0a') : (active ? '38' : '13')); c.fill();
       c.strokeStyle = color + (active ? 'ee' : '88'); c.lineWidth = active ? 4 : 2;
       if (!active) c.setLineDash(secondShock ? [13, 5] : [7, 6]); shape(); c.stroke(); c.setLineDash([]);
     }
@@ -4761,8 +4761,8 @@
     const local = state.players?.[localId];
     const storyDraw = state.status === 'playing' && typeof AdventureStoryDraw !== 'undefined' ? AdventureStoryDraw : null;
     const storyTells = storyDraw ? enemies.filter(e => storyDraw.owns(e.kind) && storyDraw.activeTell(e)) : [];
-    const paintStoryTells = () => storyTells.forEach(e => storyDraw.telegraph(c, e, enemyTime, local, still));
     const dark = state.room?.dark || state.mode === 'random' && state.room?.mood === 'dark';
+    const paintStoryTells = () => storyTells.forEach(e => storyDraw.telegraph(c, e, enemyTime, local, still, dark));
     const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
       e.kind === 'boss' && !e.timber && e.hp > 0 && !e.dead && !e.rhythm && !e.stagger && e.intercept?.remaining > 0 &&
       Number.isFinite(e.intercept.x) && Number.isFinite(e.intercept.y));
@@ -4792,7 +4792,7 @@
     // Their position belongs to the engine; the renderer adds only a tiny hop.
     values(state.companions).forEach(fox=>foxCompanion(c,fox,time,state,localId,still));
     if (intercepting) interceptLanding(c, intercepting.intercept);
-    enemies.forEach(e => rhythmArea(c, e, state, localId, viewTop));
+    enemies.forEach(e => rhythmArea(c, e, state, localId, viewTop, dark));
     if (!dark) paintStoryTells();
     hookTethers(c, state);
     // All sprites share a ground plane, so passing behind a crate feels natural.

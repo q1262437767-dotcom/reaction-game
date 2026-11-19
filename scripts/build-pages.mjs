@@ -85,8 +85,10 @@ if (!cloud.includes('vendor/supabase-2.118.0.js') || !cloud.includes('?v=59')) {
 if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=65')) {
   throw new Error('minified net.js lost the lazy PeerJS URL');
 }
-const entryFiles = ['style.css', 'title-ui.css', 'panel-ui.css', 'hud-ui.css', 'engine.js', 'story.js', 'story-draw.js', 'layout.js'];
-if (entryFiles.some(name => !html.includes(name + '?v=65')) || html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
+const entryFiles = ['style.css', 'title-ui.css', 'panel-ui.css', 'hud-ui.css', 'engine.js', 'story.js', 'layout.js'];
+const drawFiles = ['story-draw.js', 'renderer.js'];
+if (entryFiles.some(name => !html.includes(name + '?v=65')) || drawFiles.some(name => !html.includes(name + '?v=66')) ||
+    html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
   throw new Error('adventure page should keep separate scripts and lazy vendor files');
 }
 

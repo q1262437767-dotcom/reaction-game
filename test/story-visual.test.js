@@ -17,7 +17,7 @@ function canvas(width = 960, height = 600) {
       if (key === 'measureText') return text => ({ width: String(text).length * 7 });
       if (key === 'createLinearGradient' || key === 'createRadialGradient' || key === 'createPattern') return () => gradient;
       if (key === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
-      return (...args) => result.calls.push({ method: key, args, color: target.fillStyle });
+      return (...args) => result.calls.push({ method: key, args, color: target.fillStyle, strokeColor: target.strokeStyle });
     },
     set(target, key, value) { target[key] = value; return true; }
   });
@@ -105,6 +105,29 @@ test('story slashes and hooks draw the reach and angle used by the attack', () =
   assert.ok(draw(finale).some(call => call.method === 'arc' && call.args[0] === hengshi.x &&
     call.args[2] === hengshi.r + finale.players.p1.r + 30 &&
     Math.abs(call.args[4] - call.args[3] - 1.8) < .001));
+});
+
+test('an unlit story room has a subdued warning fill and a readable last-beat edge', () => {
+  const s = state('secret_unlisted'); E.enterRoom(s, 4, true);
+  const enemy = s.enemies.find(e => e.kind === 'grandfurnace');
+  Object.assign(enemy, { attack: 'slam', windup: .28 });
+  const hasFill = (calls, color) => calls.some(q => q.method === 'fill' && q.color === color);
+  const hasStroke = (calls, color) => calls.some(q => q.method === 'stroke' && q.strokeColor === color);
+  const dark = draw(s);
+  assert.ok(hasFill(dark, '#a65c3816'));
+  assert.ok(hasStroke(dark, '#b07a66'));
+  assert.ok(words(dark).includes('砸地'));
+  assert.equal(hasFill(dark, '#ff9a5a30'), false);
+
+  enemy.windup = .15;
+  const late = draw(s);
+  assert.ok(hasFill(late, '#a65c3816'));
+  assert.ok(hasStroke(late, '#d8a584'));
+
+  s.room.dark = false;
+  const lit = draw(s);
+  assert.ok(hasFill(lit, '#ff9a5a30'));
+  assert.ok(hasStroke(lit, '#ffd2a4'));
 });
 
 test('a cropped-incoming hook gets a visible edge warning and disappears when turned away', () => {

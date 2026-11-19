@@ -29,66 +29,74 @@
   function activeTell(e) {
     return e.hp > 0 && !e.dead && !e.stagger && !e.stun && (e.windup > 0 || e.chargeTime > 0);
   }
-  function telegraph(c, e, time, actor, still) {
+  function telegraph(c, e, time, actor, still, dark) {
     var attack = e.attack || '';
     var x = num(e.x), y = num(e.y);
     var face = num(e.chargeTime) > 0 ? Math.atan2(num(e.chargeY), num(e.chargeX, 1)) : facing(e);
     var word = WORDS[attack] || '';
     var labelX = x, labelY = e.storyBoss ? (y > 116 ? y - 101 : y + 35) : y - 64;
+    // The dark-room tell is painted over the fog. Keep the floor subdued and
+    // put the last-beat emphasis on the boundary, where players read the range.
+    var imminent = num(e.chargeTime) > 0 || (num(e.windup) > 0 && num(e.windup) <= 0.17);
+    var warmEdge = dark ? (imminent ? '#d8a584' : '#b07a66') : null;
+    var coldEdge = dark ? (imminent ? '#a3cadd' : '#749caf') : null;
+    var warmFill = dark ? '#a65c3816' : null, coldFill = dark ? '#5488a614' : null;
     c.save();
     if (num(e.chargeTime) > 0 || attack === 'lunge') {
       var reach = e.kind === 'grandfurnace' ? 168 : 132;
-      c.fillStyle = '#ffb0782e';
+      c.fillStyle = warmFill || '#ffb0782e';
       c.beginPath();
       c.moveTo(x, y);
       c.lineTo(x + Math.cos(face - 0.22) * reach, y + Math.sin(face - 0.22) * reach);
       c.lineTo(x + Math.cos(face + 0.22) * reach, y + Math.sin(face + 0.22) * reach);
       c.closePath(); c.fill();
-      c.setLineDash([8, 6]); c.strokeStyle = '#ffd0a4'; c.lineWidth = 2;
+      if (dark) { c.strokeStyle = warmEdge; c.lineWidth = 1.5; c.stroke(); }
+      c.setLineDash([8, 6]); c.strokeStyle = dark ? warmEdge + '9c' : '#ffd0a4'; c.lineWidth = 2;
       c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(face) * reach, y + Math.sin(face) * reach); c.stroke();
       word = '冲';
     } else if (attack === 'gust') {
-      sector(c, x, y, face, 118, 0.7, '#8fd4ff38', '#e7f7ff');
+      sector(c, x, y, face, 118, 0.7, coldFill || '#8fd4ff38', coldEdge || '#e7f7ff');
     } else if (attack === 'slam') {
       var slam = e.kind === 'grandfurnace' ? 118 : 100;
-      c.fillStyle = '#ff9a5a30'; c.beginPath(); c.arc(x, y, slam, 0, Math.PI * 2); c.fill();
-      c.setLineDash([7, 5]); c.strokeStyle = '#ffd2a4'; c.lineWidth = 3; c.stroke();
+      c.fillStyle = warmFill || '#ff9a5a30'; c.beginPath(); c.arc(x, y, slam, 0, Math.PI * 2); c.fill();
+      c.setLineDash([7, 5]); c.strokeStyle = warmEdge || '#ffd2a4'; c.lineWidth = dark && !imminent ? 2 : 3; c.stroke();
     } else if (attack === 'vent') {
       var vx = num(e.aimX, x), vy = num(e.aimY, y);
       labelX = vx; labelY = vy + 22;
-      c.fillStyle = '#ff6a3a40'; c.beginPath(); c.arc(vx, vy, 76, 0, Math.PI * 2); c.fill();
-      c.setLineDash([5, 4]); c.strokeStyle = '#ffe0bf'; c.lineWidth = 3; c.stroke();
-      c.setLineDash([]); c.strokeStyle = '#ffb08988'; c.lineWidth = 2;
+      c.fillStyle = warmFill || '#ff6a3a40'; c.beginPath(); c.arc(vx, vy, 76, 0, Math.PI * 2); c.fill();
+      c.setLineDash([5, 4]); c.strokeStyle = warmEdge || '#ffe0bf'; c.lineWidth = dark && !imminent ? 2 : 3; c.stroke();
+      c.setLineDash([]); c.strokeStyle = dark ? warmEdge + '80' : '#ffb08988'; c.lineWidth = 2;
       c.beginPath(); c.moveTo(x, y); c.lineTo(vx, vy); c.stroke();
     } else if (attack === 'blink') {
       var bx = num(e.aimX, x), by = num(e.aimY, y);
       labelX = bx; labelY = by + 41;
-      c.globalAlpha = still ? 0.75 : 0.65 + Math.sin(num(time) * 0.012) * 0.15;
-      c.fillStyle = '#8ec7ff55'; c.beginPath(); c.arc(bx, by, 28, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#f3fbff'; c.lineWidth = 2; c.setLineDash([4, 4]); c.stroke();
+      if (!dark) c.globalAlpha = still ? 0.75 : 0.65 + Math.sin(num(time) * 0.012) * 0.15;
+      c.fillStyle = coldFill || '#8ec7ff55'; c.beginPath(); c.arc(bx, by, 28, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = coldEdge || '#f3fbff'; c.lineWidth = 2; c.setLineDash([4, 4]); c.stroke();
+      if (dark) c.strokeStyle = coldEdge + '80';
       c.setLineDash([]); c.beginPath(); c.moveTo(x, y); c.lineTo(bx, by); c.stroke();
     } else if (attack === 'ring') {
-      c.strokeStyle = '#ffb27a'; c.lineWidth = 4; c.globalAlpha = 0.85;
+      c.strokeStyle = warmEdge || '#ffb27a'; c.lineWidth = dark ? 2.5 : 4; c.globalAlpha = 0.85;
       for (var i = 0; i < FAN.length; i += 1) {
         var a = face + FAN[i];
         c.beginPath(); c.moveTo(x + Math.cos(a) * 20, y + Math.sin(a) * 20);
         c.lineTo(x + Math.cos(a) * 150, y + Math.sin(a) * 150); c.stroke();
       }
     } else if (attack === 'hook') {
-      sector(c, x, y, face, 220, 0.55, '#caa96938', '#f0d38a');
-      c.setLineDash([8, 6]); c.strokeStyle = '#fff0b0'; c.lineWidth = 2;
+      sector(c, x, y, face, 220, 0.55, warmFill || '#caa96938', warmEdge || '#f0d38a');
+      c.setLineDash([8, 6]); c.strokeStyle = dark ? warmEdge + '9c' : '#fff0b0'; c.lineWidth = 2;
       c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(face) * 220, y + Math.sin(face) * 220); c.stroke();
     } else if (attack === 'slash') {
       var slashReach = Math.min(160, num(e.r, 18) + num(actor && actor.r, 14) + 30);
-      sector(c, x, y, face, slashReach, 0.9, '#f6a26947', '#ffd0b0');
+      sector(c, x, y, face, slashReach, 0.9, warmFill || '#f6a26947', warmEdge || '#ffd0b0');
     } else {
       var length = attack === 'beam' ? 280 : 78;
-      c.strokeStyle = attack === 'beam' ? '#f2e2a4' : '#ffd0b0';
-      c.lineWidth = attack === 'beam' ? 5 : 3; c.globalAlpha = 0.9;
+      c.strokeStyle = warmEdge || (attack === 'beam' ? '#f2e2a4' : '#ffd0b0');
+      c.lineWidth = dark ? 2 : attack === 'beam' ? 5 : 3; c.globalAlpha = 0.9;
       c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(face) * length, y + Math.sin(face) * length); c.stroke();
     }
     c.restore();
-    if (word) words(c, word, labelX, labelY, '#fff4d2');
+    if (word) words(c, word, labelX, labelY, dark ? '#dec4ad' : '#fff4d2');
   }
 
   function offscreenWarning(c, enemies, actor, view) {
