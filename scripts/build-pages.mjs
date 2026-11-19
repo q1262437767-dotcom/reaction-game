@@ -80,10 +80,10 @@ const html = fs.readFileSync(path.join(dist, 'adventure', 'index.html'), 'utf8')
 if (!cloud.includes('vendor/supabase-2.118.0.js') || !cloud.includes('?v=59')) {
   throw new Error('minified cloud.js lost the lazy Supabase URL');
 }
-if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=61')) {
+if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=62')) {
   throw new Error('minified net.js lost the lazy PeerJS URL');
 }
-if (!html.includes('engine.js?v=61') || !html.includes('story.js?v=61') || !html.includes('story-draw.js?v=61') || !html.includes('layout.js?v=61') || html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
+if (!html.includes('engine.js?v=62') || !html.includes('story.js?v=62') || !html.includes('story-draw.js?v=62') || !html.includes('layout.js?v=62') || html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
   throw new Error('adventure page should keep separate scripts and lazy vendor files');
 }
 

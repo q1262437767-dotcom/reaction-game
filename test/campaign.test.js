@@ -4,6 +4,31 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const C = require('../adventure/campaign.js');
 
+test('rescue pays once after extraction and only banks an optional elite relic after a successful trip', () => {
+  const rescue = { phase: 'complete', guide: 'p2', room: 0, x: 160, y: 300, water: 2, eliteId: 'enemy-detour', eliteDown: false };
+  const state = { status: 'won', mode: 'rescue', difficulty: 1, mission: { id: 'salvage' },
+    rescue, reward: { coins: 999 }, runBuffs: ['vigor'] };
+  const plain = C.applyResult(null, state, 'rescue-basic');
+  assert.equal(plain.reward, 24);
+  assert.deepEqual(plain.profile.relics, []);
+  assert.equal(plain.profile.missions.salvage.clears, 0);
+  assert.equal(plain.profile.runs, 1);
+  assert.equal(plain.profile.wins, 1);
+  assert.equal(C.applyResult(plain.profile, state, 'rescue-basic').duplicate, true);
+  const elite = { ...state, rescue: { ...rescue, eliteDown: true } };
+  const bonus = C.applyResult(plain.profile, elite, 'rescue-detour');
+  assert.equal(bonus.reward, 32);
+  assert.equal(bonus.profile.coins, 56);
+  assert.deepEqual(bonus.profile.relics, ['vigor']);
+  const failed = C.applyResult(bonus.profile, { ...elite, status: 'lost', rescue: { ...elite.rescue, phase: 'failed', room: 1 },
+    runBuffs: ['pierce'] }, 'rescue-lost');
+  assert.equal(failed.reward, 0);
+  assert.deepEqual(failed.profile.relics, ['vigor']);
+  for (const invalid of [{ ...rescue, room: 2 }, { ...rescue, phase: 'escort' }, { ...rescue, water: 9 }]) {
+    assert.equal(C.applyResult(null, { ...state, rescue: invalid }, 'invalid').profile.runs, 0);
+  }
+});
+
 function storyWin(extra) {
   return Object.assign({
     status: 'won',

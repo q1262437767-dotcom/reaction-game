@@ -229,6 +229,7 @@
     if (s.playerRooms && !s._split.active) return removeSplitPlayer(s, key);
     var p = s.players[key];
     if (!p) return false;
+    if (s.rescue && s.rescue.phase === 'escort' && s.rescue.guide === key) s.rescue.guide = '';
     releaseCarry(s, p, false, true);
     delete s.players[key];
     s.companions = s.companions.filter(function (fox) { return fox.ownerId !== key; });
@@ -806,9 +807,9 @@
   function create(options) {
     options = options || {};
     var seed = finite(Number(options.seed), Date.now()) >>> 0;
-    var mode = options.mode === 'chapter' ? 'chapter' : options.mode === 'hunt' ? 'hunt' : options.mode === 'relay' ? 'relay' : options.mode === 'random' ? 'random' : 'story';
+    var mode = ['chapter', 'hunt', 'relay', 'random', 'rescue'].indexOf(options.mode) >= 0 ? options.mode : 'story';
     var storyMission = mode === 'chapter' && storyBook() && storyBook().chapter(options.mission);
-    var missionId = mode === 'chapter' ? (['chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'].indexOf(options.mission) >= 0 || storyMission ? options.mission : 'chapter1') : mode === 'hunt' || mode === 'relay' ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
+    var missionId = mode === 'chapter' ? (['chapter1', 'chapter1_2', 'chapter1_3', 'chapter1_4', 'chapter1_5'].indexOf(options.mission) >= 0 || storyMission ? options.mission : 'chapter1') : ['hunt', 'relay', 'rescue'].indexOf(mode) >= 0 ? 'salvage' : mode === 'random' ? 'ember' : /^(ember|salvage|holdout)$/.test(options.mission) ? options.mission : 'ember';
     if (storyMission && !MISSIONS[missionId]) MISSIONS[missionId] = { id: missionId, name: storyMission.name, goal: storyMission.goal, total: 1, coins: storyMission.coins };
     var missionDef = MISSIONS[missionId];
     var hostUpgrades = options.practice ? [] : campUpgrades(options.camp);
@@ -819,7 +820,7 @@
       meleeLoadout: !options.practice && options.meleeLoadout === 'spear' ? 'spear' : 'blade',
       partnerMeleeLoadout: !options.practice && options.partnerMeleeLoadout === 'spear' ? 'spear' : 'blade',
       rangedLoadout: options.rangedLoadout === 'scatter' ? 'scatter' : options.rangedLoadout === 'pistol' ? 'pistol' : options.loadout === 'scatter' ? 'scatter' : 'pistol',
-      difficulty: mode === 'chapter' || mode === 'hunt' || mode === 'relay' ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
+      difficulty: ['chapter', 'hunt', 'relay', 'rescue'].indexOf(mode) >= 0 ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
       preparations: { p1: { upgrades: hostUpgrades }, p2: { upgrades: partnerUpgrades }, startingRelic: startingRelic },
@@ -855,6 +856,7 @@
     }
     else if (mode === 'hunt') createHunt(s);
     else if (mode === 'relay') createRelay(s);
+    else if (mode === 'rescue') createRescue(s);
     else if (mode === 'random') createExploration(s);
     enterRoom(s, 0, true);
     if (!s.practice && (s.playerCount === 2 || s.railAlly)) enableSplitRooms(s);
@@ -1850,6 +1852,151 @@
       s.roomData[room.index] = data;
     });
   }
+  function createRescue(s) {
+    var flip = s.seed % 2 ? -1 : 1;
+    var rival = Math.floor(s.seed / 2) % 2 ? 'brute' : 'duelist';
+    var layouts = [
+      ['苔灯撤离站', 'extraction', 0, 0, [1, 3]],
+      ['旧渠捷径', 'battle', 1, 0, [0, 2]],
+      ['失联避难站', 'rescue', 2, 0, [1, 5, 6]],
+      ['轨道西口', 'puzzle', 0, flip, [0, 4]],
+      ['检修栈道', 'puzzle', 1, flip, [3, 5]],
+      ['轨道东口', 'puzzle', 2, flip, [2, 4]],
+      ['精英巢', 'battle', 2, -flip, [2]]
+    ];
+    s.mission.name = '失联救援';
+    s.mission.goal = '找到伤员，带他回苔灯撤离站';
+    s.mission.total = 2;
+    s.rescue = { phase: 'search', guide: '', room: 2, x: 650, y: 280, eliteId: '', eliteDown: false, water: 0 };
+    s.rooms = layouts.map(function (row, index) {
+      return { index: index, id: 'rescue-' + index, name: row[0], kind: row[1],
+        gx: row[2], gy: row[3] || 0, neighbors: row[4], cleared: false, visited: false, discovered: true };
+    });
+    s.rooms.forEach(function (room) {
+      var data = { walls: [], doors: [], portals: [], props: [], enemies: [], fires: [], switches: [], pickups: [],
+        fountains: [], interactables: [] };
+      addChapterRoutes(s, room, data, 'rescue-path-', function () { return true; }, '通往下一间', '');
+      if (room.index === 0) {
+        data.walls.push(rect(330, 125, 120, 45), rect(565, 420, 100, 48));
+      } else if (room.index === 1) {
+        data.walls.push(rect(255, 141, 68, 56), rect(635, 402, 68, 56));
+        data.props.push(prop(s, 'barrel', 313, 439));
+        data.enemies.push(enemy(s, rival === 'brute' ? 'shooter' : 'chaser', 660, 190));
+      } else if (room.index === 2) {
+        data.walls.push(rect(580, 136, 120, 55), rect(595, 398, 111, 54));
+        data.props.push(prop(s, 'crate', 735, 385));
+        data.enemies.push(enemy(s, 'chaser', 370, 252));
+      } else if (room.index === 3) {
+        data.walls.push(rect(268, 141, 70, 105));
+      } else if (room.index === 4) {
+        data.walls.push(rect(340, 135, 60, 92), rect(560, 373, 60, 92));
+        data.pickups.push({ id: id(s, 'pickup-'), kind: 'heart', x: 480, y: 300, r: 14, amount: 2 });
+      } else if (room.index === 5) {
+        data.walls.push(rect(687, 345, 65, 80));
+        data.enemies.push(enemy(s, 'chaser', 650, 170));
+      } else {
+        data.walls.push(rect(210, 210, 75, 90), rect(675, 364, 70, 95));
+        var elite = enemy(s, rival, 620, 308);
+        elite.elite = true;
+        elite.relicBuff = Object.keys(BUFFS)[(s.seed >>> 2) % Object.keys(BUFFS).length];
+        elite.hp = elite.maxHp = (rival === 'brute' ? 23 : 20) + (s.playerCount > 1 ? 7 : 0);
+        data.enemies.push(elite); s.rescue.eliteId = elite.id;
+      }
+      data.enemies.forEach(function (e) { placeEnemyInRoom(data, e); });
+      s.roomData[room.index] = data;
+    });
+  }
+  var RESCUE_PAD = { x: 160, y: 300 };
+  function syncRescue(s) {
+    var run = s.rescue, playing = s.status === 'playing';
+    var local = playing && s.room.index === run.room;
+    var survivor = s.interactables.find(function (q) { return q.kind === 'rescue-survivor'; });
+    var extract = s.interactables.find(function (q) { return q.kind === 'rescue-extract'; });
+    var nextExtract = playing && run.phase === 'escort' && run.room === 0 && dist(run, RESCUE_PAD) < 100;
+    var used = run.phase === 'complete';
+    if (s.room.index === 0 && (!extract || extract.active !== nextExtract || extract.used !== used)) {
+      s.interactables = s.interactables.filter(function (q) { return q.kind !== 'rescue-extract'; }).concat({
+        id: 'rescue-extract', kind: 'rescue-extract', x: RESCUE_PAD.x, y: RESCUE_PAD.y, r: 32, active: nextExtract,
+        used: used, label: '护送伤员撤离', description: '把伤员带到撤离灯旁'
+      });
+    }
+    var label = run.phase === 'search' ? '扶起伤员' : '接手护送';
+    if (local && (!survivor || survivor.x !== run.x || survivor.y !== run.y || survivor.label !== label)) {
+      s.interactables = s.interactables.filter(function (q) { return q.kind !== 'rescue-survivor'; }).concat({
+        id: 'rescue-survivor', kind: 'rescue-survivor', x: run.x, y: run.y, r: 25, active: true,
+        used: false, label: label, description: '失联的探险队员'
+      });
+    } else if (!local && survivor) {
+      s.interactables = s.interactables.filter(function (q) { return q.kind !== 'rescue-survivor'; });
+    }
+    s.mission.phase = run.phase;
+    if (playing) s.mission.progress = run.phase === 'search' ? 0 : 1;
+  }
+  function rescueInteraction(s, p, item) {
+    var run = s.rescue;
+    if (item.kind === 'rescue-extract') {
+      if (run.guide !== p.id) {
+        s.message = '让护送伤员的人来确认撤离。'; s.messageTime = 3; return false;
+      }
+      run.x = RESCUE_PAD.x; run.y = RESCUE_PAD.y;
+      finish(s, 'won');
+      syncRescue(s);
+      return true;
+    }
+    if (!foxSight(s, p, run, 3)) return false;
+    var first = run.phase === 'search';
+    run.phase = 'escort'; run.guide = p.id;
+    if (first) {
+      var scene = s.roomData[1];
+      [[303, 213], [689, 410]].forEach(function (xy, i) {
+        var foe = enemy(s, i ? 'charger' : 'shooter', xy[0], xy[1]);
+        if (placeEnemyInRoom(scene, foe)) scene.enemies.push(foe);
+      });
+      s.rooms[1].cleared = false;
+    }
+    s.message = first ? '伤员：我还能走。渠里水声一响就别往下冲，走轨道也能回去。' : '现在由你护送伤员。';
+    s.messageTime = first ? 6 : 3;
+    syncRescue(s); setHint(s);
+    return true;
+  }
+  function rescueArrival(s, guide) {
+    var run = s.rescue;
+    if (!run || run.phase !== 'escort' || run.guide !== guide.id) return;
+    run.room = s.room.index;
+    var spots = [[0, 40], [0, -40], [40, 0], [-40, 0]];
+    var spot = spots.find(function (at) { return !collides(s, guide.x + at[0], guide.y + at[1], 12, 'rescue-survivor', false); });
+    run.x = guide.x + (spot ? spot[0] : 0);
+    run.y = guide.y + (spot ? spot[1] : 0);
+  }
+  function rescueWater(s, p) {
+    return s.rescue && s.rescue.phase === 'escort' && s.room.index === 1 &&
+      s.rescue.water >= 3.6 && p.x >= 380 && p.x <= 580 && p.y >= 70 && p.y <= 530;
+  }
+  function rescuePortalReady(s, p) {
+    return !s.rescue || s.rescue.guide !== p.id || dist(s.rescue, p) <= 165;
+  }
+  function updateRescue(s, dt) {
+    var run = s.rescue;
+    if (!run || run.phase !== 'escort') return;
+    if (!s._split || s._split.advanceGlobals) run.water = (run.water + dt) % 6;
+    // Active tide is a slow but avoidable burst across the marked channel.
+    alivePlayers(s).forEach(function (p) {
+      if (rescueWater(s, p)) damagePlayer(s, p, 1, 'fire');
+    });
+    var guide = s.room.index === run.room && s.players[run.guide];
+    if (!guide || guide.downed || s.status !== 'playing') return;
+    var distance = dist(run, guide);
+    if (distance <= 42) return;
+    var patient = { id: 'rescue-survivor', x: run.x, y: run.y, r: 12 };
+    var next = foxWaypoint(s, patient, guide);
+    var dx = next.x - patient.x, dy = next.y - patient.y, gap = len(dx, dy);
+    var speed = distance > 145 ? 240 : rescueWater(s, patient) ? 137 : 192;
+    if (gap > 0.1) {
+      var travel = Math.min(gap, (next === guide ? distance - 42 : gap), speed * dt);
+      move(s, patient, dx * travel / gap, dy * travel / gap, false);
+      run.x = patient.x; run.y = patient.y;
+    }
+  }
   function createHunt(s) {
     var cells = [[0, 0], [1, 0], [2, 0], [2, 1], [1, 1], [0, 1]];
     var names = ['苔灯哨站', '旧木场', '火药回廊', '苔火猎窝', '断柱庭院', '回声水道'];
@@ -2441,7 +2588,7 @@
     var data = splitRoomData(s, index);
     SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (key) { s[key] = data[key]; });
     s.room = clone(s.rooms[index]);
-    if (data.scenePhase !== undefined && s.mode !== 'chapter') {
+    if (data.scenePhase !== undefined && s.mode !== 'chapter' && !s.rescue) {
       s.mission.phase = data.scenePhase;
       if (s.chapter) s.chapter.phase = data.scenePhase;
     }
@@ -2454,6 +2601,7 @@
     // Chapter flags are shared. Derive each scene's controls from the live
     // flags instead of letting its cached phase restore an old objective.
     if (s.mode === 'chapter') { syncChapter(s); setHint(s); }
+    if (s.rescue) { syncRescue(s); setHint(s); }
   }
   function splitPlayers(s, index) {
     var all = partyPlayers(s), local = {};
@@ -2469,7 +2617,8 @@
     var from = s.playerRooms[key], previous = s.rooms[from];
     if (!partyPlayers(s)[key] || !Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
     if (initial || index === from) return true;
-    if (['chapter', 'random', 'relay', 'hunt'].indexOf(s.mode) >= 0 &&
+    if (!rescuePortalReady(s, partyPlayers(s)[key])) return false;
+    if (['chapter', 'random', 'relay', 'hunt', 'rescue'].indexOf(s.mode) >= 0 &&
         (!previous.neighbors || previous.neighbors.indexOf(index) < 0)) return false;
     if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && !s.chapter.sluiceOpen) return false;
     if (isTimber(s) && !timberGate(s, from, index)) return false;
@@ -2504,7 +2653,7 @@
     s.room = clone(s.rooms[index]);
     var i = key === 'p2' ? 1 : 0, dx = s.rooms[index].gx - previous.gx, dy = s.rooms[index].gy - previous.gy;
     p.x = 130; p.y = 275 + i * 52;
-    if (['chapter', 'random', 'relay', 'hunt'].indexOf(s.mode) >= 0) {
+    if (['chapter', 'random', 'relay', 'hunt', 'rescue'].indexOf(s.mode) >= 0) {
       p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
       p.y = dy ? dy > 0 ? 132 : H - 132 : H / 2 + (i ? 28 : -24);
       if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && from === 3) p.x = 220;
@@ -2514,6 +2663,7 @@
     if (isTrainChapter(s)) placeTrainArrival(s, p);
     if (isStory(s)) storyCanalArrival(s, from, p);
     if (collides(s, p.x, p.y, p.r, key, false)) placeEnemyInRoom(s, p, alivePlayers(s).filter(function (other) { return other !== p; }));
+    rescueArrival(s, p);
     s.companions.filter(function (fox) { return fox.ownerId === key; }).forEach(function (fox) { placeCompanion(s, fox); });
     refreshProgress(s);
     event(s, 'room-enter', { room: index, name: s.room.name, playerId: key });
@@ -2616,7 +2766,8 @@
     view.travelCd = s._split ? s._split.cooldowns[key] || 0 : s.travelCd;
     view.companions = s.companions.filter(function (fox) { return s.playerRooms[fox.ownerId] === index; });
     view.mission = Object.assign({}, s.mission);
-    if (data && data.scenePhase !== undefined && s.mode !== 'chapter') view.mission.phase = data.scenePhase;
+    if (data && data.scenePhase !== undefined && s.mode !== 'chapter' && !s.rescue) view.mission.phase = data.scenePhase;
+    if (s.rescue) { syncRescue(view); setHint(view); }
     if (s.chapter) {
       view.chapter = Object.assign({}, s.chapter);
       if (isRailChapter(s) && data) {
@@ -2672,8 +2823,9 @@
     if (!Number.isInteger(index) || !s.rooms[index] || s.status !== 'playing') return false;
     var previous = s.room;
     if (s.mode === 'hunt' && !initial && (!previous || previous.neighbors.indexOf(index) < 0)) return false;
-    if ((s.mode === 'random' || s.mode === 'relay' || s.mode === 'chapter') && !initial) {
+    if (['random', 'relay', 'chapter', 'rescue'].indexOf(s.mode) >= 0 && !initial) {
       if (!previous || previous.neighbors.indexOf(index) < 0) return false;
+      if (s.rescue && !rescuePortalReady(s, s.players[playerId || 'p1'])) return false;
       if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && !s.chapter.sluiceOpen) return false;
       if (isTimber(s) && !timberGate(s, previous.index, index)) return false;
       if (isRailChapter(s) && !railGate(s, previous.index, index)) return false;
@@ -2699,7 +2851,7 @@
     if (!initial) saveRoom(s);
     var data = s.roomData[index] ? clone(s.roomData[index]) : s.mode === 'random' ? randomRoomContent(s, s.rooms[index]) : roomContent(s, index);
     // Relay keeps one authoritative core: its active room is never also cached.
-    if (s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter') delete s.roomData[index];
+    if (s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter' || s.rescue) delete s.roomData[index];
     ['walls', 'doors', 'portals', 'props', 'enemies', 'fires', 'switches', 'pickups', 'fountains', 'interactables'].forEach(function (key) {
       s[key] = data[key] || [];
     });
@@ -2714,24 +2866,25 @@
       var p = s.players[key]; p.x = 130; p.y = 275 + i * 52;
       resetCombat(p);
       if (s.practice) { p.x = 390; p.y = 300 + i * 48; p.facing = 0; }
-      if (s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter') {
+      if (['random', 'relay', 'hunt', 'chapter', 'rescue'].indexOf(s.mode) >= 0) {
         var dx = previous ? s.rooms[index].gx - previous.gx : 0;
         var dy = previous ? s.rooms[index].gy - previous.gy : 0;
         p.x = dx ? dx > 0 ? 132 : W - 132 : W / 2 + (i ? 28 : -24);
         p.y = dy ? dy > 0 ? 132 : H - 132 : H / 2 + (i ? 28 : -24);
         if (s.mode === 'chapter' && s.chapter.id === 'chapter1' && index === 4 && previous && previous.index === 3) p.x = 220;
-        if (s.mode === 'relay' && initial) { p.x = 170; p.y = 276 + i * 48; }
+        if ((s.mode === 'relay' || s.rescue) && initial) { p.x = 170; p.y = 276 + i * 48; }
         if (s.mode === 'chapter' && initial) { p.x = 180; p.y = 276 + i * 48; }
         if (isTrainChapter(s) && initial) { p.x = 150 + i * 55; p.y = 390; }
       }
       if (isStory(s)) storyCanalArrival(s, previous && previous.index, p);
       p.invuln = Math.max(p.invuln, 0.9); p.dashTime = 0;
     });
-    if (s.mode === 'random') alivePlayers(s).forEach(function (p) {
+    if (s.mode === 'random' || s.rescue) alivePlayers(s).forEach(function (p) {
       // An eastern arrival can meet the outside wall of the sealed warehouse.
       // Keep the doorway and authored room intact; nudge only a blocked arrival
       // to the closest valid spot before movement resumes.
       if (collides(s, p.x, p.y, p.r, p.id, false)) placeEnemyInRoom(s, p, alivePlayers(s).filter(function (other) { return other !== p; }));
+      if (s.rescue) rescueArrival(s, p);
     });
     resetCompanions(s);
     placeRailAlly(s);
@@ -3248,6 +3401,14 @@
       s.objective = s.hunt.targetRoom === s.room.index ? '击败逐迹巨兽' : '追踪逐迹巨兽';
       s.hint = ''; return;
     }
+    if (s.rescue) {
+      var rescue = s.rescue;
+      s.objective = rescue.phase === 'search' ? '找到避难站的失联队员' :
+        !rescue.guide ? '到' + s.rooms[rescue.room].name + '接手护送' :
+          s.room.index === 1 ? (rescue.water >= 3.6 ? '急流来了 · 留在岸边' : rescue.water >= 2.5 ? '水声变响 · 先等一拍' : '旧渠水缓 · 可以过') :
+            '送伤员回苔灯撤离站';
+      s.hint = ''; return;
+    }
     if (s.mode === 'relay') {
       var carrier = alivePlayers(s).find(function (p) { return p.carry === s.relay.coreId; });
       s.objective = carrier ? '带回炉芯 · 苔灯撤离站交付' : '找到炉芯 · ' + s.rooms[s.relay.coreRoom].name;
@@ -3566,6 +3727,12 @@
       if (s.hunt.defeated && s.status === 'playing') finish(s, 'won');
       return;
     }
+    if (s.rescue) {
+      var clearRescueRoom = !s.enemies.some(function (e) { return e.hp > 0; });
+      if (clearRescueRoom && !s.rooms[s.room.index].cleared) s.stats.rooms += 1;
+      s.room.cleared = s.rooms[s.room.index].cleared = clearRescueRoom;
+      syncRescue(s); setHint(s); return;
+    }
     if (s.mode === 'relay') {
       if (!s.enemies.some(function (e) { return e.hp > 0; }) && !s.rooms[s.room.index].cleared) {
         s.rooms[s.room.index].cleared = true; s.stats.rooms += 1;
@@ -3628,16 +3795,18 @@
       event(s, status === 'won' ? 'practice-complete' : 'defeat'); return;
     }
     if (s.mode === 'chapter') s.chapter.phase = status === 'won' ? 'complete' : 'failed';
+    if (s.rescue) s.rescue.phase = status === 'won' ? 'complete' : 'failed';
     if (storyCartSection(s)) storyCartMoving(s.chapter, false);
     if (isRailChapter(s)) { s.chapter.railPower = 0; s.chapter.railCooldown = 0; }
     if (status === 'won' && !s.rewardGranted) {
       s.rewardGranted = true;
       s.mission.phase = 'complete'; s.mission.progress = s.mission.total;
-      s.reward = { coins: s.mode === 'hunt' ? 32 : s.mode === 'relay' ? 24 : MISSIONS[s.mission.id].coins + (s.secretCleared ? 12 : 0) + (s.difficulty === 2 ? 20 : 0),
+      s.reward = { coins: s.rescue ? (s.rescue.eliteDown ? 32 : 24) : s.mode === 'hunt' ? 32 : s.mode === 'relay' ? 24 : MISSIONS[s.mission.id].coins + (s.secretCleared ? 12 : 0) + (s.difficulty === 2 ? 20 : 0),
         missionId: s.mission.id, difficulty: s.difficulty,
         secret: s.secretCleared, elapsed: Math.round(s.elapsed), kills: s.stats.kills };
       event(s, 'reward', clone(s.reward));
       s.message = s.mission.name + ' · 任务完成！'; s.objective = '带着战利品返回营地，准备下一次探险';
+      if (s.rescue) { s.message = '伤员回到灯下了。'; s.objective = '护送完成'; }
       if (s.mode === 'chapter') {
         var storyEnd = isStory(s) ? storyDef(s) : null;
         s.message = storyEnd ? (status === 'won' ? storyEnd.endWin : storyEnd.endLose) :
@@ -3655,6 +3824,7 @@
       event(s, 'defeat'); s.message = '探险队倒下了'; s.objective = '重整装备，再试一次';
     }
     s.messageTime = 999;
+    if (s.rescue) syncRescue(s);
     if (isTrainChapter(s)) {
       s.chapter.cart.moving = false; s.chapter.ending.ventLeft = 0; syncTrainChapter(s);
     }
@@ -3791,7 +3961,8 @@
       refreshProgress(s);
       return true;
     }
-    var target = s.interactables.filter(function (q) { return !q.used && q.kind !== 'relay-extraction' && dist(p, q) < 76; })
+    var target = s.interactables.filter(function (q) { return !q.used && q.kind !== 'relay-extraction' &&
+      !(q.kind === 'rescue-survivor' && s.rescue.guide === p.id) && dist(p, q) < 76; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (target) {
       if (!target.active) {
@@ -3808,6 +3979,7 @@
           target.kind === 'storehouse-cache' ? s.roomEvent && s.roomEvent.stage === 'active' ? '先击退被声响引来的巡逻队' : '转动外侧机关，或击碎仓门封板' :
           target.kind === 'breach-cache' ? '藏室仍被裂墙封住' :
           target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
+          target.kind === 'rescue-extract' ? target.description :
           target.kind === 'extraction' ? '还缺补给：沿西侧光门返回搜索遗漏的蓝箱' : '先守住这一波，再操作信标';
         s.messageTime = 2;
         return false;
@@ -3824,6 +3996,7 @@
       if (isRailChapter(s) && target.kind.indexOf('rail-') === 0) return interactRailChapter(s, p, target);
       if (isRouteChapter(s) && target.kind.indexOf('route-') === 0) return interactRouteChapter(s, p, target);
       if (isTrainChapter(s) && target.kind.indexOf('train-') === 0) return interactTrainChapter(s, p, target);
+      if (s.rescue && (target.kind === 'rescue-survivor' || target.kind === 'rescue-extract')) return rescueInteraction(s, p, target);
       if (target.kind === 'refuge-rest' || target.kind === 'refuge-relic') return chooseRefuge(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
@@ -3917,6 +4090,7 @@
     burst(s, 'hit', p.x, p.y, '#ff8d83', 7);
     if (p.hp <= 0) {
       releaseCarry(s, p, false, true); p.downed = true; resetCombat(p);
+      if (s.rescue && s.rescue.guide === p.id) s.rescue.guide = '';
       if (p === s.railAlly) { p.moving = false; p.mode = 'downed'; p.attackTime = 0; p.evadeTime = 0; }
       s.companions.forEach(function (fox) { if (fox.ownerId === p.id) clearFoxAction(fox); });
       event(s, 'downed', { playerId: p.id });
@@ -4085,7 +4259,11 @@
         s.hunt.defeated = true; s.hunt.arrival = null; s.hunt.heardFrom = null;
         event(s, 'hunt-defeated', { enemyId: e.id, room: s.room.index, x: e.x, y: e.y });
       }
-      if (s.mode === 'random' || s.mode === 'chapter') {
+      if (s.rescue && e.id === s.rescue.eliteId) {
+        s.rescue.eliteDown = true;
+        s.message = '精英倒下了。拾起遗物，再把人带回营。'; s.messageTime = 4;
+      }
+      if (s.mode === 'random' || s.mode === 'chapter' || s.rescue) {
         if (e.kind === 'boss') { if (s.mode === 'random') s.exploration.bossDefeated = true; }
         else {
           if (s.mode === 'random') s.exploration.kills += 1;
@@ -5672,12 +5850,14 @@
         s.fountains.some(function (f) { return dist(p, f) < 78; })) return 'E · 在泉眼补满水桶';
     if (held) return held.kind === 'water' ? (held.charges ? 'E · 朝瞄准方向浇水并放下' : '空桶：带回蓝色泉眼按 E 补水') :
       held.kind === 'barrel' ? 'E · 投掷炸药桶' : 'E · 放下木箱';
-    var special = s.interactables.filter(function (q) { return !q.used && q.kind !== 'relay-extraction' && dist(p, q) < 76; })
+    var special = s.interactables.filter(function (q) { return !q.used && q.kind !== 'relay-extraction' &&
+      !(q.kind === 'rescue-survivor' && s.rescue.guide === p.id) && dist(p, q) < 76; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (special) {
       if (!special.active && ['chapter-sluice', 'timber-brake', 'rail-route', 'route-winch'].indexOf(special.kind) >= 0) return special.description || '';
       if (!special.active && isTrainChapter(s) && special.kind.indexOf('train-') === 0) return special.description || '';
       if (!special.active && isStory(s) && special.kind.indexOf('story-') === 0 && special.description) return special.description;
+      if (special.kind === 'rescue-extract' && (!special.active || s.rescue.guide !== p.id)) return special.active ? '让护送伤员的人确认撤离' : special.description;
       if (!special.active) return special.kind === 'refuge-relic' ? '遗物已齐全，可在另一盏灯旁歇息' : special.kind === 'chapter-fire' ? '炉心仍在暴走' :
         special.kind === 'timber-extraction' ? '先救出工人，让吊木守卫停下来' :
         special.kind === 'chapter-lamp' ? '归途灯还缺火种' : special.kind === 'cache' ? '先清理守卫，再按 E 搜索补给箱' :
@@ -5690,8 +5870,9 @@
     if (near) return 'E · 搬起' + ({ crate: '木箱', barrel: '炸药桶', water: '水桶', core: '炉芯' })[near.kind];
     if (s.mode === 'relay' && s.props.some(function (q) { return q.kind === 'core' && q.thrown && dist(p, q) < 190; })) return 'K / 右键 · 接住炉芯';
     var gate = s.portals.find(function (g) { return g.active && dist(p, g) < 85; });
+    if (gate && !rescuePortalReady(s, p)) return '等伤员跟上，再过门';
     if (gate) return '踏入光门 / E · ' + gate.label;
-    return s.mode === 'random' || s.mode === 'relay' || s.mode === 'hunt' || s.mode === 'chapter' ? '' : s.hint;
+    return ['random', 'relay', 'hunt', 'chapter', 'rescue'].indexOf(s.mode) >= 0 ? '' : s.hint;
   }
   function stepRoom(s, inputs, dt) {
     if (!s || s.status !== 'playing') return s;
@@ -5765,6 +5946,8 @@
         if (isStory(s) && storyInDeepWater(s, p)) speed *= 0.62;
         if (isStory(s) && s.chapter.link < 2 && s.enemies.some(function (e) { return e.storyRole === 'scan' && e.hp > 0 && dist(e, p) < 240; })) speed *= 0.72;
         if (s.mode === 'random' && s.room && s.room.mood === 'flood') speed *= 0.82;
+        if (s.rescue && s.rescue.guide === key) speed *= 0.84;
+        if (rescueWater(s, p)) speed *= 0.72;
         move(s, p, mx * speed * dt, my * speed * dt, false);
       }
       if (p.railStun > 0) return;
@@ -5793,7 +5976,7 @@
     updateCarries(s); updateProps(s, dt);
     if (!s._split || s._split.advanceGlobals) { updateHunt(s, dt); updateTimber(s, dt); }
     else if (s.mode === 'hunt' && s.hunt.targetRoom === s.room.index) updateHunt(s, 0);
-    updateRailChapter(s, dt); advanceTrainChapter(s, dt); updateStory(s, dt);
+    updateRailChapter(s, dt); advanceTrainChapter(s, dt); updateStory(s, dt); updateRescue(s, dt);
     updateEnemies(s, dt); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     aliveCombatants(s).forEach(function (p) {
@@ -5881,7 +6064,7 @@
   // Navigation and hit lists stay on the host. A guest only draws the result.
   var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1, railShockLatch: 1 };
   var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
-  var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'playerRooms', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
+  var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'playerRooms', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'rescue', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
   var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
 
   function quantizeNumber(n) {

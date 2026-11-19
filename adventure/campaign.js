@@ -334,6 +334,22 @@
     return typeof value === 'number' && Number.isFinite(value) && value >= (min || 0) && value <= max;
   }
 
+  function validRescueRun(run, status) {
+    var rescue = object(run);
+    var keys = ['phase', 'guide', 'room', 'x', 'y', 'eliteId', 'eliteDown', 'water'];
+    if (Object.keys(rescue).length !== keys.length ||
+        !keys.every(function (key) { return Object.prototype.hasOwnProperty.call(rescue, key); })) return false;
+    if (!['', 'p1', 'p2'].includes(rescue.guide) || !Number.isInteger(rescue.room) || !inRange(rescue.room, 6) ||
+        !inRange(rescue.x, 960) || !inRange(rescue.y, 600) || !inRange(rescue.water, 6) ||
+        typeof rescue.eliteId !== 'string' || !rescue.eliteId || rescue.eliteId.length > 100 ||
+        typeof rescue.eliteDown !== 'boolean') return false;
+    if (status === 'won') return rescue.phase === 'complete' && rescue.room === 0 && !!rescue.guide &&
+      rescue.x === 160 && rescue.y === 300;
+    if (status === 'lost') return rescue.phase === 'failed';
+    return status === 'playing' && (rescue.phase === 'escort' ||
+      rescue.phase === 'search' && rescue.room === 2 && !rescue.guide && rescue.water === 0);
+  }
+
   function validStoryChapter(chapter, status, missionId) {
     var c = object(chapter);
     if (!ARC.concat(SECRETS).some(function (section) { return section.id === missionId; })) return false;
@@ -520,6 +536,23 @@
     if (!mission || (difficulty !== 1 && difficulty !== 2)) return result;
     // Standalone modes share the existing save format and have their own rewards.
     // Their completion never lights story lamps or unlocks later story missions.
+    if (state.mode === 'rescue') {
+      if (missionId !== 'salvage' || difficulty !== 1 || !validRescueRun(state.rescue, state.status)) return result;
+      p.clearedRuns.push(runId); p.clearedRuns = p.clearedRuns.slice(-80);
+      p.runs = Math.min(LIMIT, p.runs + 1);
+      if (state.status === 'won') {
+        var rescuePay = state.rescue.eliteDown ? 32 : 24;
+        var rescueCoins = object(state.reward).coins;
+        result.reward = typeof rescueCoins === 'number' && Number.isFinite(rescueCoins) ?
+          Math.min(rescuePay, count(rescueCoins)) : rescuePay;
+        p.coins = Math.min(LIMIT, p.coins + result.reward); p.wins = Math.min(LIMIT, p.wins + 1);
+        if (state.rescue.eliteDown) {
+          takeRelics(p, (Array.isArray(state.runBuffs) ? state.runBuffs : []).filter(function (id) { return RELICS.includes(id); }));
+          if (collectedOriginals(p)) earn('collector');
+        }
+      }
+      return result;
+    }
     if (state.mode === 'relay' || state.mode === 'hunt') {
       var standalone = object(state[state.mode]);
       var identity = state.mode === 'hunt' ? standalone.targetId : standalone.coreId;
@@ -619,7 +652,7 @@
 
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, CHAPTER_ONE: CHAPTER_ONE, ARC: ARC, SECRETS: SECRETS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, STORY_RELICS: STORY_RELICS, LAMP_IDS: LAMP_IDS, RECORD_IDS: RECORD_IDS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
-    chapterProgress: chapterProgress, journalView: journalView, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, validStoryChapter: validStoryChapter, secretOpen: secretOpen, lampsReady: lampsReady, readCoreSeat: readCoreSeat, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
+    chapterProgress: chapterProgress, journalView: journalView, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, validStoryChapter: validStoryChapter, validRescueRun: validRescueRun, secretOpen: secretOpen, lampsReady: lampsReady, readCoreSeat: readCoreSeat, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
     validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });

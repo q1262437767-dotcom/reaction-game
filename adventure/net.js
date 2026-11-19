@@ -8,7 +8,7 @@
   'use strict';
 
   const APP = 'coop-adventure';
-  const VERSION = 35;
+  const VERSION = 36;
   const PREFIX = 'coop-adventure-v1-';
   const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const MAX_BYTES = 64 * 1024;
@@ -46,6 +46,7 @@
       return camp === undefined || isRecord(camp) && Object.keys(camp).length === 1 && Array.isArray(camp.upgrades) && camp.upgrades.length <= 7 && new Set(camp.upgrades).size === camp.upgrades.length && camp.upgrades.every(id => ['ward', 'stride', 'relicCase', 'lampOil', 'quietSole', 'railGlove', 'dispatch'].includes(id));
     }
     if (message.type === 'lobby' && message.mode === 'chapter') return message.difficulty === 1 && /^(chapter[1-5](_[2-5])?|secret_unlisted)$/.test(message.mission);
+    if (message.type === 'lobby' && message.mode === 'rescue') return message.mission === 'salvage' && message.difficulty === 1;
     return message.type !== 'lobby' || message.mode === 'chapter' || message.mode === 'random' || message.mode === 'story' || message.mode === 'relay' || message.mode === 'hunt';
   }
 
@@ -86,7 +87,7 @@
       const match = src.match(/[?&]v=([^&#]+)/);
       if (match) return '?v=' + match[1];
     } catch (_) { /* Fall back to the current page cache key. */ }
-    return '?v=61';
+    return '?v=62';
   })();
   let peerLibrary = null;
 
