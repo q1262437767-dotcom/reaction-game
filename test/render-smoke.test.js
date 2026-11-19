@@ -11,6 +11,7 @@ function fakeContext(canvas) {
     get(target, prop) {
       if (prop === 'canvas') return canvas;
       if (prop === 'createRadialGradient' || prop === 'createLinearGradient' || prop === 'createPattern') return () => gradient;
+      if (prop === 'ellipse') return (...args) => assert.ok(args.length >= 7, 'Canvas ellipse requires a start and end angle');
       if (prop === 'measureText') return () => ({ width: 12 });
       if (prop === 'getImageData') return () => ({ data: new Uint8ClampedArray(4) });
       if (typeof prop === 'symbol') return undefined;

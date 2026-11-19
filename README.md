@@ -1,6 +1,6 @@
 # 遗迹小队 · Ruin Runners
 
-静态资源 `?v=62`，联机协议 36。开始游戏 → 随机远征 → 远征目标 → 失联救援。把伤员送回撤离点，可走旧渠近路或绕轨道，也可顺路击败精英。联机请双方刷新。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）。
+静态资源 `?v=63`，联机协议 36。首页、出发整备、对局状态栏、暂停和结算采用新的界面。开始游戏 → 随机远征 → 远征目标 → 失联救援。存档仍是 v2。新的云库只执行 [`adventure/backend/schema.sql`](adventure/backend/schema.sql)（已包含全部历史升级）。
 
 在线游玩：https://q1262437767-dotcom.github.io/reaction-game/adventure/
 

@@ -2099,7 +2099,7 @@
     ellipse(c, x, y + 6, 52, 22, '#1f3736');
     ellipse(c, x, y + 3, 46, 18, done || ready ? '#527365' : '#565d52');
     c.strokeStyle = lamp; c.lineWidth = 2;
-    c.beginPath(); c.ellipse(x, y + 1, 39, 13, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.ellipse(x, y + 1, 39, 13, 0, 0, Math.PI * 2); c.stroke();
     for (const side of [-1, 1]) {
       const bx = x + side * 39;
       rect(c, bx - 5, y - 42, 11, 47, '#2e4849');

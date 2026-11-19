@@ -1,0 +1,235 @@
+/* Field information sits at the edges of the room. The controls and map keep their own anchors. */
+#game-wrap .field-hud {
+  --field-stone:#101c20f0;
+  --field-rim:#72837a56;
+  --field-sand:#eddebb;
+  --field-teal:#a8d3c3;
+  --field-gold:#e6c68d;
+  --field-red:#eea093;
+  top:18px;
+  left:20px;
+  right:27%;
+  max-width:360px;
+  gap:6px;
+  text-shadow:0 1px 2px #091215;
+}
+
+#game-wrap .field-hud .field-vitals {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:flex-start;
+  gap:5px;
+  max-width:100%;
+}
+
+#game-wrap .field-vitals .stat-health,
+#game-wrap .field-vitals .stat-dash,
+#game-wrap .field-vitals .weapon-slot {
+  min-height:30px;
+  height:auto;
+  padding:0 8px;
+  border:1px solid var(--field-rim);
+  border-radius:4px;
+  background:var(--field-stone);
+  color:var(--field-sand);
+  box-shadow:0 2px 5px #09121563;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  font-weight:650;
+  line-height:1.2;
+}
+
+#game-wrap .field-vitals .stat-health {
+  gap:7px;
+  color:#f4dfce;
+}
+
+#game-wrap .field-vitals .stat-health[data-state="low"],
+#game-wrap .field-vitals .stat-health[data-state="down"] {
+  border-color:#c16a62a8;
+  color:#ffb1a4;
+}
+
+#game-wrap .field-vitals .health-pips {
+  display:flex;
+  align-items:center;
+  gap:2px;
+}
+
+#game-wrap .field-vitals .health-pips i {
+  position:relative;
+  display:block;
+  width:8px;
+  height:12px;
+  box-shadow:inset 0 0 0 1px #b67c704f;
+  background:#3c3034;
+}
+
+#game-wrap .field-vitals .health-pips i::after {
+  position:absolute;
+  inset:0 auto 0 0;
+  width:var(--life-fill,0%);
+  background:linear-gradient(#efad96 0 18%,#db7565 18% 82%,#a95551 82%);
+  content:"";
+}
+
+#game-wrap .field-vitals #hud-health {
+  white-space:nowrap;
+}
+
+#game-wrap .field-vitals .hud-ward {
+  color:#a4d7ed;
+  font-size:10px;
+}
+
+#game-wrap .field-vitals .weapon-hud {
+  min-height:0;
+  margin:0;
+  gap:0;
+}
+
+#game-wrap .field-vitals .weapon-slot[data-active="true"] {
+  display:flex;
+  align-items:center;
+  border-color:#a48b5f9c;
+  color:var(--field-gold);
+}
+
+#game-wrap .field-vitals .weapon-slot[data-active="false"] {
+  display:none;
+}
+
+#game-wrap .field-vitals .stat-dash {
+  display:flex;
+  gap:4px;
+  color:var(--field-teal);
+}
+
+#game-wrap .field-vitals .stat-dash .stat-symbol {
+  color:inherit;
+  font-size:13px;
+}
+
+#game-wrap .field-vitals .stat-dash[data-state="cooling"] { color:#b2c2be; }
+#game-wrap .field-vitals .stat-dash[data-state="stunned"] { color:var(--field-red); border-color:#bd6e63a8; }
+
+#game-wrap .field-hud .field-briefing {
+  min-width:0;
+  max-width:100%;
+  width:fit-content;
+  gap:2px;
+  padding:6px 11px 7px;
+  border:0;
+  border-left:2px solid #aa905e9e;
+  border-radius:0 4px 4px 0;
+  background:linear-gradient(90deg,#101c20f0,#101c20d4 75%,#101c20b0);
+  box-shadow:0 2px 6px #09121540;
+}
+
+#game-wrap .field-briefing #hud-stage {
+  display:block;
+  color:#b5c2b6;
+  font-size:12px;
+  line-height:1.28;
+  font-weight:600;
+  letter-spacing:.04em;
+}
+
+#game-wrap .field-briefing > #hud-objective {
+  display:block;
+  max-width:none;
+  color:#f1ead6;
+  font-size:14px;
+  line-height:1.37;
+  font-weight:650;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  text-wrap:pretty;
+}
+
+#game-wrap .field-notices {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  min-width:0;
+  gap:3px 6px;
+  margin-top:3px;
+}
+
+#game-wrap .field-notices:not(:has(> :not([hidden]))) { display:none; }
+
+#game-wrap .field-notices > span:not([hidden]) {
+  display:inline-block;
+  max-width:100%;
+  padding:2px 5px;
+  border-radius:3px;
+  background:#30484273;
+  color:var(--field-teal);
+  font-size:11px;
+  font-weight:620;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+
+#game-wrap .field-notices #hud-team[data-urgent="true"] { color:var(--field-red); background:#533330a3; }
+#game-wrap .field-notices #hud-opportunity:not([hidden]) { color:var(--field-gold); background:#644e298f; }
+
+#game-wrap:not([data-hud-edit="true"]) .game-toolbar .icon-button {
+  border-radius:4px;
+  border-color:#81958a66;
+  background:#101c20e8;
+  color:#e7dbc0;
+}
+
+#game-wrap #interaction-hint:not([hidden]) {
+  border-color:#9793668c;
+  border-radius:4px;
+  background:#14232beb;
+  color:#f5e5c3;
+  font-weight:620;
+}
+
+@media (max-width:680px) {
+  #game-wrap .field-hud { top:10px; left:10px; right:29%; gap:4px; }
+  #game-wrap .field-briefing > #hud-objective { font-size:13px; }
+}
+
+body[data-handheld="true"] #game-wrap:has(#start-screen[hidden]) .field-hud {
+  top:max(8px,env(safe-area-inset-top,0px));
+  left:calc(110px + env(safe-area-inset-left,0px));
+  right:var(--hud-right,22%);
+  max-width:330px;
+  gap:4px;
+}
+
+body[data-handheld="true"][data-portrait="true"] #game-wrap:has(#start-screen[hidden]) .field-hud {
+  left:max(9px,env(safe-area-inset-left,0px));
+  right:calc(104px + env(safe-area-inset-right,0px));
+  max-width:410px;
+}
+
+body[data-handheld="true"][data-portrait="true"] #game-wrap .field-briefing { padding:4px 8px 5px; }
+body[data-handheld="true"][data-portrait="true"] #game-wrap .field-briefing #hud-stage {
+  position:absolute;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+  clip-path:inset(50%);
+  white-space:nowrap;
+}
+
+body[data-handheld="true"][data-portrait="true"] #game-wrap .field-vitals .stat-health,
+body[data-handheld="true"][data-portrait="true"] #game-wrap .field-vitals .stat-dash,
+body[data-handheld="true"][data-portrait="true"] #game-wrap .field-vitals .weapon-slot {
+  min-height:26px;
+  padding:0 6px;
+  font-size:12px;
+}
+
+@media (max-width:350px) and (orientation:portrait) {
+  body[data-handheld="true"] #game-wrap .field-vitals .health-pips i { width:6px; height:10px; }
+  body[data-handheld="true"] #game-wrap .field-vitals .stat-health { gap:4px; }
+  body[data-handheld="true"] #game-wrap .field-hud .field-vitals { gap:3px; }
+  body[data-handheld="true"] #game-wrap .field-vitals .stat-dash[data-state="ready"] #hud-dash { display:none; }
+}

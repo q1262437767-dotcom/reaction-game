@@ -1,0 +1,536 @@
+/* Title and mode screens use the live camp as the backdrop. */
+#start-screen {
+  --menu-paper: #f2ebda;
+  --menu-ash: #b6c2bc;
+  --menu-ember: #e1b878;
+  --menu-ice: #92c3b5;
+  --menu-edge: #79a59936;
+  --menu-gutter: clamp(24px, 8vw, 136px);
+}
+
+#start-screen .home-topbar {
+  left: max(24px, env(safe-area-inset-left));
+  right: max(24px, env(safe-area-inset-right));
+  top: max(22px, env(safe-area-inset-top));
+  min-height: 46px;
+  padding-inline: clamp(0px, 3vw - 18px, 42px);
+}
+
+#start-screen .home-wordmark {
+  color: #cad4c9;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .16em;
+  gap: 10px;
+}
+
+#start-screen .home-wordmark i {
+  width: 16px;
+  height: 20px;
+  border-radius: 2px;
+  transform: none;
+  border-color: #d2b67c76;
+  background: #a47a312d;
+}
+
+#start-screen .home-wordmark i::after {
+  top: 5px;
+  left: 4px;
+  height: 9px;
+  width: 6px;
+  border-radius: 1px 1px 3px 3px;
+}
+
+#start-screen .home-tools {
+  gap: 8px;
+}
+
+#start-screen .home-account,
+#start-screen .home-settings {
+  background: #101d1ee8;
+  border: 1px solid var(--menu-edge);
+  border-radius: 6px;
+  box-shadow: 0 3px 16px #050a0b44;
+}
+
+#start-screen .home-account:hover,
+#start-screen .home-account:focus-visible,
+#start-screen .home-settings:hover,
+#start-screen .home-settings:focus-visible {
+  color: var(--menu-paper);
+  background: #243438;
+  border-color: #d6ba8173;
+}
+
+#start-screen .home-account {
+  min-height: 44px;
+  max-width: min(265px, 61vw);
+  padding: 5px 9px 5px 6px;
+  gap: 8px;
+}
+
+#start-screen .home-account .identity-avatar {
+  width: 30px;
+  height: 30px;
+}
+
+#start-screen .home-account-copy {
+  gap: 2px;
+}
+
+#start-screen .home-account-copy strong {
+  font-size: 12px;
+  color: var(--menu-paper);
+}
+
+#start-screen .home-account-copy > span {
+  font-size: 10px;
+  color: var(--menu-ash);
+}
+
+#start-screen .home-account-arrow {
+  margin-left: 0;
+  font-size: 17px;
+}
+
+#start-screen .home-settings {
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+}
+
+#start-screen:has(#title-menu:not([hidden])) {
+  align-items: center;
+  align-items: safe center;
+  padding: 86px var(--menu-gutter) max(52px, env(safe-area-inset-bottom));
+  background:
+    linear-gradient(0deg, #0a1416cd 0%, #0a141600 33%, #0a141600 62%, #0a1416b3 100%),
+    linear-gradient(90deg, #0a1517 0%, #0a1517f3 23%, #0a1517ae 41%, #0a15173d 61%, #0a15171a 100%);
+}
+
+#game-wrap:has(#start-screen:not([hidden]) #title-menu:not([hidden])) > #game {
+  object-position: 80% 56%;
+  transform: scale(1.14);
+  transform-origin: 82% 57%;
+  filter: brightness(1.24) saturate(.9);
+}
+
+#title-menu {
+  width: min(470px, 100%);
+  max-width: none;
+  padding: 0;
+  margin: 0;
+}
+
+#title-menu .game-title {
+  color: var(--menu-paper);
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-size: clamp(58px, 6.75vw, 108px);
+  font-weight: 850;
+  line-height: 1.09;
+  letter-spacing: .025em;
+  margin: 0 0 32px;
+  text-shadow: 0 4px 24px #0308099c;
+}
+
+#title-menu .game-title small {
+  font-family: Georgia, "Microsoft YaHei", serif;
+  font-weight: 700;
+  font-size: clamp(11px, 1.1vw, 15px);
+  margin-top: 18px;
+  padding: 0;
+  color: #d4bd94;
+  letter-spacing: .30em;
+}
+
+#title-menu .game-title::after {
+  display: block;
+  position: static;
+  content: "";
+  width: 60px;
+  height: 1px;
+  margin-top: 26px;
+  background: linear-gradient(90deg, #dab279, #dab2790a);
+}
+
+#title-menu .title-actions {
+  width: min(360px, 100%);
+  max-width: none;
+  gap: 8px;
+}
+
+#title-menu .menu-action {
+  letter-spacing: .045em;
+  text-decoration: none;
+}
+
+#title-menu .title-primary {
+  position: relative;
+  min-height: 59px;
+  padding: 0 20px;
+  font-size: 18px;
+  font-weight: 750;
+  border: 1px solid #f1cc8c;
+  border-radius: 4px;
+  color: #1b231e;
+  background: linear-gradient(115deg, #e8c48b, #ce9d5e);
+  box-shadow: 0 8px 30px #03080866, inset 0 0 0 2px #694a2325;
+}
+
+#title-menu .title-primary:hover,
+#title-menu .title-primary:focus-visible {
+  padding-left: 20px;
+  background: #f0cc91;
+  color: #101b1b;
+}
+
+#title-menu .title-primary > span {
+  color: #37332a;
+  font-size: 23px;
+}
+
+#title-menu .title-secondary {
+  gap: 8px;
+}
+
+#title-menu .title-secondary .menu-action {
+  min-height: 45px;
+  padding: 0 13px;
+  background: #152629e6;
+  border-radius: 4px;
+  border: 1px solid #7da89956;
+  color: #d7e3da;
+  box-shadow: 0 3px 12px #02080922;
+  font-size: 13px;
+}
+
+#title-menu .title-secondary .menu-action:hover,
+#title-menu .title-secondary .menu-action:focus-visible {
+  background: #263c3e;
+  border-color: #a2c7b8b3;
+  color: #f1ebdb;
+}
+
+#title-menu .title-secondary .menu-action > span {
+  color: var(--menu-ice);
+}
+
+#title-menu .title-camp-status {
+  margin: 19px 0 0;
+  font-size: 12px;
+  letter-spacing: .02em;
+  color: var(--menu-ash);
+}
+
+#title-menu .title-camp-status::before {
+  background: var(--menu-ice);
+}
+
+#title-menu .title-camp-status[data-complete="true"] {
+  color: var(--menu-ember);
+}
+
+#title-menu .title-camp-status[data-complete="true"]::before {
+  background: var(--menu-ember);
+}
+
+#start-screen:has(:is(#mode-menu, #challenges-menu):not([hidden])) {
+  padding: 88px var(--menu-gutter) max(32px, env(safe-area-inset-bottom));
+  background: linear-gradient(90deg, #0a1517f9, #0a1517e5 46%, #0a15178a 74%, #0a151736);
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) {
+  width: min(630px, 100%);
+  color: var(--menu-paper);
+  max-width: none;
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .menu-back {
+  min-height: 42px;
+  margin: 0 0 7px;
+  color: var(--menu-ash);
+  font-size: 13px;
+  letter-spacing: .015em;
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .menu-heading {
+  margin: 0 0 19px;
+  font-size: clamp(28px, 4.7vw, 48px);
+  font-weight: 800;
+  letter-spacing: .025em;
+  line-height: 1.15;
+  color: var(--menu-paper);
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-list {
+  gap: 10px;
+  margin: 0;
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-choice {
+  --mode-accent: var(--menu-ice);
+  position: relative;
+  min-height: 78px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  border-radius: 5px;
+  border: 1px solid #739c9256;
+  background: linear-gradient(125deg, #1b3032, #132224);
+  color: var(--menu-paper);
+  box-shadow: 0 4px 12px #04090a4c;
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-choice-featured {
+  min-height: 105px;
+}
+
+#start-screen #mode-chapter {
+  --mode-accent: var(--menu-ember);
+  border-color: #c4a06c75;
+  background: linear-gradient(125deg, #3b3025, #211f1d 88%);
+}
+
+#start-screen #mode-random {
+  background: linear-gradient(125deg, #203939, #142628 88%);
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-choice:hover,
+#start-screen :is(#mode-menu, #challenges-menu) .mode-choice:focus-visible {
+  border-color: var(--mode-accent);
+  filter: brightness(1.14);
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-choice strong {
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 730;
+  letter-spacing: .015em;
+  color: var(--menu-paper);
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-choice small {
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 5px;
+  color: var(--menu-ash);
+}
+
+#start-screen :is(#mode-menu, #challenges-menu) .mode-arrow {
+  color: var(--mode-accent);
+  opacity: .8;
+  font-size: 17px;
+}
+
+#start-screen .mode-emblem {
+  display: grid;
+  flex: 0 0 38px;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 4px;
+  border: 1px solid #8ea89d52;
+  background: #0e181bbb;
+  color: var(--mode-accent);
+}
+
+#start-screen .mode-emblem::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+}
+
+#start-screen .mode-emblem[data-emblem="lantern"]::before {
+  clip-path: polygon(40% 0, 60% 0, 60% 14%, 77% 14%, 77% 24%, 85% 24%, 85% 85%, 75% 85%, 75% 100%, 25% 100%, 25% 85%, 15% 85%, 15% 24%, 23% 24%, 23% 14%, 40% 14%, 40% 0, 50% 33%, 32% 57%, 32% 77%, 68% 77%, 68% 57%, 50% 33%);
+}
+
+#start-screen .mode-emblem[data-emblem="compass"]::before {
+  clip-path: polygon(0 46%, 43% 31%, 70% 0, 62% 40%, 100% 54%, 57% 69%, 30% 100%, 38% 60%);
+}
+
+#start-screen .mode-emblem[data-emblem="target"]::before {
+  width: 17px;
+  height: 17px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: radial-gradient(circle, currentColor 0 20%, transparent 25%);
+}
+
+#start-screen .mode-emblem[data-emblem="blade"]::before {
+  clip-path: polygon(94% 3%, 98% 7%, 86% 41%, 51% 68%, 65% 82%, 58% 90%, 44% 78%, 20% 98%, 7% 89%, 28% 66%, 17% 55%, 25% 47%, 39% 58%, 67% 22%);
+}
+
+#start-screen .mode-emblem[data-emblem="core"]::before {
+  clip-path: polygon(25% 8%, 75% 8%, 100% 50%, 75% 92%, 25% 92%, 0 50%);
+  background: linear-gradient(145deg, currentColor 0 38%, #477b70 39% 62%, currentColor 63%);
+}
+
+@media (max-width: 620px) and (orientation: portrait) {
+  #start-screen {
+    --menu-gutter: clamp(18px, 6.5vw, 42px);
+  }
+
+  #start-screen .home-topbar {
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    top: max(14px, env(safe-area-inset-top));
+    padding: 0;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  #start-screen .home-wordmark {
+    display: inline-flex;
+    color: #dae1d5;
+    font-size: 11px;
+    letter-spacing: .06em;
+    gap: 5px;
+  }
+
+  #start-screen .home-account {
+    max-width: 49vw;
+  }
+
+  #start-screen .home-account-copy strong,
+  #start-screen .home-account-copy > span {
+    max-width: min(104px, 28vw);
+  }
+
+  #start-screen .home-account-arrow {
+    display: none;
+  }
+
+  #start-screen:has(#title-menu:not([hidden])) {
+    align-items: flex-end;
+    padding: 74px var(--menu-gutter) max(34px, env(safe-area-inset-bottom));
+    background:
+      linear-gradient(180deg, #0a1517be, #0a151715 17%, #0a15170a 31%, #0a151766 48%, #0a1517f5 65%, #0a1517 80%);
+  }
+
+  #game-wrap:has(#start-screen:not([hidden]) #title-menu:not([hidden])) > #game {
+    height: 64vh;
+    height: 64dvh;
+    object-position: 84% 50%;
+    transform: none;
+  }
+
+  #title-menu {
+    width: min(420px, 100%);
+    margin-inline: auto;
+  }
+
+  #title-menu .game-title {
+    font-size: clamp(44px, 13vw, 71px);
+    margin-bottom: 20px;
+  }
+
+  #title-menu .game-title small {
+    margin-top: 11px;
+  }
+
+  #title-menu .game-title::after {
+    margin-top: 17px;
+  }
+
+  #title-menu .title-actions {
+    width: 100%;
+  }
+
+  #title-menu .title-primary {
+    min-height: 53px;
+  }
+
+  #title-menu .title-camp-status {
+    margin-top: 16px;
+  }
+
+  #start-screen:has(:is(#mode-menu, #challenges-menu):not([hidden])) {
+    align-items: safe center;
+    padding: 74px var(--menu-gutter) max(24px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, #0a1517cb, #0a1517f7 42%, #0a1517 100%);
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .mode-list {
+    grid-template-columns: 1fr;
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .mode-choice {
+    min-height: 67px;
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .mode-choice-featured {
+    min-height: 78px;
+  }
+}
+
+@media (max-width: 350px) and (orientation: portrait) {
+  #start-screen .home-wordmark i {
+    display: none;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  #start-screen {
+    --menu-gutter: clamp(20px, 7vw, 74px);
+  }
+
+  #start-screen .home-topbar {
+    top: max(10px, env(safe-area-inset-top));
+    min-height: 44px;
+    padding: 0;
+  }
+
+  #start-screen:has(#title-menu:not([hidden])),
+  #start-screen:has(:is(#mode-menu, #challenges-menu):not([hidden])) {
+    padding-top: 62px;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+
+  #title-menu .game-title {
+    font-size: clamp(46px, 8vw, 73px);
+    margin-bottom: 15px;
+  }
+
+  #title-menu .game-title small {
+    font-size: 10px;
+    margin-top: 8px;
+  }
+
+  #title-menu .game-title::after {
+    margin-top: 13px;
+  }
+
+  #title-menu .title-actions {
+    width: min(285px, 100%);
+  }
+
+  #title-menu .title-primary {
+    min-height: 47px;
+    font-size: 15px;
+  }
+
+  #title-menu .title-camp-status {
+    margin-top: 10px;
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .menu-heading {
+    font-size: 30px;
+    margin-bottom: 12px;
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .menu-back {
+    min-height: 36px;
+    margin-bottom: 3px;
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .mode-choice {
+    min-height: 58px;
+    padding: 9px 12px;
+  }
+
+  #start-screen :is(#mode-menu, #challenges-menu) .mode-choice-featured {
+    min-height: 68px;
+  }
+}
