@@ -348,7 +348,7 @@ test('story weapon actions travel in full and delta packets to the guest', () =>
   const state = E.create({ mode: 'chapter', mission: 'chapter2_4', players: 2, seed: 10,
     loadout: 'blade', meleeLoadout: 'hook', rangedLoadout: 'echo' });
   for (const id of ['p1', 'p2']) assert.equal(E.enterRoom(state, 2, true, id), true);
-  Object.assign(state.players.p1, { x: 250, y: 160 });
+  Object.assign(state.players.p1, { x: 305, y: 160 });
   Object.assign(state.players.p2, { x: 510, y: 95 });
   const barrel = E.viewForPlayer(state, 'p1').props.find(prop => prop.kind === 'barrel');
   const link = channel(state);
@@ -359,17 +359,19 @@ test('story weapon actions travel in full and delta packets to the guest', () =>
   E.step(state, { p1: { shoot: true, aimX: barrel.x, aimY: barrel.y } }, 1 / 60);
   link.receive('hook latch');
   assert.equal(link.guest.players.p1.hookProp, barrel.id);
+  assert.ok(link.guest.players.p1.hookTime > 3.8);
   assert.ok(link.guest.combatEvents.some(event => event.type === 'hook-latch' && event.propId === barrel.id));
-  E.step(state, { p1: { dash: true, mx: 1 } }, 1 / 60);
+  E.step(state, { p1: { dash: true } }, 1 / 60);
   for (let i = 0; i < 30; i++) E.step(state, {}, 1 / 60);
   link.receive('hook drag');
   assert.equal(link.guest.players.p1.hookProp, undefined);
-  assert.ok(Math.abs(link.guest.props.find(prop => prop.id === barrel.id).x - 250) < 1);
+  assert.ok(link.guest.players.p1.x > 305, 'stationary dash moves away from the barrel');
+  assert.ok(Math.abs(link.guest.props.find(prop => prop.id === barrel.id).x - 305) < 1);
   assert.ok(link.guest.combatEvents.some(event => event.type === 'hook-drag' && event.propId === barrel.id));
 
   E.step(state, { p1: { switchWeapon: true } }, 1 / 60);
   for (let i = 0; i < 20; i++) E.step(state, {}, 1 / 60);
-  E.step(state, { p1: { shoot: true, aimX: 285, aimY: 130 } }, 1 / 60);
+  E.step(state, { p1: { shoot: true, aimX: 340, aimY: 130 } }, 1 / 60);
   link.receive('echo lamp');
   assert.ok(link.guest.decoys.some(decoy => decoy.kind === 'echo-lamp' && decoy.playerId === 'p1'));
   assert.ok(link.guest.combatEvents.some(event => event.type === 'echo-lamp' && event.weapon === 'echo'));
@@ -380,13 +382,35 @@ test('story weapon actions travel in full and delta packets to the guest', () =>
   const vent = E.create({ mode: 'chapter', mission: 'chapter4_4', players: 2, loadout: 'vent', seed: 7 });
   for (const id of ['p1', 'p2']) assert.equal(E.enterRoom(vent, 1, true, id), true);
   const boss = E.viewForPlayer(vent, 'p1').enemies.find(enemy => enemy.kind === 'grandfurnace');
-  Object.assign(boss, { windup: 0.23, attack: 'lunge' });
-  Object.assign(vent.players.p1, { x: boss.x - 94, y: boss.y });
-  Object.assign(vent.players.p2, { x: boss.x - 94, y: boss.y - 65 });
+  Object.assign(boss, { windup: 0.7, attack: 'lunge' });
+  Object.assign(vent.players.p1, { x: boss.x - 145, y: boss.y });
+  Object.assign(vent.players.p2, { x: boss.x - 145, y: boss.y - 65 });
   const ventLink = channel(vent);
   ventLink.receive('vent gear');
   E.step(vent, { p1: { shoot: true, aimX: boss.x, aimY: boss.y } }, 1 / 60);
   ventLink.receive('vent opening');
   assert.ok(ventLink.guest.enemies.find(enemy => enemy.id === boss.id).weakTime > 1);
+  assert.ok(ventLink.guest.enemies.find(enemy => enemy.id === boss.id).ventReadyAt > vent.time);
   assert.ok(ventLink.guest.combatEvents.some(event => event.type === 'vent-break' && event.enemyId === boss.id));
+});
+
+test('an echo shot makes a lamp on an enemy hit and repeat fire preserves its target identity', () => {
+  const state = E.create({ mode: 'chapter', mission: 'chapter2_4', loadout: 'echo', seed: 10 });
+  assert.equal(E.enterRoom(state, 2, true, 'p1'), true);
+  const foe = state.enemies.find(enemy => enemy.kind === 'echoguard');
+  Object.assign(foe, { stagger: 2.5 });
+  Object.assign(state.players.p1, { x: foe.x - 65, y: foe.y });
+  const hp = foe.hp;
+  const fire = { p1: { shoot: true, aimX: foe.x, aimY: foe.y } };
+  E.step(state, fire, 1 / 60);
+  const lamp = state.decoys.find(decoy => decoy.kind === 'echo-lamp');
+  assert.ok(foe.hp < hp);
+  assert.ok(lamp && lamp.ttl > 4.8);
+  const firstTtl = lamp.ttl, firstHp = foe.hp;
+  for (let i = 0; i < 53; i++) E.step(state, fire, 1 / 60);
+  const after = state.decoys.filter(decoy => decoy.kind === 'echo-lamp');
+  assert.ok(foe.hp < firstHp, 'the gun hit again as the fire button stayed down');
+  assert.equal(after.length, 1);
+  assert.equal(after[0].id, lamp.id);
+  assert.ok(after[0].ttl < firstTtl - 0.5, 'repeat fire does not reset the lamp life');
 });

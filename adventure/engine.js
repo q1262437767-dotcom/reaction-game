@@ -7,6 +7,9 @@
   // A deterministic, JSON-safe simulation. Positions and aim points are world pixels;
   // step's dt is seconds. Shoot is held; dash and interact are rising-edge actions.
   var W = 960, H = 600, TAU = Math.PI * 2;
+  var ECHO_RADIUS = 10, ECHO_LIFE = 5, ECHO_SAME_SPOT = 42;
+  var HOOK_REACH = 120, HOOK_ARC = 1.15, HOOK_TETHER = 180, HOOK_LIFE = 4;
+  var VENT_REACH = 132, VENT_ARC = Math.PI / 4, VENT_WINDOW = 0.85;
   var MISSIONS = {
     ember: { id: 'ember', name: '熄灭炉心', goal: '穿过遗迹，击败炉心守卫，带回营地灯芯', total: 1, coins: 40 },
     salvage: { id: 'salvage', name: '物资回收', goal: '搜集 3 箱补给，再到水闸撤离点按 E 撤离', total: 3, coins: 30 },
@@ -4340,42 +4343,76 @@
     // The blast consumes hostile projectiles as a useful emergency tool.
     s.bullets.forEach(function (b) { if (!b.friendly && dist(b, barrel) < 115) b.dead = true; });
   }
-  function echoShot(s, p, aimX, aimY) {
-    var distance = clamp(len(aimX - p.x, aimY - p.y), 52, 320);
-    var dx = Math.cos(p.facing), dy = Math.sin(p.facing), lamp = null;
+  function echoSpotClear(s, p, point) {
+    return !collides(s, point.x, point.y, ECHO_RADIUS, p.id, false) &&
+      !s.enemies.some(function (e) { return e.hp > 0 && dist(e, point) < e.r + ECHO_RADIUS; });
+  }
+  function echoTrace(s, p, angle, distance) {
+    distance = clamp(distance, 52, 320);
+    var dx = Math.cos(angle), dy = Math.sin(angle), lamp = null, foe = null, contact = null;
     for (var at = p.r + 7; at <= distance; at = Math.min(at + 4, distance)) {
       var point = { x: p.x + dx * at, y: p.y + dy * at };
       if (collides(s, point.x, point.y, 4, p.id, false)) break;
-      var foe = s.enemies.find(function (e) { return e.hp > 0 && dist(e, point) < e.r + 4; });
-      if (foe) {
-        var blocked = foe.kind === 'shield' && foe.stun <= 0 && foe.shieldOpen <= 0 && facingEnemy(foe, p);
-        if (!blocked) damageEnemy(s, foe, s.runUpgrades.tempered ? 2 : 1, p.id, 'echo');
-        burst(s, 'spark', point.x, point.y, '#8cdaff', 4);
-        return;
-      }
-      if (at >= 34 && !collides(s, point.x, point.y, 10, p.id, false)) lamp = point;
+      foe = s.enemies.find(function (e) { return e.hp > 0 && dist(e, point) < e.r + 4; }) || null;
+      if (foe) { contact = point; break; }
+      if (at >= p.r + ECHO_RADIUS + 2 && echoSpotClear(s, p, point)) lamp = point;
       if (at === distance) break;
     }
-    if (!lamp) return;
+    // At point-blank range there may be no room in front of the gun. Drop the
+    // lamp beside its owner if a nearby point is clear and actually reachable.
+    if (!lamp) {
+      var near = p.r + ECHO_RADIUS + 6;
+      [Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, Math.PI].some(function (offset) {
+        var x = p.x + Math.cos(angle + offset) * near, y = p.y + Math.sin(angle + offset) * near;
+        var q = { x: x, y: y };
+        if (!echoSpotClear(s, p, q) || !meleeLineClear(s, p, q, 4)) return false;
+        lamp = q;
+        return true;
+      });
+    }
+    return { lamp: lamp, foe: foe, contact: contact };
+  }
+  function sameEchoLamp(s, p, point) {
+    return s.decoys.find(function (d) {
+      return d.kind === 'echo-lamp' && d.playerId === p.id && d.ttl > 0 && dist(d, point) <= ECHO_SAME_SPOT;
+    });
+  }
+  function echoShot(s, p, aimX, aimY) {
+    var trace = echoTrace(s, p, p.facing, len(aimX - p.x, aimY - p.y)), foe = trace.foe, lamp = trace.lamp;
+    if (foe) {
+      var blocked = foe.kind === 'shield' && foe.stun <= 0 && foe.shieldOpen <= 0 && facingEnemy(foe, p);
+      if (!blocked) damageEnemy(s, foe, s.runUpgrades.tempered ? 2 : 1, p.id, 'echo');
+      burst(s, 'spark', trace.contact.x, trace.contact.y, '#8cdaff', 4);
+    }
+    // Finish a baited enemy's current attack at the original lamp. Holding
+    // fire near it neither moves it nor extends its lifetime.
+    if (!lamp || sameEchoLamp(s, p, lamp)) return;
     s.decoys = s.decoys.filter(function (d) { return d.kind !== 'echo-lamp' || d.playerId !== p.id; });
-    s.decoys.push({ id: id(s, 'decoy-'), kind: 'echo-lamp', playerId: p.id, x: lamp.x, y: lamp.y, r: 10, ttl: 4 });
+    s.decoys.push({ id: id(s, 'decoy-'), kind: 'echo-lamp', playerId: p.id, x: lamp.x, y: lamp.y, r: ECHO_RADIUS, ttl: ECHO_LIFE });
     if (s.decoys.length > 4) s.decoys.shift();
     event(s, 'echo-lamp', { playerId: p.id, weapon: 'echo', x: lamp.x, y: lamp.y });
   }
   function ventWindup(s, e) {
     if (!/^(charger|brute|boss|grandfurnace|pulseling)$/.test(e.kind) || e.timber || s.practice ||
-        e.ventReadyAt > s.time || e.weakTime > 0 || e.coreOpeningPending) return false;
-    var time = e.rhythm && e.rhythm.phase === 'windup' && !e.rhythm.opening ? e.rhythm.remaining : e.windup;
-    return time > 0 && time <= 0.36;
+        e.ventReadyAt > s.time || e.weakTime > 0 || e.coreOpeningPending || e.coreExposed || e.trainReturner) return false;
+    var rhythm = e.rhythm;
+    if (rhythm && (rhythm.phase !== 'windup' || rhythm.opening || e.railGuard && rhythm.type === 'rush')) return false;
+    var time = rhythm ? rhythm.remaining : e.windup;
+    return time > 0 && time <= VENT_WINDOW;
+  }
+  function ventTargets(s, p, angle) {
+    return s.enemies.filter(function (e) {
+      return e.hp > 0 && dist(p, e) <= VENT_REACH + e.r &&
+        (angle === null || Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), angle)) <= VENT_ARC) && meleeLineClear(s, p, e, 4);
+    });
+  }
+  function ventTarget(s, p, targets) {
+    return targets.filter(function (e) { return ventWindup(s, e); })
+      .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
   }
   function ventShot(s, p) {
     event(s, 'vent-shot', { playerId: p.id, weapon: 'vent', x: p.x, y: p.y, angle: p.facing });
-    var targets = s.enemies.filter(function (e) {
-      return e.hp > 0 && dist(p, e) <= 98 + e.r &&
-        Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), p.facing)) <= Math.PI / 6 && meleeLineClear(s, p, e, 4);
-    });
-    var exposed = targets.filter(function (e) { return ventWindup(s, e); })
-      .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
+    var targets = ventTargets(s, p, p.facing), exposed = ventTarget(s, p, targets);
     if (exposed) {
       exposed.rhythm = null; exposed.windup = 0; exposed.chargeTime = 0; exposed.attack = '';
       exposed.stagger = Math.max(exposed.stagger, 0.65); exposed.stun = Math.max(exposed.stun, 0.65);
@@ -4386,7 +4423,7 @@
       burst(s, 'spark', exposed.x, exposed.y, '#eec69a', 7);
       event(s, 'vent-break', { playerId: p.id, enemyId: exposed.id, weapon: 'vent', x: exposed.x, y: exposed.y });
     }
-    var amount = s.runUpgrades.tempered ? 2 : 1;
+    var amount = s.runUpgrades.tempered ? 3 : 2;
     targets.forEach(function (e) {
       if (e.kind !== 'shield' || e.shieldOpen > 0 || e.stun > 0 || !facingEnemy(e, p)) damageEnemy(s, e, amount, p.id, 'vent');
     });
@@ -4495,7 +4532,8 @@
   }
   function noticesDecoy(e, d) {
     return d.ttl > 0 && (d.kind !== 'echo-lamp' || !e.railGuard && !e.trainReturner &&
-      (e.storyRole === 'seek' || /^(echoguard|mistwarden|charger|brute|boss)$/.test(e.kind)));
+      (e.storyRole === 'seek' || /^(echoguard|mistwarden|charger|brute|boss)$/.test(e.kind) ||
+       (e.kind === 'chaser' || e.storyRole === 'lost') && dist(e, d) <= 195));
   }
   function impactBarrels(s, hit, lamp) {
     s.props.filter(function (q) {
@@ -5092,13 +5130,41 @@
   function hookedProp(s, p) {
     return p.hookProp && s.props.find(function (q) { return q.id === p.hookProp && hookableProp(q); });
   }
+  function hookTarget(s, p, angle) {
+    return s.props.filter(function (q) {
+      return hookableProp(q) && dist(p, q) <= HOOK_REACH + q.r &&
+        (angle === null || Math.abs(angleDelta(Math.atan2(q.y - p.y, q.x - p.x), angle)) <= HOOK_ARC) && meleeLineClear(s, p, q, 3);
+    }).sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
+  }
+  function weaponCue(s, p, aimX, aimY, aimAssist) {
+    if (!s || !p || s.status !== 'playing' || p.downed || p.carry || p.hp <= 0) return null;
+    var gap = Number.isFinite(aimX) && Number.isFinite(aimY) ? len(aimX - p.x, aimY - p.y) : 0;
+    var angle = gap > 2 ? Math.atan2(aimY - p.y, aimX - p.x) : p.facing;
+    if (p.weapon === 'echo') {
+      var point = echoTrace(s, p, angle, gap || 100).lamp;
+      if (!point) return null;
+      var lamp = sameEchoLamp(s, p, point);
+      return { type: 'echo', targetId: lamp ? lamp.id : null, x: lamp ? lamp.x : point.x, y: lamp ? lamp.y : point.y, r: ECHO_RADIUS };
+    }
+    if (aimAssist) angle = null;
+    var type, target, latched = false;
+    if (p.weapon === 'hook') {
+      type = 'hook';
+      target = hookedProp(s, p);
+      latched = !!target && p.hookTime > 0 && (p.dashTime > 0 || dist(p, target) <= HOOK_TETHER);
+      if (!latched) target = hookTarget(s, p, angle);
+    } else if (p.weapon === 'vent') {
+      type = 'vent'; target = ventTarget(s, p, ventTargets(s, p, angle));
+    }
+    return target ? { type: type, targetId: target.id, x: target.x, y: target.y, r: target.r, latched: latched } : null;
+  }
   function dragHookedProp(s, p) {
     var q = hookedProp(s, p);
     clearPropHook(p);
-    if (!q || len(p.x - p.dashOriginX, p.y - p.dashOriginY) < 32) return;
+    if (!q || len(p.x - p.dashOriginX, p.y - p.dashOriginY) < 14) return;
     var fromX = q.x, fromY = q.y, dx = p.dashOriginX - fromX, dy = p.dashOriginY - fromY;
     var distance = len(dx, dy);
-    if (distance < 3 || distance > 138) return;
+    if (distance < 3 || distance > HOOK_TETHER) return;
     var steps = Math.ceil(distance / 4);
     var bodies = aliveCombatants(s).concat(s.enemies.filter(function (e) { return e.hp > 0; }));
     for (var i = 1; i <= steps; i += 1) {
@@ -5170,9 +5236,10 @@
     }
     if (p.weapon === 'spear') return spearAttack(s, p);
     var hooking = p.weapon === 'hook';
-    p.meleeTime = hooking ? 0.21 : 0.18; p.fireCd = hooking ? 0.48 : 0.38;
+    p.meleeTime = hooking ? 0.21 : 0.18; p.fireCd = hooking ? 0.43 : 0.38;
+    var reach = hooking ? 84 : 74, arc = hooking ? 1.2 : 1.1;
     s.enemies.forEach(function (e) {
-      if (e.hp <= 0 || dist(p, e) > 74 + e.r || Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), p.facing)) > 1.1 || !meleeLineClear(s, p, e, 5)) return;
+      if (e.hp <= 0 || dist(p, e) > reach + e.r || Math.abs(angleDelta(Math.atan2(e.y - p.y, e.x - p.x), p.facing)) > arc || !meleeLineClear(s, p, e, 5)) return;
       var shielded = e.kind === 'shield' && e.shieldOpen <= 0 && e.stun <= 0 && Math.cos(Math.atan2(p.y - e.y, p.x - e.x) - e.facing) > 0.5;
       if (!shielded) {
         damageEnemy(s, e, (s.runBuffs.indexOf('pierce') >= 0 ? 3 : 2) + (s.runUpgrades.tempered ? 1 : 0), p.id, p.weapon);
@@ -5182,13 +5249,10 @@
         }
       }
     });
-    if (hooking && p.dashTime <= 0) {
-      var latch = s.props.filter(function (q) {
-        return hookableProp(q) && dist(p, q) <= 90 + q.r &&
-          Math.abs(angleDelta(Math.atan2(q.y - p.y, q.x - p.x), p.facing)) <= 0.85 && meleeLineClear(s, p, q, 3);
-      }).sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
+    if (hooking && p.dashTime <= 0 && !p.hookProp) {
+      var latch = hookTarget(s, p, p.facing);
       if (latch) {
-        p.hookProp = latch.id; p.hookTime = 2.5;
+        p.hookProp = latch.id; p.hookTime = HOOK_LIFE;
         event(s, 'hook-latch', { playerId: p.id, weapon: 'hook', propId: latch.id, x: latch.x, y: latch.y });
       }
     } else if (!hooking) s.props.forEach(function (q) {
@@ -5490,6 +5554,8 @@
     });
     if (stopped || e.chargeTime <= 0) {
       e.chargeTime = 0; e.rushHitIds = [];
+      if (e.targetId) s.decoys = s.decoys.filter(function (d) { return d.id !== e.targetId; });
+      e.targetId = null;
       if (blocked) e.stun = Math.max(e.stun, 1.05);
       e.attackCd = Math.max(e.attackCd, 1.25);
     }
@@ -6052,7 +6118,7 @@
       if (p.hookProp) {
         var attached = hookedProp(s, p);
         p.hookTime -= dt;
-        if (!attached || p.hookTime <= 0 || p.dashTime <= 0 && dist(p, attached) > 138) clearPropHook(p);
+        if (!attached || p.hookTime <= 0 || p.dashTime <= 0 && dist(p, attached) > HOOK_TETHER) clearPropHook(p);
       }
       if (p.counterTime <= 0 || !s.enemies.some(function (e) { return e.id === p.counterEnemy && e.hp > 0; })) {
         p.counterTime = 0; p.counterEnemy = null; p.counterKind = '';
@@ -6074,8 +6140,9 @@
       p.guarding = (!!input.guard || p.guardWindow > 0) && p.guardCd < 0.5 && p.guardAttackLock <= 0 && p.dashTime <= 0 && !p.carry;
       p.sneaking = (!!input.guard || p.guardWindow > 0) && p.dashTime <= 0;
       if (dashEdge && p.dashCd <= 0) {
-        p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(p.facing);
-        p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(p.facing);
+        var dashAngle = p.hookProp && attached ? Math.atan2(p.y - attached.y, p.x - attached.x) : p.facing;
+        p.dashX = magnitude > 0.1 ? mx / (len(mx, my) || 1) : Math.cos(dashAngle);
+        p.dashY = magnitude > 0.1 ? my / (len(mx, my) || 1) : Math.sin(dashAngle);
         p.dashTime = 0.17; p.dashCd = s.runBuffs.indexOf('swift') >= 0 ? 0.75 : hasPreparation(s, key, 'stride') ? 1 : 1.15; p.invuln = Math.max(p.invuln, 0.3);
         p.dashOriginX = p.x; p.dashOriginY = p.y; p.dashWindow = 0.28; p.guarding = false; p.guardWindow = 0; p.sneaking = false;
         if (p.hookProp) p.hookTime = Math.max(p.hookTime, 0.25);
@@ -6214,7 +6281,7 @@
     return s;
   }
   // Navigation and hit lists stay on the host. A guest only draws the result.
-  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, ventReadyAt: 1, ventOpenUntil: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1, railShockLatch: 1 };
+  var SYNC_OMIT = { navX: 1, navY: 1, navTime: 1, coreInterceptRead: 1, coreOpeningPending: 1, ventOpenUntil: 1, hitIds: 1, prevDash: 1, prevInteract: 1, prevGuard: 1, prevShoot: 1, guardStrain: 1, guardLoad: 1, railShockLatch: 1 };
   var LINK_KEYS = { walls: 1, doors: 1, portals: 1, switches: 1, fires: 1, interactables: 1, pickups: 1 };
   var SYNC_KEYS = ['time', 'elapsed', 'messageTime', 'travelCd', 'players', 'playerRooms', 'enemies', 'bullets', 'props', 'pickups', 'particles', 'events', 'combatEvents', 'companions', 'decoys', 'fires', 'interactables', 'walls', 'doors', 'portals', 'switches', 'stats', 'hint', 'objective', 'message', 'mission', 'roomEvent', 'runBuffs', 'runUpgrades', 'chapter', 'relay', 'hunt', 'rescue', 'exploration', 'foxRescue', 'secretOpened', 'secretCleared'];
   var PARTICLE_KEYS = ['id', 'kind', 'type', 'x', 'y', 'r', 'ttl', 'life', 'color', 'text', 'amount', 'size', 'angle', 'arc', 'maxLife', 'duration'];
@@ -6257,7 +6324,7 @@
   function copyEnemy(enemy) {
     var out = {};
     for (var key in enemy) {
-      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead' || key === 'coreOpeningPending' || key === 'ventReadyAt' || key === 'ventOpenUntil') continue;
+      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead' || key === 'coreOpeningPending' || key === 'ventOpenUntil') continue;
       out[key] = enemy[key];
     }
     return out;
@@ -6476,5 +6543,5 @@
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource };
+    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue };
 });

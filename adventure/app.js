@@ -17,13 +17,13 @@
   const MELEE_WEAPONS = {
     blade: { name: '旅人短刃', short: '短刃', description: '近身快速出刀，精准化解后可接反击。' },
     spear: { name: '遗迹长枪', short: '长枪', description: '枪尖刺得更远，精准化解后可接贯穿追刺。', chapter: '第一章第一节', unlocked: C.canUseSpear },
-    hook: { name: '拖钩刃', short: '拖钩刃', description: '出刀挂住木箱或桶，向外闪避时把它拖向刚才站的位置。', chapter: '第三章第四节', unlocked: C.canUseHook }
+    hook: { name: '拖钩刃', short: '拖钩刃', description: '对有标记的箱子或桶出刀。钩住后直接按闪避，就会向后拉。', chapter: '第三章第四节', unlocked: C.canUseHook }
   };
   const RANGED_WEAPONS = {
     pistol: { name: '旅人手枪', short: '手枪', description: '连续射击，适合追打露出来的破绽。' },
     scatter: { name: '散射枪', short: '散射枪', description: '贴身命中可击退敌人。', chapter: '营地工坊', unlocked: profile => profile.scatter },
-    echo: { name: '回声灯铳', short: '回声灯铳', description: '往空地打出假灯，引敌扑过去。用摇杆或方向键朝投放处走一步再射。', chapter: '第二章第四节', unlocked: C.canUseEcho },
-    vent: { name: '泄压筒', short: '泄压筒', description: '靠近重型机械，趁它蓄力时喷开护板。', chapter: '第四章第四节', unlocked: C.canUseVent }
+    echo: { name: '回声灯铳', short: '回声灯铳', description: '朝蓝色标记射击放出假灯，打中怪也能亮灯。用摇杆选方向。', chapter: '第二章第四节', unlocked: C.canUseEcho },
+    vent: { name: '泄压筒', short: '泄压筒', description: '靠近正在蓄力的重型机械，看到护板标记就按攻击。', chapter: '第四章第四节', unlocked: C.canUseVent }
   };
   const meleeIds = Object.keys(MELEE_WEAPONS), rangedIds = Object.keys(RANGED_WEAPONS), weaponIds = [...meleeIds, ...rangedIds];
   const eventWeapons = { 'echo-lamp': 'echo', 'hook-latch': 'hook', 'hook-drag': 'hook', 'vent-shot': 'vent', 'vent-break': 'vent' };
@@ -1887,7 +1887,7 @@
       if (!weaponIds.includes(p.weapon) || typeof p.guarding !== 'boolean' || !bounded(p.guardWindow, 2) || !bounded(p.counterTime, 10) || !bounded(p.meleeTime, 2) || ![null, undefined, '', 'parry', 'mikiri', 'dodge'].includes(p.counterKind)) return false;
       if (!p.weapons || typeof p.weapons !== 'object' || Array.isArray(p.weapons) || Object.keys(p.weapons).length !== 2 || p.weapons.melee !== (p.id === 'p2' ? s.partnerMeleeLoadout : s.meleeLoadout) || !rangedIds.includes(p.weapons.ranged) || !['melee', 'ranged'].includes(p.activeSlot) || typeof p.rangedBroken !== 'boolean' || typeof p.prevSwitch !== 'boolean' || typeof p.sneaking !== 'boolean' || !bounded(p.switchCd, 2) || p.weapon !== p.weapons[p.activeSlot] || p.rangedBroken && p.activeSlot === 'ranged') return false;
       if ((p.hookProp !== undefined || p.hookTime !== undefined) &&
-          (!shortId(p.hookProp) || !bounded(p.hookTime, 2.5) || p.weapons.melee !== 'hook')) return false;
+          (!shortId(p.hookProp) || !bounded(p.hookTime, 4) || p.weapons.melee !== 'hook')) return false;
       if (p.ward != null && (!Number.isInteger(p.ward) || !bounded(p.ward, 1))) return false;
       if (p.relayBoost != null && !bounded(p.relayBoost, 3)) return false;
     }
@@ -1905,6 +1905,7 @@
             enemy.kind === 'surveyor' && s.mission.id === 'chapter3_4' ? 6 : 0);
       const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : storyWeakTime || 1.6;
       if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, maxWeakTime) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
+      if (enemy.ventReadyAt !== undefined && !bounded(enemy.ventReadyAt, 86405)) return false;
       if (enemy.pursuit !== undefined) {
         const pursuit = enemy.pursuit;
         if (s.practice || enemy.timber !== undefined || !['chapter', 'random'].includes(s.mode) || enemy.kind !== 'boss' || !pursuit || typeof pursuit !== 'object' || Array.isArray(pursuit) || Object.keys(pursuit).length !== 3 || !['time', 'cooldown', 'targetId'].every(key => Object.prototype.hasOwnProperty.call(pursuit, key)) || !bounded(pursuit.time, 1.6) || !bounded(pursuit.cooldown, 7.5) || ![null, 'p1', 'p2'].includes(pursuit.targetId) || pursuit.time > 0 && pursuit.targetId === null) return false;
@@ -2027,7 +2028,7 @@
     for (const d of s.decoys) {
       if (!shortId(d.id) || !['p1', 'p2'].includes(d.playerId || d.owner) || !bounded(d.x, 960) || !bounded(d.y, 600) || !bounded(d.ttl, 5)) return false;
       if (d.kind !== undefined && (d.kind !== 'echo-lamp' || !['p1', 'p2'].includes(d.playerId) ||
-          s.players[d.playerId].weapons.ranged !== 'echo' || d.r !== 10 || d.ttl > 4)) return false;
+          s.players[d.playerId].weapons.ranged !== 'echo' || d.r !== 10)) return false;
     }
     if (s.room.index >= s.rooms.length || s.rooms.length < 2) return false;
     if (s.mode === 'random' && (s.room.kind !== s.rooms[s.room.index].kind || s.room.encounter !== s.rooms[s.room.index].encounter)) return false;
@@ -2542,7 +2543,7 @@
     $(id).addEventListener('pointerenter', () => menuSound('hover'));
     $(id).addEventListener('focus', () => menuSound('hover'));
   });
-  function input() {
+  function input(previewWeapon = false) {
     const p = state && state.players[localId()];
     let mx = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + touch.mx;
     let my = (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) - (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) + touch.my;
@@ -2566,13 +2567,11 @@
         .sort((a, b) => a.rhythm.remaining - b.rhythm.remaining)[0];
       const nearest = incoming || enemies.reduce((best, enemy) => !best || Math.hypot(enemy.x - p.x, enemy.y - p.y) < Math.hypot(best.x - p.x, best.y - p.y) ? enemy : best, null);
       let target = nearest;
-      if (p.weapon === 'hook' && buttonsAim && !defending && (touch.shoot || keys.has('KeyJ'))) {
-        let distance = Math.min(109, nearest ? Math.hypot(nearest.x - p.x, nearest.y - p.y) : Infinity);
-        for (const prop of state.props) {
-          if (!['crate', 'barrel'].includes(prop.kind) || prop.hp <= 0 || prop.carriedBy || prop.thrown || prop.eventSeal) continue;
-          const candidate = Math.hypot(prop.x - p.x, prop.y - p.y);
-          if (candidate < distance) { target = prop; distance = candidate; }
-        }
+      if (buttonsAim && !defending && ['hook', 'vent'].includes(p.weapon) && (previewWeapon || touch.shoot || keys.has('KeyJ'))) {
+        const cue = E.weaponCue(state, p, undefined, undefined, true);
+        if (cue?.type === 'vent') target = cue;
+        if (cue?.type === 'hook' && !cue.latched && (!nearest ||
+            Math.hypot(cue.x - p.x, cue.y - p.y) <= Math.hypot(nearest.x - p.x, nearest.y - p.y) + 20)) target = cue;
       }
       aimX = target ? target.x : p.x + Math.cos(p.facing || 0) * 100;
       aimY = target ? target.y : p.y + Math.sin(p.facing || 0) * 100;
@@ -2811,7 +2810,7 @@
       el.children[index].style.setProperty('--life-fill', (ratio * 100).toFixed(1) + '%');
     }
   }
-  function hud() {
+  function hud(weaponCue = null) {
     const p = state && state.players[localId()];
     const random = state && state.mode === 'random';
     const relay = state && state.mode === 'relay';
@@ -2881,7 +2880,9 @@
     }
     const run = state?.chapter;
     let opportunity = opening ? `破绽暴露 ${opening.weakTime.toFixed(1)}s` : '';
-    if (!opportunity && p?.hookProp && p.hookTime > 0) opportunity = '钩住了 · 闪避拖动';
+    if (weaponCue?.type === 'hook' && weaponCue.latched) opportunity = p.dashCd > 0 ? '钩住了 · 等闪避恢复' : '钩住了 · 按闪避拖动';
+    if (weaponCue?.type === 'hook' && !weaponCue.latched && !opportunity) opportunity = '可钩取 · 出刀挂钩';
+    if (weaponCue?.type === 'vent') opportunity = '护板可喷开 · 按攻击';
     if (run?.linkLeft > 0 && ['chapter3_4', 'chapter5_2'].includes(run.id)) {
       const seconds = Math.ceil(run.linkLeft) + ' 秒';
       if (run.id === 'chapter3_4') opportunity = (run.link === 1 ? '等待对端 · ' : '护舱已开 · ') + seconds;
@@ -2955,10 +2956,20 @@
     settle();
     advanceChapterEnding(now);
     syncPlayCanvas();
-    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    let weaponCue = null;
+    const actor = state?.players?.[localId()];
+    if (controlsReady && playing() && !sharedHold && actor && !actor.downed && !(actor.railStun > 0) &&
+        ['hook', 'vent', 'echo'].includes(actor.weapon)) {
+      if (actor.weapon === 'hook' && actor.hookProp) weaponCue = E.weaponCue(state, actor);
+      else if (!actor.guarding && actor.fireCd <= 1 / 60 && actor.dashTime <= 0 && !actor.carry) {
+        const aim = input(true);
+        if (!aim.guard && !aim.guardPulse) weaponCue = E.weaponCue(state, actor, aim.aimX, aim.aimY);
+      }
+    }
+    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined, weaponCue }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (hudEditing) placeMapEditor();
-    if (now - lastHud > 100) { hud(); lastHud = now; }
+    if (now - lastHud > 100) { hud(weaponCue); lastHud = now; }
     requestAnimationFrame(frame);
   }
   window.addEventListener('storage', event => {

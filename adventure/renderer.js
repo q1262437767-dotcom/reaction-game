@@ -3110,6 +3110,25 @@
     for (const [dx,dy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) { path(c, [[x + dx * 5, y + dy * 9],[x + dx * 9, y + dy * 9],[x + dx * 9, y + dy * 5]], '#d9dfb480'); }
     rect(c, x, y, 1, 1, '#e6ddb4');
   }
+  function paintWeaponCue(c, cue) {
+    if (!cue || cue.latched) return;
+    const x = num(cue.x), y = num(cue.y);
+    if (cue.type === 'echo') {
+      if (cue.targetId) return;
+      path(c, [[x, y - 6], [x + 15, y], [x, y + 6], [x - 15, y], [x, y - 6]], '#91c5ffce', 2);
+      rect(c, x - 1, y - 1, 3, 3, '#c6e6ff');
+      return;
+    }
+    const vent = cue.type === 'vent', markY = y + (vent ? 0 : 9);
+    const width = Math.max(16, num(cue.r) + 5);
+    for (const side of [-1, 1]) {
+      const outer = x + side * width, inner = x + side * (width - 7);
+      const corner = vent ? [[outer, markY - 9], [inner, markY], [outer, markY + 9]] :
+        [[outer, markY - 6], [outer, markY + 3], [inner, markY + 6]];
+      path(c, corner, '#152522c4', 4);
+      path(c, corner, vent ? '#a1eadb' : '#f3cf8f', 2);
+    }
+  }
   function interceptLanding(c, { x, y }) {
     // A small stance mark distinguishes the destination from an attack area.
     c.save();
@@ -4716,7 +4735,11 @@
     ];
     sprites.sort((a, b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b, state));
-    if (state.status === 'playing') { values(state.particles).forEach(p => particle(c, p, time)); combatEffects(c, events, state, still); aimReticle(c, state.players && state.players[localId], time); }
+    if (state.status === 'playing') {
+      values(state.particles).forEach(p => particle(c, p, time)); combatEffects(c, events, state, still);
+      if (options.weaponCue?.type !== 'echo') aimReticle(c, state.players && state.players[localId], time);
+      paintWeaponCue(c, options.weaponCue);
+    }
     ambient(c, state, time);
     roomEchoLamps(c, state, time, still); c.restore();
     if (motion.flash > 0) alpha(c, motion.flash, () => rect(c, 0, 0, W, H, '#fff0c4'));
@@ -4816,7 +4839,10 @@
     if (ending) { if (ending.t < .8) alpha(c, 1 - ending.t / .8, () => values(state.particles).forEach(p => particle(c, p, time))); }
     else values(state.particles).forEach(p => particle(c, p, time));
     if (!ending) combatEffects(c, events, state, still);
-    if (!ending && !(rail && local?.railStun > 0)) aimReticle(c, local, time);
+    if (!ending && !(rail && local?.railStun > 0)) {
+      if (options.weaponCue?.type !== 'echo') aimReticle(c, local, time);
+      paintWeaponCue(c, options.weaponCue);
+    }
     if (values(state.runBuffs).includes('windfeather')) {
       values(state.enemies).forEach(enemy => {
         if (enemy.storyRole === 'listen' && num(enemy.hp) > 0) ellipse(c, num(enemy.x), num(enemy.y), 42, 20, '#9fd7ff24');
