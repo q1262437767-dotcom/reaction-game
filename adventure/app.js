@@ -2870,6 +2870,7 @@
     putAttr('hud-ranged', 'data-active', String(!!p && p.activeSlot === 'ranged'));
     putAttr('hud-ranged', 'data-broken', String(!!p && p.rangedBroken));
     putHidden('hud-quiet', !p || !p.sneaking);
+    if (p?.sneaking) putText('hud-quiet', p.guarding ? '格挡（静）' : '静步');
     let opening = null;
     if (p && !p.downed && state && state.enemies) {
       for (let i = 0; i < state.enemies.length; i += 1) {
