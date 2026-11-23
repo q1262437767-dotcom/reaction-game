@@ -451,6 +451,30 @@
     });
     s.mission.name = def.name; s.mission.goal = def.goal; s.mission.total = 1;
   }
+  var INSPECTION_WORKER = Object.freeze({ x: 450, y: 260 });
+  var INSPECTION_CRATE = Object.freeze({ x: 530, y: 370 });
+  var INSPECTION_SHELTER = Object.freeze({ x: 450, y: 92 });
+  function storyInspection(s) {
+    if (!s || s.mode !== 'chapter' || !s.chapter || s.chapter.id !== 'chapter3_4' || !s.room || s.room.index !== 2) return null;
+    var phase = s.chapter.clues.indexOf('worker-freed') >= 0 ? 'recognized' :
+      s.chapter.phase === 'down' || s.chapter.phase === 'complete' ? 'offline' : 'cargo';
+    var release = (s.combatEvents || []).find(function (e) {
+      return e.type === 'story-worker-released' && e.reason === phase && Number.isFinite(e.time) && e.time >= 0 && e.time <= s.time;
+    });
+    return { worker: INSPECTION_WORKER, crate: INSPECTION_CRATE, shelter: INSPECTION_SHELTER,
+      phase: phase, releasedAt: release ? release.time : null };
+  }
+  function releaseInspectionWorker(s, reason, message) {
+    // A terminal can complete the loop from the adjacent room. The escape
+    // belongs to the arena scene, including when its viewer is a guest.
+    var arena = s.room.index === 2 ? s : splitRoomData(s, 2);
+    var events = arena.combatEvents || (arena.combatEvents = []);
+    events.push({ id: id(s, 'event-'), type: 'story-worker-released', time: s.time,
+      reason: reason, x: INSPECTION_WORKER.x, y: INSPECTION_WORKER.y });
+    if (events.length > 24) events.shift();
+    arena.message = message;
+    arena.messageTime = 5;
+  }
   function storySurveyor(s) {
     var room = s.room.index === 2 ? s : s.roomData[2];
     return room && room.enemies.find(function (e) { return e.kind === 'surveyor' && e.storyBoss && e.hp > 0; });
@@ -469,8 +493,16 @@
       if (s.room.index === 2) openWeakpoint(s, boss, actor.id, 'counter', c.linkLeft);
       else boss.weakTime = c.linkLeft;
       if (s.railAlly && s.railAlly.task === 'wire') s.railAlly.task = 'follow';
-      railAllyReport(s, actor === s.railAlly ? '阿禾：合上了！趁现在打它露出来的护舱。' :
-        '护舱打开了。趁它还没合上，打！');
+      if (c.clues.indexOf('worker-freed') < 0) {
+        storyRemember(s, 'worker-freed');
+        var report = actor === s.railAlly ? '阿禾：它认出人了！巡线工快走，护舱也开了。' :
+          '检线官认出人了，钩索松开。巡线工快走，护舱也开了。';
+        railAllyReport(s, report);
+        releaseInspectionWorker(s, 'recognized', report);
+      } else {
+        railAllyReport(s, actor === s.railAlly ? '阿禾：合上了！趁现在打它露出来的护舱。' :
+          '护舱打开了。趁它还没合上，打！');
+      }
       return true;
     }
     c.link = 1; c.linkLeft = 12; c.hung = s.room.index; c.anchor = target.pair;
@@ -896,6 +928,53 @@
       else data.walls.push(rect(x, 0, 28, H));
     });
   }
+  var OPENING_SIGNAL = { x: 355, y: 220 }, SIGNAL_OUT_AT = 2.4;
+  var CHAPTER_WASH = { x: 398, y: 310, r: 126 }, CHAPTER_WASH_TIME = 2.1, CHAPTER_WASH_COOLDOWN = 5.5;
+  function isChapterOpening(s) {
+    return s && s.mode === 'chapter' && s.chapter && s.chapter.id === 'chapter1';
+  }
+  function chapterWashValve(s) {
+    return s.room.index === 1 && s.interactables.find(function (q) { return q.kind === 'chapter-wash'; });
+  }
+  function chapterOpeningView(s) {
+    if (!isChapterOpening(s)) return null;
+    if (s.room.index === 0) {
+      var out = s.elapsed >= SIGNAL_OUT_AT || s.chapter.fireTaken;
+      return { signal: { x: OPENING_SIGNAL.x, y: OPENING_SIGNAL.y, out: out,
+        lit: !out && Math.floor(s.elapsed * 5) % 2 === 0,
+        dimming: out && s.elapsed >= SIGNAL_OUT_AT && s.elapsed < SIGNAL_OUT_AT + 0.7 } };
+    }
+    var valve = chapterWashValve(s);
+    if (!valve) return null;
+    return { wash: { x: CHAPTER_WASH.x, y: CHAPTER_WASH.y, r: CHAPTER_WASH.r,
+      active: s.time < valve.sprayUntil, ready: s.time >= valve.readyAt } };
+  }
+  function splashChapterWash(s, valve) {
+    if (s.time >= valve.sprayUntil) return;
+    var hit = false;
+    s.enemies.forEach(function (e) {
+      if (e.hp <= 0 || e.elite || e.chapterWashedAt === valve.sprayUntil || dist(e, CHAPTER_WASH) > CHAPTER_WASH.r) return;
+      e.chapterWashedAt = valve.sprayUntil;
+      e.alerted = true;
+      e.windup = 0; e.chargeTime = 0; e.rhythm = null;
+      e.stun = Math.max(finite(e.stun, 0), 1.05);
+      e.attackCd = Math.max(finite(e.attackCd, 0), 1.15);
+      openWeakpoint(s, e, null, 'counter', Math.max(finite(e.weakTime, 0), 1.8));
+      burst(s, 'steam', e.x, e.y, '#a9d8de', 8);
+      hit = true;
+    });
+    if (hit) { s.message = '守卫被冷水压住了，趁它没站稳，打！'; s.messageTime = 2.5; }
+  }
+  function updateChapterOpening(s, dt) {
+    if (!isChapterOpening(s)) return;
+    if (s.room.index === 0 && !s.chapter.fireTaken && s.elapsed >= SIGNAL_OUT_AT && s.elapsed - dt < SIGNAL_OUT_AT) {
+      s.message = '守灯人：求援灯灭了。沿工坊那条路去，采集队还在等火。';
+      s.messageTime = 4;
+      event(s, 'chapter-signal-out', { x: OPENING_SIGNAL.x, y: OPENING_SIGNAL.y });
+    }
+    var valve = chapterWashValve(s);
+    if (valve) splashChapterWash(s, valve);
+  }
   function createChapter(s) {
     var definitions = [
       ['归途灯营地', 'camp', 0, 0, [1]], ['工坊外庭', 'battle', 1, 0, [0, 2, 6]],
@@ -941,6 +1020,7 @@
         var patrol = guard(data, 'chaser', 385, 300); patrol.alertRadius = 265; patrol.alerted = false;
         var gunner = guard(data, 'shooter', 755, 445); gunner.alertRadius = 265; gunner.alerted = false;
         var overseer = guard(data, 'duelist', 775, 135, true, 'riposte'); overseer.alertRadius = 180; overseer.alerted = false;
+        item(data, 'wash', 268, 382, '放冷水 · 打断巡炉刀兵', { readyAt: 0, sprayUntil: 0 });
         note(data, 'trail', 290, 150);
       } else if (room.index === 2) {
         data.walls.push(rect(330, 140, 65, 105), rect(600, 365, 65, 105));
@@ -1001,6 +1081,10 @@
       if (q.kind === 'chapter-sluice') { q.used = c.sluiceOpen; q.active = c.intakeOpen && !q.used; }
       if (q.kind === 'chapter-supplies') q.used = c.suppliesTaken;
       if (q.kind === 'chapter-beacon') q.used = c.beaconLit;
+      if (q.kind === 'chapter-wash') {
+        q.active = s.time >= q.readyAt;
+        q.description = q.active ? '把巡炉刀兵引进水圈，再开阀。' : s.time < q.sprayUntil ? '冷水正在冲刷' : '冲洗阀正在回压';
+      }
       if (q.kind.indexOf('chapter-') === 0 && q.used) q.active = false;
       if (q.kind === 'relic' && s.runBuffs.indexOf(q.buff) >= 0) { q.used = true; q.active = false; }
     });
@@ -1013,6 +1097,15 @@
     if (isRailChapter(s)) return interactRailChapter(s, p, target);
     var c = s.chapter;
     if (!c || target.kind.indexOf('chapter-') !== 0 || target.used || !target.active) return false;
+    if (target.kind === 'chapter-wash') {
+      if (s.room.index !== 1 || s.time < target.readyAt || !foxSight(s, p, target, 3)) return false;
+      target.readyAt = s.time + CHAPTER_WASH_COOLDOWN;
+      target.sprayUntil = s.time + CHAPTER_WASH_TIME;
+      s.message = '冷水冲进外庭，把巡炉刀兵引进水圈。'; s.messageTime = 2.5;
+      event(s, 'chapter-wash', { playerId: p.id, x: target.x, y: target.y });
+      splashChapterWash(s, target);
+      syncChapter(s); setHint(s); return true;
+    }
     target.used = true; target.active = false;
     if (target.kind === 'chapter-note') {
       if (c.clues.indexOf(target.clueId) < 0) c.clues.push(target.clueId);
@@ -2982,7 +3075,7 @@
       s.message = isTrainChapter(s) ? '陶铆：都上车了。你们点个头，我就开。阿禾：我跟着车，你去看前面的路。' :
         isRouteChapter(s) ? '陶铆：车在棚里还能凉一会儿。你们先去开路，我看着他们。' :
         isRailChapter(s) ? s.railAlly ? '阿禾：我去北边工棚看看。你沿轨道找陶铆，咱们在维修站台碰头。' : '阿禾：就是这条旧线。车辙还新，顺着找。' :
-        isTimber(s) ? '阿禾：灯还在闪。先进去找人，听见敲铁管就回应一声。' : '守灯人：归途灯熄了，采集队还没回来。去苔火工坊借一簇火，把归路点亮。';
+        isTimber(s) ? '阿禾：灯还在闪。先进去找人，听见敲铁管就回应一声。' : '守灯人：快看，工坊方向还有人在打求援灯。';
       s.messageTime = 8;
     }
     return true;
@@ -4053,6 +4146,7 @@
           target.kind === 'rail-switch' ? '巡轨守卫已经停下，电闸断开了。' :
           target.kind === 'chapter-fire' ? '炉心仍在暴走，先让守卫停下来。' :
           target.kind === 'chapter-lamp' ? '归途灯没有火种。守灯人还在等工坊的备用火。' :
+          target.kind === 'chapter-wash' ? target.description :
           target.kind === 'storehouse-cache' ? s.roomEvent && s.roomEvent.stage === 'active' ? '先击退被声响引来的巡逻队' : '转动外侧机关，或击碎仓门封板' :
           target.kind === 'breach-cache' ? '藏室仍被裂墙封住' :
           target.kind === 'cache' ? '先清理这间房的守卫，再搜索补给箱' :
@@ -4318,6 +4412,9 @@
           (s.chapter.phase !== 'choice' || s.chapter.id === 'chapter5_2')) {
         s.chapter.phase = 'down';
         s.message = e.name + '停住了。'; s.messageTime = 4;
+        if (s.chapter.id === 'chapter3_4' && e.kind === 'surveyor' && s.chapter.clues.indexOf('worker-freed') < 0) {
+          releaseInspectionWorker(s, 'offline', '检线官停机，钩索掉了下来。巡线工趁机脱身。');
+        }
       }
       delete e.ai;
       s.stats.kills += 1;
@@ -6149,7 +6246,7 @@
         if (dispatch && dispatch.circuit === choice) return choice === 'light' ? '照明线已接通' : '排风线已接通';
         if (dispatch && dispatch.circuit !== 'off' && s.time - dispatch.changedAt < DISPATCH_SWITCH_DELAY) return '线路切换中';
       }
-      if (!special.active && ['chapter-sluice', 'timber-brake', 'rail-route', 'route-winch'].indexOf(special.kind) >= 0) return special.description || '';
+      if (!special.active && ['chapter-sluice', 'chapter-wash', 'timber-brake', 'rail-route', 'route-winch'].indexOf(special.kind) >= 0) return special.description || '';
       if (!special.active && isTrainChapter(s) && special.kind.indexOf('train-') === 0) return special.description || '';
       if (!special.active && isStory(s) && special.kind.indexOf('story-') === 0 && special.description) return special.description;
       if (special.kind === 'rescue-extract' && (!special.active || s.rescue.guide !== p.id)) return special.active ? '让护送伤员的人确认撤离' : special.description;
@@ -6177,6 +6274,7 @@
     s.combatEvents = (s.combatEvents || []).filter(function (entry) { return s.time - entry.time <= 2; }).slice(-24);
     s.travelCd = Math.max(0, s.travelCd - dt); s.messageTime = Math.max(0, s.messageTime - dt);
     var roomBefore = s.room.index;
+    updateChapterOpening(s, dt);
     if (railAllyHere(s)) {
       advanceRailStun(s.railAlly, dt);
       shockRailCombatant(s, s.railAlly);
@@ -6408,7 +6506,7 @@
   function copyEnemy(enemy) {
     var out = {};
     for (var key in enemy) {
-      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead' || key === 'coreOpeningPending' || key === 'ventOpenUntil') continue;
+      if (!Object.prototype.hasOwnProperty.call(enemy, key) || key === 'navX' || key === 'navY' || key === 'navTime' || key === 'coreInterceptRead' || key === 'coreOpeningPending' || key === 'ventOpenUntil' || key === 'chapterWashedAt') continue;
       out[key] = enemy[key];
     }
     return out;
@@ -6627,5 +6725,5 @@
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue, dispatchView: dispatchView };
+    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue, dispatchView: dispatchView, storyInspection: storyInspection, chapterOpeningView: chapterOpeningView };
 });

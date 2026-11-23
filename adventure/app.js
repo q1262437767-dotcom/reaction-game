@@ -773,17 +773,23 @@
       toast(line, 6000);
     }
     else if (chapter.id === 'chapter1_2') toast('阿禾：“长、长、短。那是木场求救的信号。那边还有人，快走。”', 6000);
-    else if (chapter.phase === 'depart') toast('老岑：“昨晚最后一次点名，阿禾他们还在东边。去工坊找簇火吧。灯一亮，他们就知道往哪儿走。”', 7000);
+    else if (chapter.phase === 'depart') toast('老岑：“看东边。是阿禾他们的求援灯。”', 3000);
   }
   function chapterUpdates() {
     if (!state || state.mode !== 'chapter' || !state.chapter || state.status !== 'playing' || paused || hasDialog()) return;
     const chapter = state.chapter;
     const messages = [];
+    const openingSignal = chapter.id === 'chapter1' ? E.chapterOpeningView(state)?.signal : null;
+    if (openingSignal?.out && state.elapsed < 7 && !chapterMomentsSeen.has('chapter1:signal-out')) {
+      chapterMomentsSeen.add('chapter1:signal-out');
+      messages.push('老岑：“灯灭了。去工坊借一簇火，人还在等咱们。”');
+    }
     for (const clue of chapter.clues) {
       if (chapterNotesSeen.has(clue)) continue;
       chapterNotesSeen.add(clue);
       const note = E.CHAPTER_NOTES && E.CHAPTER_NOTES[clue];
       if (note) messages.push(note.title + ' · ' + note.text);
+      if (chapter.id === 'chapter3_4' && clue === 'worker-freed') messages.push('巡线工：“松开了。它认出我是人了！”');
     }
     for (const [flag, message] of Object.entries(activeChapterMoments(chapter.id))) {
       const key = chapter.id + ':' + flag;
@@ -1884,6 +1890,29 @@
       typeof item.label === 'string' && item.label.length > 0 && item.label.length <= 40);
     return s.room.name === station.name && controls.length === 2 && validControl('dispatch-light', 380) && validControl('dispatch-vent', 580);
   }
+  function validOpeningWash(s, items, time) {
+    if (!Array.isArray(items)) return false;
+    const controls = items.filter(item => item?.kind === 'chapter-wash');
+    if (s.mode !== 'chapter' || s.chapter?.id !== 'chapter1' || s.room.index !== 1) return controls.length === 0;
+    if (controls.length !== 1 || !Number.isFinite(time)) return false;
+    const item = controls[0];
+    if (item.id !== 'chapter1-wash' || item.x !== 268 || item.y !== 382 || item.r !== 23 ||
+        item.used !== false || typeof item.active !== 'boolean' || typeof item.label !== 'string' || item.label.length > 40 ||
+        ![item.readyAt, item.sprayUntil].every(value => Number.isFinite(value) && value >= 0 && value <= 86406)) return false;
+    if (item.readyAt === 0) return item.active && item.sprayUntil === 0;
+    return item.readyAt <= time + 5.52 && item.sprayUntil > 0 && Math.abs(item.readyAt - item.sprayUntil - 3.4) <= .021 &&
+      (item.active ? time >= item.readyAt - .02 : time <= item.readyAt + .02);
+  }
+  function validInspectionRelease(event, state, chapter, time) {
+    if (!event) return false;
+    if (event.type !== 'story-worker-released') return true;
+    if (state.mode !== 'chapter' || state.room.index !== 2 || chapter?.id !== 'chapter3_4' ||
+        !Array.isArray(chapter.clues) || event.x !== 450 || event.y !== 260 ||
+        !Number.isFinite(event.time) || event.time < 0 || !Number.isFinite(time) || event.time > time + .02) return false;
+    const recognized = chapter.clues.includes('worker-freed');
+    return event.reason === 'recognized' ? recognized : event.reason === 'offline' && !recognized &&
+      ['down', 'complete', 'failed'].includes(chapter.phase);
+  }
   function validState(s) {
     if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.weaponVersion !== 1 || s.tacticsVersion !== 1 || s.practice !== false || !['chapter', 'random', 'story', 'relay', 'hunt', 'rescue'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (s.storyFind !== undefined && !(s.mode === 'chapter' && s.mission && s.mission.id === 'chapter1_5' && s.storyFind === 'letter')) return false;
@@ -1929,7 +1958,11 @@
         (enemy.kind === 'grandfurnace' && s.mission.id === 'chapter4_4' ? 3.4 :
           enemy.kind === 'echoguard' && s.mission.id === 'chapter2_4' ? 3.2 :
             enemy.kind === 'surveyor' && s.mission.id === 'chapter3_4' ? 6 : 0);
-      const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : storyWeakTime || 1.6;
+      const washWeakTime = s.chapter?.id === 'chapter1' && s.room.index === 1 && !enemy.elite &&
+        s.interactables.some(item => item?.kind === 'chapter-wash' && item.sprayUntil > 0) ? 1.8 : 0;
+      const dispatchWeakTime = s.mode === 'random' && s.room.index === s.bossIndex && enemy.kind === 'boss' &&
+        s.exploration?.dispatch?.openedAt != null ? 2.2 : 0;
+      const maxWeakTime = enemy.trainReturner ? 4.2 : enemy.coreExposed ? 3.5 : storyWeakTime || washWeakTime || dispatchWeakTime || 1.6;
       if (!bounded(enemy.stagger, 10) || !bounded(enemy.posture, 1000) || !bounded(enemy.maxPosture, 1000) || !bounded(enemy.weakTime, maxWeakTime) || typeof enemy.lastScatterVolley !== 'string' || enemy.lastScatterVolley.length > 100 || !volleyIds(enemy.scatterVolleys) || !Array.isArray(enemy.rushHitIds) || enemy.rushHitIds.length > 100 || new Set(enemy.rushHitIds).size !== enemy.rushHitIds.length || !enemy.rushHitIds.every(shortId)) return false;
       if (enemy.ventReadyAt !== undefined && !bounded(enemy.ventReadyAt, 86405)) return false;
       if (enemy.pursuit !== undefined) {
@@ -1960,7 +1993,8 @@
       if (bullet.hook && (bullet.friendly !== false || bullet.weapon !== null || bullet.volleyId !== null || !shortId(bullet.owner) || !bounded(bullet.ttl, 5) || !Number.isFinite(bullet.vx) || !Number.isFinite(bullet.vy) || Math.abs(bullet.vx) > 2000 || Math.abs(bullet.vy) > 2000 || !s.enemies.some(enemy => enemy.id === bullet.owner && enemy.hp > 0 && (s.mode === 'random' && enemy.kind === 'hookwarden' || s.mode === 'chapter' && s.mission.id === 'chapter1_2' && enemy.kind === 'boss' && !!enemy.timber)))) return false;
     }
     for (const event of s.combatEvents) {
-      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'echo-lamp', 'hook-latch', 'hook-drag', 'vent-shot', 'vent-break', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open', 'rail-shock', 'train-hit'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!event || !['rhythm-windup', 'rhythm-beat', 'perfect-parry', 'perfect-dodge', 'mikiri', 'counterattack', 'guard-break', 'fireball-reflected', 'boss-phase', 'event-start', 'event-complete', 'supply-collected', 'decoy', 'core-throw', 'core-catch', 'core-deliver', 'core-knock', 'hunt-arrival', 'hunt-lured', 'hunt-defeated', 'weapon-switch', 'weapon-broken', 'ranged-block', 'melee-block', 'player-hit', 'enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'hook-pull', 'hook-reflected', 'weapon-tempered', 'storehouse-open', 'wall-breached', 'spear-thrust', 'echo-lamp', 'hook-latch', 'hook-drag', 'vent-shot', 'vent-break', 'lantern-guard', 'fox-rescued', 'fox-assist', 'refuge-chosen', 'style-formed', 'style-trigger', 'boss-overload-open', 'rail-shock', 'train-hit', 'story-worker-released'].includes(event.type) || typeof event.id !== 'string' && !Number.isSafeInteger(event.id) || typeof event.id === 'string' && event.id.length > 100 || !bounded(event.time, 86400) || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return false;
+      if (!validInspectionRelease(event, s, s.chapter, s.time)) return false;
       if (event.duration != null && !bounded(event.duration, 10)) return false;
       if (!validRailShock(event, s)) return false;
       if (event.type === 'train-hit' && (!trainSection(s) || s.chapter?.cart?.roomIndex !== s.room.index ||
@@ -2089,12 +2123,13 @@
       if (s.rooms.some((room, index) => !room || room.gx !== layout[index][0] || room.gy !== layout[index][1] || !Array.isArray(room.neighbors) || room.neighbors.length !== graph[index].length || graph[index].some(next => !room.neighbors.includes(next)))) return false;
       for (const item of s.interactables) {
         if (item.kind === 'chapter-note' && (!['trail', 'cooling', 'missing-core'].includes(item.clueId) || typeof item.title !== 'string' || item.title.length > 40 || typeof item.text !== 'string' || item.text.length > 240)) return false;
-        if (typeof item.kind === 'string' && item.kind.startsWith('chapter-') && !['chapter-note', 'chapter-intake', 'chapter-sluice', 'chapter-fire', 'chapter-lamp', 'chapter-supplies', 'chapter-beacon'].includes(item.kind)) return false;
+        if (typeof item.kind === 'string' && item.kind.startsWith('chapter-') && !['chapter-note', 'chapter-intake', 'chapter-sluice', 'chapter-fire', 'chapter-lamp', 'chapter-supplies', 'chapter-beacon', 'chapter-wash'].includes(item.kind)) return false;
         if (item.kind === 'chapter-intake' && (s.room.index !== 5 || item.id !== 'chapter1-intake' || item.x !== 465 || item.y !== 235 || item.used !== chapter.intakeOpen || item.active !== !item.used)) return false;
         if (item.kind === 'chapter-sluice' && (s.room.index !== 3 || item.used !== chapter.sluiceOpen || item.active !== (chapter.intakeOpen && !item.used))) return false;
       }
       if (s.interactables.filter(item => item.kind === 'chapter-intake').length !== Number(s.room.index === 5)) return false;
     }
+    if (!validOpeningWash(s, s.interactables, s.time)) return false;
     if (s.mode === 'relay') {
       const relay = s.relay;
       if (!relay || s.mission.id !== 'salvage' || s.difficulty !== 1 || s.rooms.length !== 3 || relay.extractionRoom !== 0 || typeof relay.coreId !== 'string' || !relay.coreId || relay.coreId.length > 100 || !Number.isInteger(relay.coreRoom) || !bounded(relay.coreRoom, 2) || typeof relay.delivered !== 'boolean' || relay.delivered !== (s.status === 'won') || relay.delivered && (relay.coreRoom !== 0 || s.room.index !== 0)) return false;
@@ -2173,8 +2208,11 @@
     const dispatch = project('exploration')?.dispatch;
     if (dispatch?.room !== current.exploration?.dispatch?.room ||
         !validDispatchState(current, dispatch, project('interactables'), project('time'))) return false;
+    if (!validOpeningWash(current, project('interactables'), project('time'))) return false;
+    if (current.chapter?.id === 'chapter3_4' && !C.validStoryChapter(project('chapter'), current.status, current.mission.id)) return false;
     if (expanded.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)) || !validRailBoss(enemy, current))) return false;
-    if (expanded.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current))) return false;
+    if (expanded.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current) ||
+        !validInspectionRelease(event, current, project('chapter'), project('time')))) return false;
     if (railSection(current)) {
       const railView = { ...current };
       for (const key of ['chapter', 'mission', 'enemies', 'interactables', 'portals']) {

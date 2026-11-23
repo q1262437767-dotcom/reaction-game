@@ -241,12 +241,13 @@ test('remote water controls change the guest bridge geometry and survive a dropp
   assertValid(wire(E.snapshot(E.viewForPlayer(canal, 'p2'), true)), 'dry bridge full refresh');
 });
 
-test('guest receives the inspection hatch opening from two rooms and its full weakpoint time', () => {
+test('guest sees the held worker released and the full hatch opening from two rooms', () => {
   const state = E.create({ mode: 'chapter', mission: 'chapter3_4', players: 2, seed: 61 });
   E.enterRoom(state, 1, true, 'p1');
   E.enterRoom(state, 2, true, 'p2');
   const remote = channel(state);
   remote.receive('closed hatch');
+  assert.equal(E.storyInspection(remote.guest).phase, 'cargo');
   interactAt(state, 'p1', 'story-link');
   remote.receive('first end');
   assert.equal(remote.guest.chapter.link, 1);
@@ -254,7 +255,48 @@ test('guest receives the inspection hatch opening from two rooms and its full we
   remote.receive('both ends');
   assert.equal(remote.guest.chapter.link, 2);
   assert.equal(remote.guest.enemies.find(e => e.kind === 'surveyor').weakTime, 6);
+  assert.equal(E.storyInspection(remote.guest).phase, 'recognized');
+  assert.ok(Number.isFinite(E.storyInspection(remote.guest).releasedAt));
+  assert.ok(remote.guest.combatEvents.some(event => event.type === 'story-worker-released' && event.reason === 'recognized'));
+  const releasedAt = E.storyInspection(remote.guest).releasedAt;
+  for (let i = 0; i < 45; i++) E.step(state, {}, 1 / 60);
+  remote.receive('the escape keeps playing in the guest arena');
+  assert.equal(E.storyInspection(remote.guest).releasedAt, releasedAt);
   assertValid(wire(E.snapshot(E.viewForPlayer(state, 'p2'), true)), 'full hatch opening refresh');
+});
+
+test('the opening distress lamp and first wash valve are visible in the real guest snapshots', () => {
+  const state = E.create({ mode: 'chapter', mission: 'chapter1', players: 2, seed: 36 });
+  const remote = channel(state);
+  remote.receive('opening signal');
+  assert.equal(E.chapterOpeningView(remote.guest).signal.lit, true);
+  let extinguishes = 0;
+  for (let i = 0; i < 155; i++) {
+    E.step(state, {}, 1 / 60);
+    extinguishes += state.events.filter(event => event.type === 'chapter-signal-out').length;
+  }
+  assert.equal(extinguishes, 1);
+  remote.receive('the signal goes out');
+  assert.equal(E.chapterOpeningView(remote.guest).signal.out, true);
+
+  assert.equal(E.enterRoom(state, 1, false, 'p2'), true);
+  remote.receive('valve available in the outer yard');
+  assert.equal(E.chapterOpeningView(remote.guest).wash.ready, true);
+  const patrol = view => view.enemies.find(enemy => enemy.name === '巡炉刀兵');
+  const initialHp = patrol(remote.guest).hp;
+  interactAt(state, 'p2', 'chapter-wash');
+  remote.receive('guest washes the patrol');
+  assert.equal(E.chapterOpeningView(remote.guest).wash.active, true);
+  assert.ok(patrol(remote.guest).weakTime > 1.5);
+  assert.equal(patrol(remote.guest).hp, initialHp);
+  assert.deepEqual(remote.guest.playerRooms, { p1: 0, p2: 1 });
+
+  const malformed = wire(remote.guest);
+  malformed.interactables.find(item => item.kind === 'chapter-wash').readyAt += 240;
+  assert.equal(client.validateGuest(malformed), false);
+  for (let i = 0; i < 350; i++) E.step(state, {}, 1 / 60);
+  remote.receive('pressure returned to the valve');
+  assert.equal(E.chapterOpeningView(remote.guest).wash.ready, true);
 });
 
 test('guest receives the finale authorization and can use it without the host leaving the pulse console', () => {
@@ -464,6 +506,16 @@ test('the dispatch station keeps the furnace gate optional and synchronizes both
   assert.equal(E.dispatchView(link.guest).circuit, 'vent');
   assert.deepEqual(link.guest.playerRooms, { p1: station, p2: state.bossIndex });
   assert.ok(link.counts[1] >= 2, 'circuit changes are delivered in ordinary deltas');
+
+  for (let i = 0; i < 360 && E.dispatchView(E.viewForPlayer(state, 'p2')).phase !== 'active'; i++) E.step(state, {}, 1 / 60);
+  const arena = E.viewForPlayer(state, 'p2');
+  assert.equal(E.dispatchView(arena).phase, 'active');
+  const boss = arena.enemies.find(enemy => enemy.kind === 'boss');
+  const { x, y } = E.dispatchView(arena).vent;
+  Object.assign(boss, { x, y, weakTime: 0 });
+  E.step(state, {}, 1 / 60);
+  link.receive('the guest sees the vent open the boss armor');
+  assert.ok(link.guest.enemies.find(enemy => enemy.kind === 'boss').weakTime > 1.9);
 
   const forged = wire(link.guest);
   forged.exploration.dispatch.room = state.bossIndex;

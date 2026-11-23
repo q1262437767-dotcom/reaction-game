@@ -82,13 +82,13 @@ const html = fs.readFileSync(path.join(dist, 'adventure', 'index.html'), 'utf8')
 if (!cloud.includes('vendor/supabase-2.118.0.js') || !cloud.includes('?v=59')) {
   throw new Error('minified cloud.js lost the lazy Supabase URL');
 }
-if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=68')) {
+if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=69')) {
   throw new Error('minified net.js lost the lazy PeerJS URL');
 }
 const entryVersions = [
-  [65, ['style.css', 'title-ui.css', 'panel-ui.css', 'hud-ui.css', 'story.js', 'layout.js']],
+  [65, ['style.css', 'title-ui.css', 'panel-ui.css', 'hud-ui.css', 'layout.js']],
   [66, ['story-draw.js']],
-  [68, ['engine.js', 'renderer.js', 'net.js', 'app.js']]
+  [69, ['story.js', 'engine.js', 'renderer.js', 'net.js', 'campaign.js', 'app.js']]
 ];
 if (entryVersions.some(([version, names]) => names.some(name => !html.includes(`${name}?v=${version}`))) ||
     html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
