@@ -842,6 +842,12 @@
   }
   function soundEvents() {
     if (!state) return;
+    if (state.status === 'playing' && state.exploration?.dispatch?.circuit === 'vent' &&
+        state.room.index === state.bossIndex && !paused && !tutorialPending && !remoteTutorialPending && !hasDialog() &&
+        E.dispatchView(state)?.phase === 'warning' && soundReady('dispatch-pressure', state.time, 1.5)) {
+      tone(120, .24, .015, 'triangle', 0, 92);
+      tone(460, .15, .018, 'sine', .08, 640);
+    }
     const events = [...(state.combatEvents || []), ...(state.events || [])];
     const highlighted = new Set(events.filter(event => event && ['weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit', 'lantern-guard'].includes(event.type) && state.elapsed - event.time <= .25).map(event => event.enemyId));
     const blockedHits = new Set(events.filter(event => event && ['ranged-block', 'weapon-broken'].includes(event.type)).map(event => event.playerId + ':' + event.time));
@@ -1858,6 +1864,26 @@
     }
     return true;
   }
+  function validDispatchState(s, dispatch, items, time) {
+    if (!Array.isArray(items)) return false;
+    const controls = items.filter(item => typeof item?.kind === 'string' && item.kind.startsWith('dispatch-'));
+    const stations = s.mode === 'random' ? s.rooms.filter(room => room.name === '断灯调度站') : [];
+    if (dispatch === undefined) return controls.length === 0 && stations.length === 0;
+    if (s.mode !== 'random' || !dispatch || typeof dispatch !== 'object' || Array.isArray(dispatch) ||
+        Object.keys(dispatch).length !== 4 || !Number.isInteger(dispatch.room) ||
+        dispatch.room < 1 || dispatch.room >= s.rooms.length || dispatch.room === s.bossIndex ||
+        !['off', 'light', 'vent'].includes(dispatch.circuit) || !Number.isFinite(time) || time < 0) return false;
+    const station = s.rooms[dispatch.room];
+    if (stations.length !== 1 || station !== stations[0] || station.kind !== 'battle' || station.elite || station.eventKind) return false;
+    const timeInRun = value => Number.isFinite(value) && value >= 0 && value <= time + .02;
+    if (!timeInRun(dispatch.changedAt) || (dispatch.openedAt !== null && !timeInRun(dispatch.openedAt)) ||
+        (dispatch.circuit === 'off' && (dispatch.changedAt !== 0 || dispatch.openedAt !== null))) return false;
+    if (s.room.index !== dispatch.room) return controls.length === 0;
+    const validControl = (kind, x) => controls.some(item => item.kind === kind && item.id === kind && item.x === x &&
+      item.y === 300 && item.r === 24 && item.active === true && item.used === false &&
+      typeof item.label === 'string' && item.label.length > 0 && item.label.length <= 40);
+    return s.room.name === station.name && controls.length === 2 && validControl('dispatch-light', 380) && validControl('dispatch-vent', 580);
+  }
   function validState(s) {
     if (!s || s.version !== 1 || s.combatVersion !== 1 || s.contentVersion !== 1 || s.weaponVersion !== 1 || s.tacticsVersion !== 1 || s.practice !== false || !['chapter', 'random', 'story', 'relay', 'hunt', 'rescue'].includes(s.mode) || !['playing', 'won', 'lost'].includes(s.status) || !s.room || !Number.isInteger(s.room.index) || s.room.index < 0 || !s.stats || !Number.isFinite(s.elapsed)) return false;
     if (s.storyFind !== undefined && !(s.mode === 'chapter' && s.mission && s.mission.id === 'chapter1_5' && s.storyFind === 'letter')) return false;
@@ -2031,6 +2057,7 @@
           s.players[d.playerId].weapons.ranged !== 'echo' || d.r !== 10)) return false;
     }
     if (s.room.index >= s.rooms.length || s.rooms.length < 2) return false;
+    if (!validDispatchState(s, s.exploration?.dispatch, s.interactables, s.time)) return false;
     if (s.mode === 'random' && (s.room.kind !== s.rooms[s.room.index].kind || s.room.encounter !== s.rooms[s.room.index].encounter)) return false;
     const refuges = s.rooms.filter(room => room.kind === 'refuge');
     for (const room of s.rooms) if (room.encounter !== undefined && (s.mode !== 'random' || room.kind !== 'battle' || room.elite || room.eventKind || !['patrol', 'crossfire', 'bulwark'].includes(room.encounter))) return false;
@@ -2142,6 +2169,10 @@
       if (!validPlayerRooms({ ...current, playerRooms: patch.playerRooms }) ||
           !current.playerRooms || patch.playerRooms.p1 !== current.playerRooms.p1 || patch.playerRooms.p2 !== current.playerRooms.p2) return false;
     }
+    const project = (key) => Object.prototype.hasOwnProperty.call(expanded, key) ? expanded[key] : current[key];
+    const dispatch = project('exploration')?.dispatch;
+    if (dispatch?.room !== current.exploration?.dispatch?.room ||
+        !validDispatchState(current, dispatch, project('interactables'), project('time'))) return false;
     if (expanded.enemies?.some(enemy => !validIntercept(enemy, furnaceArena(current)) || !validRailBoss(enemy, current))) return false;
     if (expanded.combatEvents?.some(event => !validRailHit(event, current) || !validRailShock(event, current))) return false;
     if (railSection(current)) {
@@ -2810,6 +2841,14 @@
       el.children[index].style.setProperty('--life-fill', (ratio * 100).toFixed(1) + '%');
     }
   }
+  function dispatchNotice() {
+    const dispatch = state?.mode === 'random' && E.dispatchView(state);
+    if (!dispatch) return '';
+    if (state.room.index === 0) return '本次有断灯调度站';
+    if (dispatch.station) return { off: '选一路给炉心供电', light: '炉心供电 · 照明', vent: '炉心供电 · 排风' }[dispatch.circuit];
+    if (!dispatch.arena || dispatch.circuit === 'off') return '';
+    return { light: '照明已接通', idle: '排风已接通', warning: '泄压将至', active: '排风喷气' }[dispatch.phase];
+  }
   function hud(weaponCue = null) {
     const p = state && state.players[localId()];
     const random = state && state.mode === 'random';
@@ -2847,8 +2886,9 @@
     putAttr('hud-mobility', 'aria-label', mobility === 'ready' ? mobilityLabel : `${mobilityLabel} ${seconds}`);
     putText('hud-dash', mobility === 'ready' ? '闪避' : mobility === 'cooling' ? seconds : `${mobilityLabel} ${seconds}`);
     const train = trainSection(state) ? state.chapter : null;
-    putText('hud-loot', train ? `车体 ${train.cart.hp}/${train.cart.maxHp} · 维修 ${train.repairsLeft} 次` : '');
-    putHidden('hud-loot', !train || train.unloaded);
+    const localNotice = train ? (train.unloaded ? '' : `车体 ${train.cart.hp}/${train.cart.maxHp} · 维修 ${train.repairsLeft} 次`) : dispatchNotice();
+    putText('hud-loot', localNotice);
+    putHidden('hud-loot', !localNotice);
     const ally = state?.railAlly;
     const partnerId = localId() === 'p1' ? 'p2' : 'p1';
     const partnerRoom = state?.playerRooms?.[partnerId];
