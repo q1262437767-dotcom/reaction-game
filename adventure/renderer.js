@@ -1035,6 +1035,130 @@
       for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; rect(c, 657 + Math.cos(a) * 135, 298 + Math.sin(a) * 89, 6, 4, '#8d7752'); }
     }
   }
+  function openingSignal(c, signal, still) {
+    const { x, y, out, dimming } = signal;
+    const lit = signal.lit || (still && !out);
+    shadow(c, x, y, 17, .25);
+    rect(c, x - 13, y - 4, 26, 9, '#34483c');
+    rect(c, x - 6, y - 55, 12, 53, '#60533e');
+    rect(c, x - 5, y - 53, 3, 50, '#a48758');
+    rect(c, x - 14, y - 64, 28, 23, '#1c3334');
+    rect(c, x - 11, y - 62, 22, 17, '#78684b');
+    rect(c, x - 8, y - 59, 16, 12, lit ? '#e6b96c' : '#293d3a');
+    rect(c, x - 5, y - 58, 4, 9, lit ? '#ffdf9a' : '#42564c');
+    if (lit) {
+      glow(c, x, y - 53, 58, '#ebbd793b');
+      for (const side of [-1, 1]) path(c, [[x + side * 21, y - 48], [x + side * 27, y - 53], [x + side * 22, y - 59]], '#e0bd78', 2);
+    }
+    if (!out || dimming) label(c, out ? '信号熄灭' : '求援灯', x, y - 81, lit ? '#f4ce91' : '#aab9aa', 13);
+  }
+  function openingSignalCue(c, signal, view, still) {
+    if (!signal || !view || view.w >= W || signal.out && !signal.dimming) return;
+    const right = signal.x > view.x + view.w - 32, left = signal.x < view.x + 32;
+    if (!right && !left) return;
+    const x = right ? view.w - 50 : 50, y = Math.round(view.h * .49);
+    const lit = signal.lit || (still && !signal.out);
+    const color = lit ? '#f4ce91' : '#adbbac';
+    rect(c, x - 43, y - 13, 86, 26, '#152c30eb');
+    rect(c, x - 43, y + 11, 86, 2, lit ? '#a7845a' : '#4b6460');
+    rect(c, x - 33, y - 4, 7, 8, color);
+    label(c, signal.out ? '信号熄灭' : '求援灯', x + 3, y, color, 12);
+    const edge = right ? x + 35 : x - 38, direction = right ? 1 : -1;
+    path(c, [[edge - direction * 4, y - 4], [edge, y], [edge - direction * 4, y + 4]], color, 1.5);
+  }
+  function openingWash(c, wash, valve, time, still) {
+    const { x, y, r, active } = wash;
+    const nozzle = { x: x - r + 10, y };
+    const pipe = [[valve.x, valve.y], [valve.x, y], [nozzle.x, y]];
+    path(c, pipe, '#253f43', 8);
+    path(c, pipe, active ? '#6ca8ae' : '#57706b', 2);
+    rect(c, nozzle.x - 5, y - 14, 12, 28, '#365350');
+    rect(c, nozzle.x + 2, y - 10, 4, 20, active ? '#99c9c6' : '#6a8177');
+    c.save();
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2);
+    if (active) { c.fillStyle = '#73b5b72d'; c.fill(); }
+    else c.setLineDash([5, 8]);
+    c.strokeStyle = active ? '#9bd1ccba' : '#8ab3a16d'; c.lineWidth = active ? 2 : 1.5; c.stroke();
+    c.restore();
+    if (!active) return;
+    const ripple = still ? 0 : time / 13 % 21;
+    for (const [index, offset] of [-.48, -.25, 0, .25, .48].entries()) {
+      const reach = r * (1.63 - Math.abs(offset) * .67);
+      const endX = nozzle.x + reach, endY = y + r * offset;
+      path(c, [[nozzle.x, y], [endX, endY]], '#88c4c33a', 4);
+      for (let step = 0; step < 5; step++) {
+        const t = (.15 + step * .15 + ((ripple + index * 3) % 21) / 135);
+        rect(c, nozzle.x + reach * t, y + (endY - y) * t, 10, 2, '#b1ddddad');
+      }
+    }
+  }
+  function openingValve(c, valve, wash, local) {
+    const { x, y } = valve;
+    const near = local && !local.downed && !local.carry && Math.hypot(local.x - x, local.y - y) < 84;
+    const color = wash.active ? '#a4d6d1' : wash.ready ? '#c6c887' : '#78918a';
+    shadow(c, x, y, 22, .28);
+    rect(c, x - 19, y - 11, 38, 18, '#243c3b');
+    rect(c, x - 16, y - 10, 32, 4, '#718479');
+    rect(c, x - 3, y - 22, 6, 17, '#999271');
+    path(c, [[x, y - 18], [x + (wash.active ? 13 : -13), y - 32]], '#b99668', 4);
+    rect(c, x - 15, y - 3, 6, 4, color);
+    if (near) label(c, wash.active ? '冷水冲洗' : wash.ready ? 'E · 放冷水' : '阀门回水', x, y + 19, color, 12);
+    else label(c, '冲洗阀', x, y + 18, '#aebba2', 10);
+  }
+  function inspectionPose(scene, time, reducedMotion) {
+    const cargo = scene.phase === 'cargo';
+    const age = cargo ? 0 : Number.isFinite(scene.releasedAt) && !reducedMotion ? Math.max(0, time - scene.releasedAt) : 10;
+    const travel = cargo ? 0 : Math.min(1, Math.max(0, (age - .22) / 1.23));
+    const x = scene.worker.x + (scene.shelter.x - scene.worker.x) * travel;
+    const y = scene.worker.y + (scene.shelter.y - scene.worker.y) * travel;
+    return { cargo, age, x, y, gait: travel > 0 && travel < 1 ? Math.sin(travel * Math.PI * 14) : 0 };
+  }
+  function inspectionFloor(c, scene, pose, boss) {
+    const { worker, crate, shelter, phase } = scene;
+    const color = pose.cargo ? '#a87460' : phase === 'recognized' ? '#8fb69f' : '#858c7d';
+    rect(c, worker.x - 29, worker.y - 21, 58, 45, '#213b40');
+    rect(c, worker.x - 24, worker.y + 18, 48, 3, color);
+    for (const side of [-1, 1]) {
+      const x = worker.x + side * 26;
+      rect(c, x - 2, worker.y - 22, 4, 44, color);
+      rect(c, x - 5, worker.y - 21, 10, 4, '#c1ac86');
+    }
+    rect(c, shelter.x - 23, shelter.y - 15, 46, 28, '#21393c');
+    rect(c, shelter.x - 20, shelter.y + 10, 40, 3, '#718b75');
+    for (const x of [shelter.x - 14, shelter.x + 4]) rect(c, x, shelter.y + 15, 10, 2, '#77938488');
+    rect(c, crate.x - 26, crate.y - 13, 52, 34, '#233b3e');
+    rect(c, crate.x - 22, crate.y - 20, 44, 36, '#5e6353');
+    rect(c, crate.x - 20, crate.y - 17, 40, 28, '#8b8467');
+    for (const x of [crate.x - 16, crate.x + 12]) rect(c, x, crate.y - 17, 4, 28, '#565c56');
+    path(c, [[crate.x - 17, crate.y + 8], [crate.x + 17, crate.y - 16]], '#6e705e', 3);
+    label(c, phase === 'recognized' && pose.age < 3.1 ? '识别 · 货箱' : '货箱', crate.x, crate.y + 30, phase === 'recognized' ? '#b8cc9d' : '#a7ac96', 11);
+    if (!boss) return;
+    const head = [boss.x, boss.y - 24];
+    if (pose.cargo || pose.age < .36) {
+      const pull = pose.cargo ? 0 : Math.min(1, pose.age / .36);
+      const end = [worker.x + (head[0] - worker.x) * pull, worker.y - 12 + (head[1] - worker.y + 12) * pull];
+      path(c, [head, end], '#24363c', 5);
+      c.save(); c.setLineDash([5, 4]);
+      path(c, [head, end], '#c0a082', 2);
+      c.restore();
+      path(c, [[end[0] - 7, end[1] - 3], [end[0], end[1] + 2], [end[0] + 4, end[1] - 3]], '#d5b08b', 2);
+    } else if (phase === 'recognized' && pose.age < 3) {
+      path(c, [head, [crate.x, crate.y - 12]], '#9bc5a678', 2);
+      for (const side of [-1, 1]) path(c, [[crate.x + side * 22, crate.y - 22], [crate.x + side * 26, crate.y - 22], [crate.x + side * 26, crate.y - 12]], '#b5cc9c', 2);
+    }
+  }
+  function inspectionWorker(c, scene, pose) {
+    chapterEndingCivilian(c, pose.x, pose.y, 'helper', pose.gait, true);
+    if (pose.cargo) {
+      path(c, [[pose.x - 11, pose.y - 14], [pose.x + 10, pose.y - 10]], '#c29b73', 4);
+      rect(c, pose.x - 3, pose.y - 14, 7, 7, '#ead1a2');
+      label(c, '扫描 · 货物', pose.x, pose.y - 49, '#f0b291', 13);
+    } else {
+      const recovered = pose.age >= 3;
+      const text = recovered ? '巡线工 · 已脱险' : scene.phase === 'recognized' ? '识别 · 人员' : '检线官停机';
+      label(c, text, pose.x, pose.y - 47, '#bcdaaf', 12);
+    }
+  }
   function dispatchFloor(c, scene, state, time) {
     if (scene.station) {
       const hubX = W / 2, hubY = 368;
@@ -4848,7 +4972,12 @@
     const local = state.players?.[localId];
     const storyDraw = state.status === 'playing' && typeof AdventureStoryDraw !== 'undefined' ? AdventureStoryDraw : null;
     const storyTells = storyDraw ? enemies.filter(e => storyDraw.owns(e.kind) && storyDraw.activeTell(e)) : [];
-    const dispatch = globalThis.AdventureEngine?.dispatchView?.(state);
+    const engine = globalThis.AdventureEngine;
+    const dispatch = engine?.dispatchView?.(state);
+    const opening = engine?.chapterOpeningView?.(state);
+    const washValve = opening?.wash && values(state.interactables).find(item => item.kind === 'chapter-wash');
+    const inspection = engine?.storyInspection?.(state);
+    const worker = inspection && inspectionPose(inspection, num(state.time), options.reducedMotion);
     const dark = state.room?.dark || darkExpedition(state, dispatch);
     const paintStoryTells = () => storyTells.forEach(e => storyDraw.telegraph(c, e, enemyTime, local, still, dark));
     const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
@@ -4858,6 +4987,8 @@
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
     chapterFloor(c, state, time, still, trainEndingAge);
+    if (washValve) openingWash(c, opening.wash, washValve, enemyTime, still);
+    if (inspection) inspectionFloor(c, inspection, worker, enemies.find(e => e.kind === 'surveyor' && e.hp > 0));
     expeditionFloor(c, state, time, still, dispatch);
     rescueFloor(c, state, time, still, local);
     lanternAuras(c, state);
@@ -4886,6 +5017,8 @@
     // All sprites share a ground plane, so passing behind a crate feels natural.
     const sprites = [
       ...values(state.decoys).filter(d => d.kind !== 'echo-lamp').map(d => ({ y: num(d.y)-.25, draw: () => decoy(c, d, time) })),
+      ...(opening?.signal ? [{ y: opening.signal.y, draw: () => openingSignal(c, opening.signal, still) }] : []),
+      ...(worker ? [{ y: worker.y, draw: () => inspectionWorker(c, inspection, worker) }] : []),
       ...(route && state.room.index === 0 ? [{ y: 255, draw: () => railInteractable(c,
         { kind: 'rail-car', x: 705, y: 255, active: false, used: true }, enemyTime, state, localId, still) }] : []),
       ...(train && state.chapter.cart?.roomIndex === state.room.index ? [{ y: num(state.chapter.cart.y) + 9,
@@ -4900,7 +5033,8 @@
         y: storyFloatingBox(p, state) ? p.y - 40 : p.y,
         draw: () => storyFloatingBox(p, state) ? storyFloat(c, p, state, time, still) : paintProp(c, p, time)
       })),
-      ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still, dispatch) })),
+      ...values(state.interactables).map(item => ({ y: item.y, draw: () => item === washValve ?
+        openingValve(c, item, opening.wash, local) : interactable(c, item, time, state, localId, still, dispatch) })),
       ...enemies.map(e => ({ y: e.y, draw: () => {
         const pose = enemyPoses.get(e.id);
         if (train && e.trainReturner === true) trainReturner(c, e, pose, viewTop, still);
@@ -4950,6 +5084,7 @@
     c.restore();
     if (motion.flash > 0) alpha(c,motion.flash,()=>rect(c,0,0,W,H,'#fff0c4'));
     resetHudTransform(c, options.view);
+    openingSignalCue(c, opening?.signal, options.view, still);
     if (storyDraw && storyTells.length) storyDraw.offscreenWarning(c, storyTells, local, options.view);
     paintTopStatus(c, state, options);
     paintCornerMap(c, state, options, minimap);
