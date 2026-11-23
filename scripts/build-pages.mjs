@@ -82,12 +82,15 @@ const html = fs.readFileSync(path.join(dist, 'adventure', 'index.html'), 'utf8')
 if (!cloud.includes('vendor/supabase-2.118.0.js') || !cloud.includes('?v=59')) {
   throw new Error('minified cloud.js lost the lazy Supabase URL');
 }
-if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=65')) {
+if (!net.includes('vendor/peerjs.min.js') || !net.includes('?v=68')) {
   throw new Error('minified net.js lost the lazy PeerJS URL');
 }
-const entryFiles = ['style.css', 'title-ui.css', 'panel-ui.css', 'hud-ui.css', 'engine.js', 'story.js', 'layout.js'];
-const drawFiles = ['story-draw.js', 'renderer.js'];
-if (entryFiles.some(name => !html.includes(name + '?v=65')) || drawFiles.some(name => !html.includes(name + '?v=66')) ||
+const entryVersions = [
+  [65, ['style.css', 'title-ui.css', 'panel-ui.css', 'hud-ui.css', 'story.js', 'layout.js']],
+  [66, ['story-draw.js']],
+  [68, ['engine.js', 'renderer.js', 'net.js', 'app.js']]
+];
+if (entryVersions.some(([version, names]) => names.some(name => !html.includes(`${name}?v=${version}`))) ||
     html.includes('vendor/peerjs') || html.includes('vendor/supabase')) {
   throw new Error('adventure page should keep separate scripts and lazy vendor files');
 }

@@ -16,6 +16,7 @@
   const layerCache = new Map();
   const propCache = new Map();
   const vignetteCache = new Map();
+  let dispatchFog;
   function scratchCanvas(width, height) {
     const surface = document.createElement('canvas');
     surface.width = Math.max(1, Math.ceil(width));
@@ -849,9 +850,12 @@
     }
     if (storyCartChapter(state)) storyRailFloor(c, state, high);
   }
-  function storyDarkness(c, state) {
+  function darkExpedition(state, dispatch) {
+    return state.mode === 'random' && (state.room?.mood === 'dark' || !!dispatch?.arena);
+  }
+  function storyDarkness(c, state, dispatch) {
     const room = state.room || {}, run = state.chapter || {};
-    const expeditionDark = state.mode === 'random' && room.mood === 'dark';
+    const expeditionDark = darkExpedition(state, dispatch);
     if (!room.dark && !expeditionDark) return;
     if (!expeditionDark && String(run.id) === 'chapter5_3') {
       const ending = run.ending || (state.unlocks && state.unlocks.dawnEnding) || '';
@@ -859,7 +863,7 @@
       if (ending === 'normal' && num(room.index) <= 1) return;
     }
     const lights = [];
-    if (expeditionDark) values(state.players).forEach(p => lights.push([num(p.x), num(p.y), 120]));
+    if (expeditionDark) roomPlayers(state).forEach(p => lights.push([num(p.x), num(p.y), 120]));
     if (run.lit && run.oil > 0) {
       if (run.hung === room.index) {
         const stand = values(state.interactables).find(item => item.kind === 'story-lantern' || item.kind === 'story-flame');
@@ -869,6 +873,20 @@
       });
     }
     values(state.interactables).filter(item => item.lamp).forEach(item => lights.push([num(item.x), num(item.y), 46]));
+    if (dispatch?.arena) {
+      if (dispatch.phase === 'light') dispatch.lights.forEach(point => lights.push([point.x, point.y, point.r]));
+      // Overlapping lamps and allied pools stay lit instead of cancelling.
+      if (!dispatchFog) dispatchFog = scratchCanvas(W, H);
+      const mask = dispatchFog.getContext('2d');
+      mask.clearRect(0, 0, W, H);
+      rect(mask, 0, 0, W, H, '#05080fe0');
+      mask.save(); mask.globalCompositeOperation = 'destination-out';
+      for (const [x, y, radius] of lights) {
+        mask.beginPath(); mask.arc(x, y, radius, 0, Math.PI * 2); mask.fill();
+      }
+      mask.restore(); c.drawImage(dispatchFog, 0, 0);
+      return;
+    }
     c.save();
     c.beginPath(); c.rect(0, 0, W, H);
     for (const [x, y, radius] of lights) { c.moveTo(x + radius, y); c.arc(x, y, radius, 0, Math.PI * 2, true); }
@@ -1017,8 +1035,53 @@
       for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; rect(c, 657 + Math.cos(a) * 135, 298 + Math.sin(a) * 89, 6, 4, '#8d7752'); }
     }
   }
-  function expeditionFloor(c, state, time, still) {
+  function dispatchFloor(c, scene, state, time) {
+    if (scene.station) {
+      const hubX = W / 2, hubY = 368;
+      ellipse(c, hubX, 329, 150, 58, '#2a423e56');
+      for (const item of state.interactables) {
+        if (item.kind !== 'dispatch-light' && item.kind !== 'dispatch-vent') continue;
+        const light = item.kind === 'dispatch-light', on = scene.circuit === (light ? 'light' : 'vent');
+        const cable = [[item.x, item.y + 12], [item.x, hubY], [hubX, hubY]];
+        path(c, cable, '#132b2b', 8);
+        path(c, cable, on ? (light ? '#cbab69' : '#76b2a7') : '#597169', 2);
+      }
+      rect(c, hubX - 14, hubY - 8, 28, 16, '#1b3636');
+      rect(c, hubX - 11, hubY - 6, 22, 3, '#809183');
+      rect(c, hubX - 3, hubY, 6, 4, scene.circuit === 'off' ? '#796f53' : '#a6bb91');
+    }
+    if (!scene.arena) return;
+    for (const { x, y, r } of scene.lights) {
+      if (scene.phase === 'light') {
+        glow(c, x, y, r, '#e5b76527');
+        lantern(c, x, y, time, .9);
+      } else {
+        rect(c, x - 7, y - 7, 14, 14, '#263c3b');
+        rect(c, x - 5, y - 5, 10, 10, '#685c46');
+      }
+    }
+    const { x, y } = scene.vent;
+    rect(c, x - 28, y - 18, 56, 36, '#263d3e');
+    rect(c, x - 25, y - 16, 50, 3, '#7b8f87');
+    for (let i = -17; i < 20; i += 8) rect(c, x + i, y - 10, 3, 20, '#82938a');
+  }
+  function dispatchVentCue(c, scene, time, still) {
+    if (!scene?.arena || (scene.phase !== 'warning' && scene.phase !== 'active')) return;
+    const { x, y, r } = scene.vent, active = scene.phase === 'active';
+    c.save();
+    c.strokeStyle = active ? '#a6d0c8' : '#8eaa9d'; c.lineWidth = active ? 2 : 1.5;
+    c.setLineDash(active ? [] : [5, 7]);
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke();
+    c.restore();
+    const tint = active ? '#b6d6ca' : '#789589';
+    for (const offset of [-17, 0, 17]) {
+      const lift = active ? 16 + (still ? 1 : Math.sin(time * .011 + offset) * 4) : 5;
+      path(c, [[x + offset, y + 4], [x + offset - 3, y - lift / 2], [x + offset + 2, y - lift]], tint, 1.5);
+    }
+  }
+  function expeditionFloor(c, state, time, still, dispatch) {
     if (state.mode !== 'random') return;
+    if (dispatch) dispatchFloor(c, dispatch, state, still ? 0 : num(state.time) * 1000);
     const room = state.room || {};
     if (room.kind === 'refuge') {
       // Warm woven rugs and a sheltered light give the empty room its pause.
@@ -1472,7 +1535,27 @@
       label(c, kind === 'route-winch' ? '桥已升起' : kind === 'route-gate' ? '主轨闸已打开' : '信号已点亮', x, y + 32, '#abc6a4', 9);
     }
   }
-  function interactable(c, item, time, state, localId, still = false) {
+  function dispatchConsole(c, item, scene, player) {
+    const { x, y } = item, light = item.kind === 'dispatch-light';
+    const on = scene.circuit === (light ? 'light' : 'vent');
+    const near = player && !player.downed && !player.carry && Math.hypot(player.x - x, player.y - y) < 76;
+    const color = on ? (light ? '#edc989' : '#a7d4c8') : '#91a59a';
+    shadow(c, x, y, 27);
+    rect(c, x - 24, y - 25, 48, 32, '#1a3335');
+    rect(c, x - 21, y - 22, 42, 22, '#496560');
+    rect(c, x - 18, y - 19, 36, 16, '#203c3b');
+    rect(c, x - 20, y + 5, 40, 4, on ? color : '#688277');
+    if (light) {
+      rect(c, x - 4, y - 16, 8, 8, color);
+      rect(c, x - 3, y - 6, 6, 2, color);
+    } else {
+      for (const at of [-7, 0, 7]) path(c, [[x + at - 2, y - 6], [x + at + 1, y - 10], [x + at, y - 16]], color, 1.5);
+    }
+    const name = light ? '照明' : '排风';
+    label(c, on ? name + ' · 已接通' : near && item.active ? 'E · 接通' + name : name, x, y + 24, color, 11);
+  }
+
+  function interactable(c, item, time, state, localId, still = false, dispatch = null) {
     if (state.mode === 'chapter' && ['chapter-intake', 'rail-route', 'route-pin'].includes(item.kind)) {
       storyMechanism(c, item, state, localId); return;
     }
@@ -1481,6 +1564,7 @@
     if (state.mode === 'rescue' && item.kind === 'rescue-survivor') return;
     if (state.mode === 'rescue' && item.kind === 'rescue-extract') { rescueExtraction(c, item, state, localId); return; }
     if (item.kind === 'fox-cage') { foxCage(c,item,time,state,localId,still); return; }
+    if (dispatch?.station && (item.kind === 'dispatch-light' || item.kind === 'dispatch-vent')) { dispatchConsole(c, item, dispatch, state.players?.[localId]); return; }
     if (state.mode === 'random' && (item.kind === 'refuge-rest' || item.kind === 'refuge-relic')) { refugeInteractable(c, item, time, state, localId, still); return; }
     if (state.mode === 'chapter' && /^chapter-/.test(item.kind)) { chapterInteractable(c, item, time, state, localId, still); return; }
     if (railChapter(state) && /^rail-/.test(item.kind)) { railInteractable(c, item, time, state, localId, still); return; }
@@ -4281,6 +4365,9 @@
       } else if (room.kind === 'refuge') {
         path(c, [[point.x - 4, point.y + 4], [point.x + 4, point.y + 4]], '#d9bc83', 1.5);
         c.fillStyle = '#e6c58c'; c.beginPath(); c.moveTo(point.x - 3, point.y + 2); c.lineTo(point.x - 1, point.y - 4); c.lineTo(point.x + 1, point.y - 1); c.lineTo(point.x + 2, point.y - 3); c.lineTo(point.x + 3, point.y + 2); c.closePath(); c.fill();
+      } else if (room.index === progress.dispatch?.room) {
+        path(c, [[point.x - 3, point.y + 3], [point.x, point.y], [point.x + 3, point.y + 3]], '#93cabd', 1.5);
+        path(c, [[point.x, point.y - 4], [point.x, point.y]], '#93cabd', 1.5);
       } else if (room.visited && room.elite) {
         rect(c, point.x - 2, point.y - 2, 4, 4, '#e5bc70');
         if(room.eventKind==='breach')path(c,[[point.x-5,point.y-5],[point.x-2,point.y-1],[point.x-4,point.y+1],[point.x-1,point.y+5]],'#c6c19b',1.5);
@@ -4761,7 +4848,8 @@
     const local = state.players?.[localId];
     const storyDraw = state.status === 'playing' && typeof AdventureStoryDraw !== 'undefined' ? AdventureStoryDraw : null;
     const storyTells = storyDraw ? enemies.filter(e => storyDraw.owns(e.kind) && storyDraw.activeTell(e)) : [];
-    const dark = state.room?.dark || state.mode === 'random' && state.room?.mood === 'dark';
+    const dispatch = globalThis.AdventureEngine?.dispatchView?.(state);
+    const dark = state.room?.dark || darkExpedition(state, dispatch);
     const paintStoryTells = () => storyTells.forEach(e => storyDraw.telegraph(c, e, enemyTime, local, still, dark));
     const intercepting = state.status === 'playing' && coreRoom && enemies.find(e =>
       e.kind === 'boss' && !e.timber && e.hp > 0 && !e.dead && !e.rhythm && !e.stagger && e.intercept?.remaining > 0 &&
@@ -4770,7 +4858,7 @@
     rect(c,0,0,W,H,'#142a28'); c.save(); c.translate(motion.x,motion.y);
     floor(c, state);
     chapterFloor(c, state, time, still, trainEndingAge);
-    expeditionFloor(c, state, time, still);
+    expeditionFloor(c, state, time, still, dispatch);
     rescueFloor(c, state, time, still, local);
     lanternAuras(c, state);
     // Canal collision strips describe the gap in the floor, not upright walls.
@@ -4812,7 +4900,7 @@
         y: storyFloatingBox(p, state) ? p.y - 40 : p.y,
         draw: () => storyFloatingBox(p, state) ? storyFloat(c, p, state, time, still) : paintProp(c, p, time)
       })),
-      ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still) })),
+      ...values(state.interactables).map(item => ({ y: item.y, draw: () => interactable(c, item, time, state, localId, still, dispatch) })),
       ...enemies.map(e => ({ y: e.y, draw: () => {
         const pose = enemyPoses.get(e.id);
         if (train && e.trainReturner === true) trainReturner(c, e, pose, viewTop, still);
@@ -4849,7 +4937,8 @@
       });
     }
     ambient(c, state, time);
-    storyDarkness(c, state);
+    storyDarkness(c, state, dispatch);
+    dispatchVentCue(c, dispatch, enemyTime, still);
     // A false lamp remains visible without punching a light hole in the fog.
     roomEchoLamps(c, state, enemyTime, still);
     // Telegraphs remain legible when a fog or lantern mask hides the attacker.

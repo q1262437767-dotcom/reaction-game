@@ -414,3 +414,90 @@ test('an echo shot makes a lamp on an enemy hit and repeat fire preserves its ta
   assert.equal(after[0].id, lamp.id);
   assert.ok(after[0].ttl < firstTtl - 0.5, 'repeat fire does not reset the lamp life');
 });
+
+function dispatchExpedition(players) {
+  for (let seed = 1; seed <= 30; seed++) {
+    const run = E.create({ mode: 'random', players, seed });
+    if (E.dispatchView(run)) return run;
+  }
+  assert.fail('at least one seeded expedition should contain a dispatch station');
+}
+
+test('the dispatch station keeps the furnace gate optional and synchronizes both circuits across rooms', () => {
+  const state = dispatchExpedition(2);
+  const station = E.dispatchView(state).room;
+  assert.notEqual(station, state.bossIndex);
+  assert.equal(E.enterRoom(state, station, true, 'p1'), true);
+  assert.equal(E.enterRoom(state, state.bossIndex, true, 'p2'), true);
+  Object.assign(state.players.p2, { x: 835, y: 430 });
+  state.players.p1.invuln = state.players.p2.invuln = 4;
+  const link = channel(state);
+  link.receive('linked furnace before awakening');
+  assert.equal(link.guest.exploration.dispatch.circuit, 'off');
+  assert.equal(link.guest.exploration.bossAwake, false);
+  assert.equal(link.guest.enemies.some(enemy => enemy.kind === 'boss'), false);
+
+  state.exploration.kills = state.exploration.target - 1;
+  E.step(state, {}, 1 / 60);
+  assert.equal(state.exploration.bossAwake, false);
+  interactAt(state, 'p1', 'dispatch-light');
+  link.receive('light from the station');
+  const light = E.dispatchView(link.guest);
+  assert.equal(light.arena, true);
+  assert.equal(light.circuit, 'light');
+  assert.equal(light.lights.length, 2);
+  assert.equal(link.guest.exploration.bossAwake, false);
+
+  state.exploration.kills = state.exploration.target;
+  E.step(state, {}, 1 / 60);
+  link.receive('normal kill threshold awakens the boss');
+  assert.equal(link.guest.enemies.some(enemy => enemy.kind === 'boss'), true);
+  const patrolDistances = () => link.guest.enemies.filter(enemy => enemy.name === '巡灯机').map(enemy =>
+    Math.min(...light.lights.map(lamp => Math.hypot(enemy.x - lamp.x, enemy.y - lamp.y))));
+  const initialPatrols = patrolDistances();
+  assert.equal(initialPatrols.length, 2);
+  for (let i = 0; i < 153; i++) E.step(state, {}, 1 / 60);
+  link.receive('patrols follow the lighting circuit');
+  assert.ok(patrolDistances().every((distance, index) => distance < initialPatrols[index] - 40));
+  interactAt(state, 'p1', 'dispatch-vent');
+  link.receive('vent from a different room');
+  assert.equal(E.dispatchView(link.guest).circuit, 'vent');
+  assert.deepEqual(link.guest.playerRooms, { p1: station, p2: state.bossIndex });
+  assert.ok(link.counts[1] >= 2, 'circuit changes are delivered in ordinary deltas');
+
+  const forged = wire(link.guest);
+  forged.exploration.dispatch.room = state.bossIndex;
+  assert.equal(client.validateGuest(forged), false, 'the furnace cannot be its own station');
+  const base = E.syncBaseline(link.guest), view = E.viewForPlayer(state, 'p2');
+  const delta = wire(E.syncDiff(view, base));
+  assert.equal(client.validateSync(delta, link.guest, base), true);
+  delta.exploration = wire(view.exploration);
+  delta.exploration.dispatch.circuit = 'both';
+  assert.equal(client.validateSync(delta, link.guest, base), false, 'invalid circuit in an expanded delta');
+});
+
+test('a solo route chosen before entering the arena gives one opening per vent pulse', () => {
+  const state = dispatchExpedition(1), station = E.dispatchView(state).room;
+  assert.equal(E.enterRoom(state, station, true, 'p1'), true);
+  interactAt(state, 'p1', 'dispatch-vent');
+  assert.equal(E.enterRoom(state, state.bossIndex, true, 'p1'), true);
+  assert.equal(E.dispatchView(state).circuit, 'vent');
+  state.exploration.kills = state.exploration.target;
+  E.step(state, {}, 1 / 60);
+  const boss = state.enemies.find(enemy => enemy.kind === 'boss');
+  assert.ok(boss);
+  for (let i = 0; i < 360 && E.dispatchView(state).phase !== 'warning'; i++) E.step(state, {}, 1 / 60);
+  assert.equal(E.dispatchView(state).phase, 'warning');
+  for (let i = 0; i < 90 && E.dispatchView(state).phase !== 'active'; i++) E.step(state, {}, 1 / 60);
+  assert.equal(E.dispatchView(state).phase, 'active');
+
+  const { x, y } = E.dispatchView(state).vent;
+  Object.assign(boss, { x, y, weakTime: 0 });
+  E.step(state, {}, 1 / 60);
+  const opening = state.exploration.dispatch.openedAt;
+  assert.ok(opening > 0 && boss.weakTime > 0);
+  Object.assign(boss, { x, y, weakTime: 0 });
+  E.step(state, {}, 1 / 60);
+  assert.equal(state.exploration.dispatch.openedAt, opening);
+  assert.equal(boss.weakTime, 0, 'repeat contact cannot open the same pulse twice');
+});

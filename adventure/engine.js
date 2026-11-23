@@ -10,6 +10,10 @@
   var ECHO_RADIUS = 10, ECHO_LIFE = 5, ECHO_SAME_SPOT = 42;
   var HOOK_REACH = 120, HOOK_ARC = 1.15, HOOK_TETHER = 180, HOOK_LIFE = 4;
   var VENT_REACH = 132, VENT_ARC = Math.PI / 4, VENT_WINDOW = 0.85;
+  var DISPATCH_PERIOD = 6, DISPATCH_WARN = 0.4, DISPATCH_FIRE = 1.15, DISPATCH_END = 1.9;
+  var DISPATCH_SWITCH_DELAY = 2.5;
+  var DISPATCH_LIGHTS = Object.freeze([Object.freeze({ x: 205, y: 375, r: 115 }), Object.freeze({ x: 760, y: 185, r: 115 })]);
+  var DISPATCH_VENT = Object.freeze({ x: 520, y: 340, r: 70 });
   var MISSIONS = {
     ember: { id: 'ember', name: '熄灭炉心', goal: '穿过遗迹，击败炉心守卫，带回营地灯芯', total: 1, coins: 40 },
     salvage: { id: 'salvage', name: '物资回收', goal: '搜集 3 箱补给，再到水闸撤离点按 E 撤离', total: 3, coins: 30 },
@@ -2165,6 +2169,45 @@
         x: door ? door.x : 480, y: door ? door.y : 300, duration: 1.15 });
     } else moveHunter(s, destination);
   }
+  function dispatchPhase(d, time) {
+    if (d.circuit !== 'vent') return d.circuit;
+    var beat = Math.max(0, time - d.changedAt) % DISPATCH_PERIOD;
+    return beat >= DISPATCH_FIRE && beat < DISPATCH_END ? 'active' :
+      beat >= DISPATCH_WARN && beat < DISPATCH_FIRE ? 'warning' : 'idle';
+  }
+  function dispatchView(s) {
+    var d = s && s.mode === 'random' && s.exploration && s.exploration.dispatch;
+    if (!d) return null;
+    return { room: d.room, bossRoom: s.bossIndex, circuit: d.circuit,
+      station: !!s.room && s.room.index === d.room, arena: !!s.room && s.room.index === s.bossIndex,
+      phase: dispatchPhase(d, s.time), lights: DISPATCH_LIGHTS, vent: DISPATCH_VENT, openedAt: d.openedAt };
+  }
+  function setDispatchCircuit(s, p, target) {
+    var d = s.exploration && s.exploration.dispatch;
+    if (!d || s.room.index !== d.room || !foxSight(s, p, target, 3)) return false;
+    var circuit = target.kind === 'dispatch-light' ? 'light' : 'vent';
+    if (d.circuit === circuit || d.circuit !== 'off' && s.time - d.changedAt < DISPATCH_SWITCH_DELAY) return false;
+    d.circuit = circuit; d.changedAt = s.time;
+    s.message = circuit === 'light' ? '炉心地灯亮了，巡灯机正在靠过去。' : '炉心排风已通，气口按拍喷气。';
+    s.messageTime = 3;
+    burst(s, 'spark', target.x, target.y, circuit === 'light' ? '#eac08a' : '#9ad4d7', 8);
+    return true;
+  }
+  function updateDispatchVent(s) {
+    var d = s.exploration && s.exploration.dispatch;
+    if (!d || d.circuit !== 'vent' || s.room.index !== s.bossIndex ||
+        d.openedAt !== null && s.time - d.openedAt < DISPATCH_PERIOD - (DISPATCH_END - DISPATCH_FIRE)) return;
+    if (dispatchPhase(d, s.time) !== 'active') return;
+    var boss = s.enemies.find(function (e) {
+      return e.kind === 'boss' && e.hp > 0 && e.weakTime <= 0 && dist(e, DISPATCH_VENT) <= e.r + DISPATCH_VENT.r;
+    });
+    if (!boss) return;
+    d.openedAt = s.time;
+    openWeakpoint(s, boss, null, 'counter', 2.2);
+    boss.ventOpenUntil = s.time + 2.2;
+    burst(s, 'steam', boss.x, boss.y, '#b0dbe2', 12);
+    s.message = '泄压掀开了护板。'; s.messageTime = 2;
+  }
   function createExploration(s) {
     // A small polyomino begins with one loop, then grows in a different shape
     // for each seed. Every touching pair of cells has a two-way doorway.
@@ -2235,6 +2278,14 @@
     var encounters = ['patrol', 'crossfire', 'bulwark'];
     plain.filter(function (r) { return r !== refuge; }).forEach(function (r, index) { r.encounter = encounters[(s.seed + index) % 3]; });
     s.exploration = { kills: 0, target: 0, totalEnemies: 0, bossAwake: false, bossSpawned: false, bossDefeated: false };
+    if (s.seed % 3 === 0) {
+      var core = s.rooms[s.bossIndex];
+      function circuitDistance(r) { return Math.abs(r.gx - core.gx) + Math.abs(r.gy - core.gy); }
+      var station = plain.filter(function (r) { return r !== refuge; }).sort(function (a, b) {
+        return circuitDistance(a) - circuitDistance(b) || b.neighbors.length - a.neighbors.length || a.index - b.index;
+      })[0];
+      if (station) s.exploration.dispatch = { room: station.index, circuit: 'off', changedAt: 0, openedAt: null };
+    }
     var lanternRoom = s.rooms.find(function (r) { return r.kind === 'battle' && !r.elite && !r.eventKind; });
     s.rooms.forEach(function (r) {
       var data = randomRoomContent(s, r, r.eventKind === 'breach' || r === lanternRoom);
@@ -2399,6 +2450,13 @@
           label: '领取藏室补给', active: false, used: false });
       } else room.name = '遗落升降台';
     }
+    if (s.exploration.dispatch && room.index === s.exploration.dispatch.room) {
+      room.name = '断灯调度站';
+      data.interactables.push({ id: 'dispatch-light', kind: 'dispatch-light', x: 380, y: 300, r: 24,
+        label: '给炉心照明送电', active: true, used: false });
+      data.interactables.push({ id: 'dispatch-vent', kind: 'dispatch-vent', x: 580, y: 300, r: 24,
+        label: '给炉心排风送电', active: true, used: false });
+    }
     data.enemies.forEach(function (foe) { placeEnemyInRoom(data, foe); });
     return data;
   }
@@ -2430,8 +2488,20 @@
     if (!run || run.bossAwake || run.kills < run.target) return;
     run.bossAwake = true; run.bossSpawned = true;
     var boss = enemy(s, 'boss', 640, 300);
-    if (s.room && s.room.index === s.bossIndex) { placeEnemyInRoom(s, boss, alivePlayers(s)); s.enemies.push(boss); }
-    else { placeEnemyInRoom(s.roomData[s.bossIndex], boss); s.roomData[s.bossIndex].enemies.push(boss); }
+    var local = s.room && s.room.index === s.bossIndex;
+    var arena = local ? s : s.roomData[s.bossIndex], players = local ? alivePlayers(s) : undefined;
+    placeEnemyInRoom(arena, boss, players); arena.enemies.push(boss);
+    if (run.dispatch) {
+      // The two patrols arrive with the boss; they are independent of the
+      // original map's wake quota and retain its RNG sequence.
+      var beforePatrols = s.rng;
+      [[455, 235], [565, 407]].forEach(function (point) {
+        var patrol = enemy(s, 'chaser', point[0], point[1]);
+        patrol.name = '巡灯机';
+        if (placeEnemyInRoom(arena, patrol, players)) arena.enemies.push(patrol);
+      });
+      s.rng = beforePatrols;
+    }
     s.message = '炉心守卫已苏醒'; s.messageTime = 3;
     event(s, 'boss-awakened', { room: s.bossIndex });
   }
@@ -4004,6 +4074,7 @@
       if (isRouteChapter(s) && target.kind.indexOf('route-') === 0) return interactRouteChapter(s, p, target);
       if (isTrainChapter(s) && target.kind.indexOf('train-') === 0) return interactTrainChapter(s, p, target);
       if (s.rescue && (target.kind === 'rescue-survivor' || target.kind === 'rescue-extract')) return rescueInteraction(s, p, target);
+      if (target.kind === 'dispatch-light' || target.kind === 'dispatch-vent') return setDispatchCircuit(s, p, target);
       if (target.kind === 'refuge-rest' || target.kind === 'refuge-relic') return chooseRefuge(s, p, target);
       if (target.kind === 'relic') return takeRelic(s, target);
       if (target.kind === 'sluice' || target.kind === 'lift' || target.kind === 'forge') return startRoomEvent(s, target);
@@ -4280,7 +4351,7 @@
       if (s.mode === 'random' || s.mode === 'chapter' || s.rescue) {
         if (e.kind === 'boss') { if (s.mode === 'random') s.exploration.bossDefeated = true; }
         else {
-          if (s.mode === 'random') s.exploration.kills += 1;
+          if (s.mode === 'random' && !(s.exploration.dispatch && s.room.index === s.bossIndex)) s.exploration.kills += 1;
           if (e.elite && BUFFS[e.relicBuff]) {
             var available = Object.keys(BUFFS).filter(function (key) { return key !== e.relicBuff && s.runBuffs.indexOf(key) < 0; });
             var choices = s.runBuffs.indexOf(e.relicBuff) < 0 ? [e.relicBuff] : [];
@@ -5615,7 +5686,8 @@
     var cartTarget = trainCartTarget(s);
     if (cartTarget) targets.push(cartTarget);
     if (!targets.length) return;
-    var readyAt = {};
+    var readyAt = {}, dispatch = s.exploration && s.exploration.dispatch;
+    var litArena = dispatch && dispatch.circuit === 'light' && s.room.index === s.bossIndex;
     if (!s.practice && dt > 0) s.enemies.forEach(function (e) { readyAt[e.id] = e.attackCd - dt; });
     s.enemies.forEach(function (e) {
       if (e.hp <= 0) return;
@@ -5668,6 +5740,12 @@
       if (!s.practice && dt <= 0) return;
       var brain = !s.practice && hasOrdinaryBrain(e) ? ordinaryBrain(s, e) : null;
       var d = dist(e, p), dx = p.x - e.x, dy = p.y - e.y;
+      if (litArena && e.kind === 'chaser' && e.windup <= 0 && !decoys.length && d > 96) {
+        var light = dist(e, DISPATCH_LIGHTS[0]) < dist(e, DISPATCH_LIGHTS[1]) ? DISPATCH_LIGHTS[0] : DISPATCH_LIGHTS[1];
+        e.facing = Math.atan2(light.y - e.y, light.x - e.x);
+        if (dist(e, light) > 38) ordinaryWalk(s, e, light, dt, 1.2);
+        return;
+      }
       if (e.kind === 'charger' && e.chargeTime > 0) {
         e.chargeTime = Math.max(0, e.chargeTime - dt);
         var chargeBlocked = rushMove(s, e, 410 * dt, true);
@@ -6065,6 +6143,12 @@
       !(q.kind === 'rescue-survivor' && s.rescue.guide === p.id) && dist(p, q) < 76; })
       .sort(function (a, b) { return dist(p, a) - dist(p, b); })[0];
     if (special) {
+      if (special.kind === 'dispatch-light' || special.kind === 'dispatch-vent') {
+        var dispatch = s.exploration && s.exploration.dispatch;
+        var choice = special.kind === 'dispatch-light' ? 'light' : 'vent';
+        if (dispatch && dispatch.circuit === choice) return choice === 'light' ? '照明线已接通' : '排风线已接通';
+        if (dispatch && dispatch.circuit !== 'off' && s.time - dispatch.changedAt < DISPATCH_SWITCH_DELAY) return '线路切换中';
+      }
       if (!special.active && ['chapter-sluice', 'timber-brake', 'rail-route', 'route-winch'].indexOf(special.kind) >= 0) return special.description || '';
       if (!special.active && isTrainChapter(s) && special.kind.indexOf('train-') === 0) return special.description || '';
       if (!special.active && isStory(s) && special.kind.indexOf('story-') === 0 && special.description) return special.description;
@@ -6196,7 +6280,7 @@
     if (!s._split || s._split.advanceGlobals) { updateHunt(s, dt); updateTimber(s, dt); }
     else if (s.mode === 'hunt' && s.hunt.targetRoom === s.room.index) updateHunt(s, 0);
     updateRailChapter(s, dt); advanceTrainChapter(s, dt); updateStory(s, dt); updateRescue(s, dt);
-    updateEnemies(s, dt); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
+    updateEnemies(s, dt); updateDispatchVent(s); updateRailAlly(s, dt); updateBullets(s, dt); updateCompanions(s, dt);
     if (s.status !== 'playing') return s;
     aliveCombatants(s).forEach(function (p) {
       if (s.fires.some(function (f) { return f.active && dist(f, p) < f.r + p.r - 5; })) damagePlayer(s, p, 1, 'fire');
@@ -6543,5 +6627,5 @@
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue };
+    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue, dispatchView: dispatchView };
 });
