@@ -85,7 +85,8 @@ test('practice, chapter, hunt, and relay stay inside the cloud coin caps', () =>
   }, 'chapter-run');
   assert.equal(chapter.reward, 40);
   assert.equal(chapter.profile.missions.chapter1.clears, 1);
-  assert.equal(C.canUseSpear(chapter.profile), true);
+  assert.equal(C.canUseSpear(chapter.profile), false);
+  assert.ok(!chapter.unlocks.includes('武器解锁 · 遗迹长枪'));
   assert.equal(C.canPlay(chapter.profile, 'chapter1_2', 1), true);
   assert.equal(C.canPlay(null, 'chapter1_2', 1), false);
 

@@ -7,8 +7,8 @@
   const styleColors = { echo: '#d5c4ec', pursuit: '#edcf91', phantom: '#b0dfd2' };
   const styleNames = { echo: '回响反击', pursuit: '闪身射击', phantom: '残影牵制' };
   const weaponLabels = {
-    blade: '近战 · 旅人短刃', spear: '近战 · 遗迹长枪', hook: '近战 · 拖钩刃',
-    pistol: '远程 · 手枪', scatter: '远程 · 散射枪', echo: '远程 · 回声灯铳', vent: '远程 · 泄压筒'
+    blade: '近战 · 旅人短刃', spear: '近战 · 旅人短刃', hook: '近战 · 旅人短刃',
+    pistol: '远程 · 手枪', scatter: '远程 · 散射枪', echo: '远程 · 手枪', vent: '远程 · 手枪'
   };
   const weaponEffects = new Set(['echo-lamp', 'hook-latch', 'hook-drag', 'vent-shot', 'vent-break']);
   const floorCache = new Map();
@@ -1069,6 +1069,12 @@
   function openingWash(c, wash, valve, time, still) {
     const { x, y, r, active } = wash;
     const nozzle = { x: x - r + 10, y };
+    ellipse(c, x, y + 10, r * .86, r * .34, '#6f9eaa2e');
+    ellipse(c, x - 18, y + 6, r * .36, 12, '#c5e7ea24');
+    c.save(); c.setLineDash([8, 12]);
+    path(c, [[valve.x + 8, valve.y + 14], [valve.x + 36, y + 12], [nozzle.x, y + 8], [x - 36, y + 8]], '#8fbfb888', 3);
+    c.restore();
+    label(c, '浅水 · 战斗用', x, y + r * .42, '#b7d4cf', 11);
     const pipe = [[valve.x, valve.y], [valve.x, y], [nozzle.x, y]];
     path(c, pipe, '#253f43', 8);
     path(c, pipe, active ? '#6ca8ae' : '#57706b', 2);
@@ -1147,6 +1153,45 @@
       for (const side of [-1, 1]) path(c, [[crate.x + side * 22, crate.y - 22], [crate.x + side * 26, crate.y - 22], [crate.x + side * 26, crate.y - 12]], '#b5cc9c', 2);
     }
   }
+  function revisionCues(c, state, time, still) {
+    const chapter = state.chapter, room = state.room?.index, id = chapter?.id;
+    if (id === 'chapter3_4' && room === 1 && chapter.link >= 2) {
+      const x = 660, y = 250;
+      rect(c, x - 8, y - 18, 16, 22, '#24383a');
+      rect(c, x - 5, y - 15, 10, 12, '#d7e7b8');
+      glow(c, x, y - 8, 28, '#d5e7a833');
+      label(c, '闸灯稳住', x, y + 16, '#d5e7b4', 12);
+    }
+    const trial = values(state.interactables).find(item => item.kind === 'story-trial');
+    if (trial && id === 'chapter5' && room === 0) {
+      const live = Number.isFinite(trial.readyAt) && time / 1000 < trial.readyAt;
+      rect(c, trial.x - 16, trial.y - 28, 32, 18, '#243236');
+      rect(c, trial.x - 10, trial.y - 24, 8, 8, live ? '#f3d48a' : '#3d4c45');
+      rect(c, 780, 150, 10, 16, '#2a3330');
+      rect(c, 782, 152, 6, 8, '#241c18');
+      label(c, live ? '中继回应' : '试灯待命', trial.x, trial.y + 22, live ? '#f0d7a4' : '#aeb8a4', 12);
+      label(c, '下一站仍暗', 800, 132, '#8d968c', 11);
+    }
+    if (id === 'chapter2_3' && room === 0) {
+      const x = 560, y = 250;
+      rect(c, x - 8, y - 22, 16, 22, '#6d5a48');
+      rect(c, x - 14, y - 8, 10, 8, '#c7a56a');
+      rect(c, x - 12, y - 6, 6, 5, '#e6d2a4');
+      rect(c, 700, 150, 14, 18, '#1d3338');
+      rect(c, 703, 153, 8, 8, still || Math.floor(time / 400) % 2 === 0 ? '#8fd0ea' : '#245868');
+      label(c, '两手抱着油壶', x, y + 18, '#e6d7b8', 11);
+    }
+    if (id === 'chapter5_3' && room === 3) {
+      const travel = still ? 1 : Math.min(1, (time / 1000 % 7) / 4.5);
+      const x = 300 + travel * 220, y = 360;
+      rect(c, x - 5, y - 16, 10, 14, '#8d735c');
+      rect(c, x - 4, y - 22, 8, 7, '#e4c7a4');
+      rect(c, 560, 250, 12, 28, '#5c5344');
+      rect(c, 562, 246, 8, 8, '#f0d48a');
+      glow(c, 566, 250, 30, '#f0d48a33');
+      label(c, travel > .92 ? '小林走到灯下' : '小林自己走', x, y + 16, '#f0e2c4', 11);
+    }
+  }
   function inspectionWorker(c, scene, pose) {
     chapterEndingCivilian(c, pose.x, pose.y, 'helper', pose.gait, true);
     if (pose.cargo) {
@@ -1155,8 +1200,12 @@
       label(c, '扫描 · 货物', pose.x, pose.y - 49, '#f0b291', 13);
     } else {
       const recovered = pose.age >= 3;
-      const text = recovered ? '巡线工 · 已脱险' : scene.phase === 'recognized' ? '识别 · 人员' : '检线官停机';
+      const text = recovered ? '巡线工 · 已脱险' : pose.age < 1.15 ? '松钩 · 靴子落地' : '自己走下秤台';
       label(c, text, pose.x, pose.y - 47, '#bcdaaf', 12);
+      if (pose.age > .28 && pose.age < 1.25) {
+        ellipse(c, pose.x - 7, pose.y + 16, 8, 3, '#e6d3ae');
+        ellipse(c, pose.x + 8, pose.y + 16, 8, 3, '#e6d3ae');
+      }
     }
   }
   function dispatchFloor(c, scene, state, time) {
@@ -2998,7 +3047,12 @@
     }
     if ((kind === 'charger' || kind==='brute') && (e.chargeTime > 0 || e.rhythm && e.rhythm.type==='rush' && e.rhythm.phase==='active')) { const a = e.rhythm ? num(e.rhythm.angle) : Math.atan2(num(e.chargeY), num(e.chargeX, 1)); path(c, [[x - Math.cos(a) * 46, y - Math.sin(a) * 46],[x,y]], '#e6ab7470', kind==='brute'?28:18); }
     const impact = coreImpact || events.find(({ event, age }) => event.enemyId === e.id && age <= .13 && ['enemy-hit','weakpoint-hit','environment-hit'].includes(event.type));
+    if (num(e.washLean) > 0 && !boss) {
+      ellipse(c, x + 10, y + 8, 18, 6, '#d7f4f6aa');
+      ellipse(c, x - 4, y + 10, 7, 3, '#f4ffff');
+    }
     c.save(); c.translate(Math.round(x), Math.round(y));
+    if (num(e.washLean) > 0 && !boss) { c.rotate(.42); c.translate(12, 5); }
     c.translate(0, pose.bob); c.rotate(pose.tilt); c.transform(1, 0, pose.turn, 1, 0, 0);
     if (impact && !still) {
       const recoil = coreImpact ? (1 - impact.age / .20) * 6 : (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
@@ -3730,10 +3784,10 @@
       }
       if(opening){
         for(const side of [-1,1])path(c,[[x+side*(12+motion*9),y-17],[x+side*(7+motion*9),y-17],[x+side*(7+motion*9),y-3],[x+side*(12+motion*9),y-3]],color,2);
-        const pillarOpening = e.playerId === null && e.source === 'counter' && coreRoom &&
-          values(state.enemies).some(enemy => enemy.id === e.enemyId && enemy.kind === 'boss' && enemy.stage === 1);
+        const pillarClang = e.playerId === null && e.source === 'counter' && coreRoom &&
+          values(state.enemies).some(enemy => enemy.id === e.enemyId && enemy.kind === 'boss' && enemy.stage === 1 && enemy.coreExposed !== true);
         const openingPillar = coreRoom && e.source === 'furnace-core';
-        impactLabel(c,openingPillar ? '柱碎' : pillarOpening ? '柱碎 · 炉芯外露' : '破绽',x,y+26+motion*5,color,openingPillar || pillarOpening ? 12 : 10);return;
+        impactLabel(c, openingPillar ? '炉芯外露' : pillarClang ? '碰响' : '破绽', x, y + 26 + motion * 5, color, openingPillar || pillarClang ? 12 : 10); return;
       }
       if(scatter){
         const owner=state.players&&state.players[e.playerId],angle=num(e.angle,owner?Math.atan2(y-num(owner.y),x-num(owner.x)):0);
@@ -4993,7 +5047,14 @@
     rescueFloor(c, state, time, still, local);
     lanternAuras(c, state);
     // Canal collision strips describe the gap in the floor, not upright walls.
-    paintWalls(c, storyCanal(state) ? values(state.walls).filter(w => !/^story-canal-/.test(w.id || '')) : state.walls, coreRoom ? 'core-pillar-west' : '');
+    const westExposed = coreRoom && enemies.some(e => e.kind === 'boss' && !e.timber && e.coreExposed === true);
+    paintWalls(c, storyCanal(state) ? values(state.walls).filter(w => !/^story-canal-/.test(w.id || '')) : state.walls, westExposed ? 'core-pillar-west' : '');
+    if (coreRoom && !westExposed && events.some(({ event, age }) => event.type === 'weakpoint-open' && event.source === 'counter' && age < .45)) {
+      const px = 637, py = 420;
+      for (const [dx, dy] of [[-8, -6], [6, -2], [0, 8]]) rect(c, px + dx, py + dy, 3, 3, '#f4efe2');
+      label(c, '碰响', px, py - 18, '#efe6cf', 12);
+    }
+    revisionCues(c, state, enemyTime, still);
     if (ending) chapterEndingLight(c, ending);
     breachScene(c,state,time,localId,still);
     values(state.doors).forEach(d => door(c, d, time));
