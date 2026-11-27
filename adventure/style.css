@@ -6609,7 +6609,7 @@ body[data-handheld="true"][data-portrait="true"] #game-wrap .stat-health {
 body[data-handheld="true"][data-portrait="true"] #game-wrap .hud-location>#hud-objective {
   
  max-width:none;
-  font-size:13px;
+  font-size:16px;
   line-height:1.45;
   white-space:normal;
   overflow-wrap:anywhere;
@@ -6619,7 +6619,7 @@ body[data-handheld="true"][data-portrait="true"] #game-wrap .hud-location>#hud-o
 body[data-handheld="true"][data-portrait="true"] #game-wrap .weapon-slot,
 body[data-handheld="true"][data-portrait="true"] #game-wrap .quiet-status,
 body[data-handheld="true"][data-portrait="true"] #game-wrap .opportunity-status {
-  font-size:13px;
+  font-size:15px;
   padding:4px 8px
 }
 
@@ -6653,8 +6653,8 @@ body[data-handheld="true"][data-portrait="true"] #game-wrap:has(#start-screen[hi
   
  max-width:calc(100vw - 24px);
   
- padding:8px 12px;
-  font-size:13px;
+  padding:8px 12px;
+  font-size:16px;
   line-height:1.45;
   z-index:8;
   
@@ -6676,7 +6676,7 @@ body[data-handheld="true"][data-portrait="true"] #toast {
   
  overflow:auto;
   padding:12px 14px;
-  font-size:14px;
+  font-size:16px;
   line-height:1.65;
   text-align:left;
   overflow-wrap:anywhere;

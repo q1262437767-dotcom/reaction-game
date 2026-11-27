@@ -1,4 +1,6 @@
-/* Original, code-drawn art for Ruin Runners. No image assets required. */
+/* Ruin Runners rendering. Pixel sheets draw when AdventureSprites has a frame.
+   Code-drawn art remains the fallback for bosses, the fox, barrels, and any
+   sheet that has not loaded. */
 (() => {
   'use strict';
   const W = 960, H = 600, TILE = 32;
@@ -12,6 +14,22 @@
   };
   const weaponEffects = new Set(['echo-lamp', 'hook-latch', 'hook-drag', 'vent-shot', 'vent-break']);
   const floorCache = new Map();
+  let paintCoreRoom = false;
+  let readableScale = 1;
+  function spriteBook() { return globalThis.AdventureSprites || null; }
+  function blitSprite(c, id, x, y, opts) {
+    const book = spriteBook();
+    return !!(book && book.blit(c, id, x, y, opts));
+  }
+  function pixelEnemyId(kind, boss, mechanicalCore) {
+    if (boss || mechanicalCore) return '';
+    return {
+      chaser: 'enemy-blade', duelist: 'enemy-blade', shield: 'enemy-blade',
+      shooter: 'enemy-gun', charger: 'enemy-charger', brute: 'enemy-charger',
+      listener: 'enemy-listener', mistwarden: 'enemy-mist', shadeling: 'enemy-shade',
+      program: 'enemy-program', pulseling: 'enemy-pulse'
+    }[kind] || '';
+  }
   const glowCache = new Map();
   const layerCache = new Map();
   const propCache = new Map();
@@ -87,12 +105,30 @@
     });
     c.drawImage(sprite, 0, 0);
   }
-  function label(c, text, x, y, color = '#d6dfbd', size = 11, align = 'center') { c.font = `600 ${size}px ${font}`; c.textAlign = align; c.textBaseline = 'middle'; c.lineWidth = 3; c.strokeStyle = '#112225df'; c.strokeText(String(text), Math.round(x), Math.round(y)); c.fillStyle = color; c.fillText(String(text), Math.round(x), Math.round(y)); }
+  function label(c, text, x, y, color = '#d6dfbd', size = 11, align = 'center') { const px = Math.max(8, Math.round(size * readableScale)); c.font = `600 ${px}px ${font}`; c.textAlign = align; c.textBaseline = 'middle'; c.lineWidth = 3; c.strokeStyle = '#112225df'; c.strokeText(String(text), Math.round(x), Math.round(y)); c.fillStyle = color; c.fillText(String(text), Math.round(x), Math.round(y)); }
   function path(c, points, color, width = 1) { c.strokeStyle = color; c.lineWidth = width; c.beginPath(); points.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke(); }
   function grass(c, x, y, color = '#677e4f', scale = 1) { rect(c, x, y - 5 * scale, 2 * scale, 5 * scale, color); rect(c, x - 3 * scale, y - 3 * scale, 2 * scale, 3 * scale, color); rect(c, x + 3 * scale, y - 4 * scale, 2 * scale, 4 * scale, color); }
   function crystal(c, x, y, size = 1, color = '#a5cba0') { c.fillStyle = color; c.beginPath(); c.moveTo(x, y - 9 * size); c.lineTo(x + 5 * size, y - 2 * size); c.lineTo(x + 3 * size, y + 5 * size); c.lineTo(x - 3 * size, y + 5 * size); c.lineTo(x - 5 * size, y - 2 * size); c.closePath(); c.fill(); rect(c, x - size, y - 5 * size, 2 * size, 7 * size, '#e9edb4'); }
 
+  function makePixelFloor(slab, moss) {
+    const surface = document.createElement('canvas'); surface.width = W; surface.height = H;
+    const c = surface.getContext('2d');
+    c.imageSmoothingEnabled = false;
+    for (let y = 0, row = 0; y < H; y += TILE, row += 1) {
+      for (let x = row % 2 ? -TILE : 0; x < W; x += TILE * 2) c.drawImage(slab, Math.round(x), Math.round(y));
+    }
+    if (moss) {
+      c.drawImage(moss, 48, 48);
+      c.drawImage(moss, W - 72, 56);
+      c.drawImage(moss, 64, H - 72);
+      c.drawImage(moss, W - 80, H - 64);
+    }
+    return surface;
+  }
   function makeFloor(key, kind) {
+    const book = spriteBook();
+    const slab = book && book.canvas('floor-slab');
+    if (slab) return makePixelFloor(slab, book.canvas('floor-moss'));
     const surface = document.createElement('canvas'); surface.width = W; surface.height = H;
     const c = surface.getContext('2d'); const rand = seedRandom(hash(key));
     rect(c, 0, 0, W, H, '#25383e');
@@ -1103,6 +1139,11 @@
     const near = local && !local.downed && !local.carry && Math.hypot(local.x - x, local.y - y) < 84;
     const color = wash.active ? '#a4d6d1' : wash.ready ? '#c6c887' : '#78918a';
     shadow(c, x, y, 22, .28);
+    if (blitSprite(c, 'valve', x, y, { anchor: 'center' })) {
+      if (near) label(c, wash.active ? '冷水冲洗' : wash.ready ? 'E · 放冷水' : '阀门回水', x, y + 28, color, 12);
+      else label(c, '冲洗阀', x, y + 26, '#aebba2', 10);
+      return;
+    }
     rect(c, x - 19, y - 11, 38, 18, '#243c3b');
     rect(c, x - 16, y - 10, 32, 4, '#718479');
     rect(c, x - 3, y - 22, 6, 17, '#999271');
@@ -1323,7 +1364,7 @@
       rect(c, bx, y + 1, 8, Math.min(17, height - 2), '#3c4d4d'); rect(c, bx + 1, y + 1, 6, 3, '#a18b61');
       rect(c, bx + 2, y + 7, 2, 2, '#c1ac7a'); rect(c, bx + 2, y + 13, 2, 2, '#78817a');
     }
-    if (w.corePillar === true) corePillarFace(c, x, y, width, height, openingPillar);
+    if (w.corePillar === true) corePillarFace(c, x, y, width, height, openingPillar, w.id);
     if (w.routeWall === true) {
       const crack = [[x + width * .42, y + 3], [x + width * .53, y + 14], [x + width * .43, y + 23], [x + width * .57, y + 34], [x + width * .49, y + height - 2]];
       path(c, crack.map(([px, py]) => [px + 2, py]), '#d0aa72', 3);
@@ -1336,7 +1377,9 @@
     }
   }
 
-  function corePillarFace(c, x, y, width, height, openingPillar) {
+  function corePillarFace(c, x, y, width, height, openingPillar, wallId) {
+    const sheet = openingPillar ? 'pillar-open' : wallId === 'core-pillar-west' ? 'pillar-west' : 'pillar-east';
+    if (blitSprite(c, sheet, x + width / 2, y + height - 2, { anchor: 'feet' })) return;
     const center = x + width / 2, base = y + height - 14;
     for (const brace of [y + 10, base]) {
       rect(c, x + 3, brace, width - 6, 7, '#685141');
@@ -1377,6 +1420,10 @@
     const flicker = 1 + Math.sin(time * .005 + x) * .04 + Math.sin(time * .012) * .025;
     glow(c, x, y, 78 * scale * flicker, '#e6a14c25');
     glow(c, x, y - 2, 24 * scale, '#f0ba5b2b');
+    if (blitSprite(c, 'lamp', x, y, { anchor: 'center', dw: Math.round(48 * scale), dh: Math.round(48 * scale) })) {
+      if (Math.sin(time * .0015 + x) > .1) { const rise = (time * .018 + x * 3) % 23; alpha(c, 1 - rise / 23, () => rect(c, x + Math.sin(rise) * 5, y - 14 - rise, 2, 2, '#e6ba6d')); }
+      return;
+    }
     c.save(); c.translate(Math.round(x), Math.round(y)); c.scale(scale, scale);
     rect(c, -7, -11, 14, 20, '#14252c'); rect(c, -6, -10, 12, 18, '#654a32');
     rect(c, -4, -8, 8, 13, '#b4783d'); rect(c, -3, -7, 6, 10, '#e7b968');
@@ -1392,6 +1439,11 @@
   function door(c, d, time) {
     const x = num(d.x), y = num(d.y), w = num(d.w, 48), h = num(d.h, 28), vertical = h > w;
     const isLocked = !!d.locked, color = isLocked ? '#b79c64' : '#a4c29a';
+    const sheet = paintCoreRoom && d.id === 'door-west' ? 'furnace-door' : 'gate';
+    if (blitSprite(c, sheet, x + w / 2, y + h / 2, { anchor: 'center' })) {
+      if (d.label) label(c, d.label, x + w / 2, y + h + 12, color, 9);
+      return;
+    }
     rect(c, x - 3, y - 3, w + 6, h + 6, '#10232b'); rect(c, x, y, w, h, '#253a41');
     if (vertical) {
       rect(c, x, y, 6, h, '#72817b'); rect(c, x + 1, y + 1, 2, h - 2, '#a5ac94'); rect(c, x + w - 6, y, 6, h, '#425b60');
@@ -1728,9 +1780,35 @@
     label(c, on ? name + ' · 已接通' : near && item.active ? 'E · 接通' + name : name, x, y + 24, color, 11);
   }
 
+  const DEVICE_SHEET = {
+    'lamp-ward': 'lamp', 'gate-slam': 'gate', 'shade-lamp': 'lamp', 'vent-hush': 'vent',
+    'low-pillar': 'pillar-west', 'mouth-vent': 'vent', 'name-lamp': 'lamp', 'pulse-vent': 'vent'
+  };
+  function paintDeviceSprite(c, item, time, state, localId, sheet) {
+    const x = num(item.x), y = num(item.y);
+    const id = sheet || DEVICE_SHEET[item.verb] || (item.kind === 'story-vent' ? 'vent' : item.kind === 'story-valve' ? 'valve' : 'lamp');
+    shadow(c, x, y, 22, .3);
+    if (num(item.zoneUntil) > num(state.time)) {
+      c.save();
+      c.strokeStyle = '#79B6C8'; c.setLineDash([6, 5]); c.lineWidth = 2;
+      c.beginPath(); c.ellipse(x, y + 8, 78, 32, 0, 0, Math.PI * 2); c.stroke();
+      c.restore();
+    }
+    if (!blitSprite(c, id, x, y - 4, { anchor: 'feet' })) {
+      rect(c, x - 16, y - 22, 32, 28, '#4E6555');
+      rect(c, x - 12, y - 18, 24, 8, '#E4B96B');
+    }
+    const p = state.players && state.players[localId];
+    const nearby = p && !p.downed && Math.hypot(num(p.x) - x, num(p.y) - y) < 100;
+    const active = item.active !== false && !item.used;
+    if (item.label) label(c, nearby && active ? 'E · ' + item.label : item.label, x, y + 30, active ? '#E6C68D' : '#98A395', 12);
+  }
   function interactable(c, item, time, state, localId, still = false, dispatch = null) {
     if (state.mode === 'chapter' && ['chapter-intake', 'rail-route', 'route-pin'].includes(item.kind)) {
       storyMechanism(c, item, state, localId); return;
+    }
+    if (item.kind === 'story-device' || item.kind === 'story-vent' || item.kind === 'story-valve' || item.kind === 'story-trial') {
+      paintDeviceSprite(c, item, time, state, localId); return;
     }
     if (trainChapter(state) && /^train-/.test(item.kind)) { trainInteractable(c, item, time, state, localId, still); return; }
     if (!item || (item.kind === 'relic' && item.used)) return;
@@ -2348,6 +2426,10 @@
     }
     const blink = p.invuln > 0 && Math.floor(time / 80) % 2 === 0;
     c.save(); if (blink) c.globalAlpha = .48; c.translate(Math.round(x), Math.round(y));
+    const facing = num(p.facing);
+    const bodySheet = second ? 'ahe' : 'traveler';
+    const drewBody = blitSprite(c, bodySheet, 0, 14, { anchor: 'feet' });
+    if (!drewBody) {
     // Cut coat tails, layered boots and a leather harness keep the traveler
     // readable in a single small silhouette; highlights are clustered, not noise.
     for (const [bx, phase] of [[-8, 1], [3, -1]]) {
@@ -2372,17 +2454,21 @@
     rect(c, -8, -12, 8, 3, '#b07b49'); rect(c, -7, -9, 4, 8, '#c59352'); rect(c, -6, -8, 1, 6, '#edc77e');
     rect(c, -9, -27, 19, 16, '#172b30'); rect(c, -7, -24, 15, 13, '#d8b38e');
     rect(c, -7, -24, 3, 10, '#b58c71'); rect(c, -4, -23, 9, 8, '#eed0a3'); rect(c, -3, -15, 9, 3, '#ae806a');
-    const facing = num(p.facing);
     if (Math.sin(facing) > -.6) { const look = Math.cos(facing) >= 0 ? 2 : -3; rect(c, look, -20, 2, 3, '#26373b'); rect(c, look + 5, -20, 2, 3, '#26373b'); rect(c, look, -20, 1, 1, '#faf0cf'); }
     rect(c, -10, -28, 20, 7, dark); rect(c, -8, -31, 16, 7, main);
     rect(c, -7, -31, 11, 2, light); rect(c, -6, -29, 3, 4, '#75ac9d'); rect(c, 5, -29, 3, 5, dark);
     rect(c, -12, -23, 25, 4, '#83b2a0'); rect(c, -11, -23, 20, 1, '#d9dfb9'); rect(c, -11, -21, 23, 2, dark);
-    rect(c, -8, -25, 17, 2, '#51483c'); rect(c, 4, -30, 3, 6, '#dec68a'); rect(c, 5, -30, 1, 3, '#fff0c4');
+    rect(c, -8, -25, 17, 2, '#51483c');     rect(c, 4, -30, 3, 6, '#dec68a'); rect(c, 5, -30, 1, 3, '#fff0c4');
+    }
     const melee = p.weapon === 'blade' || p.weapon === 'spear' || p.weapon === 'hook';
+    const weaponSheet = { blade: 'weapon-knife', pistol: 'weapon-pistol', scatter: 'weapon-scatter' }[p.weapon];
+    const drewWeapon = weaponSheet && blitSprite(c, weaponSheet, Math.round(Math.cos(num(p.facing)) * 16), Math.round(-6 + Math.sin(num(p.facing)) * 10), { anchor: 'center', dw: 28, dh: 28 });
+    if (!drewWeapon) {
     if (p.weapon === 'spear') spear(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else if (p.weapon === 'hook') hookBlade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
     else gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
+    }
     if (state.runUpgrades && state.runUpgrades.tempered) {
       // Warm steel follows the equipped weapon; a stowed second weapon never
       // reappears on the player's back and the HUD gains no permanent panel.
@@ -3058,6 +3144,9 @@
       const recoil = coreImpact ? (1 - impact.age / .20) * 6 : (1 - impact.age / .13) * (impact.event.type === 'weakpoint-hit' ? 3 : 1.7);
       c.translate(Math.cos(num(e.facing)) * -recoil, Math.sin(num(e.facing)) * -recoil);
     }
+    const pixelId = pixelEnemyId(kind, boss, mechanicalCore);
+    const drewPixel = pixelId && blitSprite(c, pixelId, 0, 16, { anchor: 'feet' });
+    if (!drewPixel) {
     if (mechanicalCore) {
       // Scale the entire pose around the soles, including its attached arms.
       c.translate(0, 20); c.scale(1.18, 1.28); c.translate(0, -20);
@@ -3267,6 +3356,7 @@
       rect(c,-7,-18,15,5,'#202e36');rect(c,-5,-17,3,2,'#efb77e');rect(c,3,-17,3,2,'#efb77e');rect(c,-2,-12,7,2,'#b19169');
       rect(c,-5,-29,10,5,'#9e6d4d');rect(c,-3,-29,5,2,'#e1ba7e');rect(c,1,-31,4,3,'#6c5550');
       enemyBlade(c, e, pose);
+    }
     }
     if (boss && !mechanicalCore && e.rhythm && pose.type !== 'quake') {
       if (recovering && pose.type !== 'thrust') blade(c, 1, 8, Math.cos(facing) < 0 ? Math.PI * .75 : Math.PI * .25, false, false, true);
@@ -5017,6 +5107,8 @@
     const time = num(options.now, performance.now()), localId = options.localId || 'p1';
     const ending = chapterEndingScene(state, options);
     const coreRoom = chapterCoreRoom(state), rail = railChapter(state), route = routeChapter(state), train = trainChapter(state);
+    readableScale = Number.isFinite(options.labelScale) ? Math.max(1, Math.min(1.85, options.labelScale)) : 1;
+    paintCoreRoom = !!coreRoom;
     const trainEndingAge = options.reducedMotion ? 7 : Math.max(0, Math.min(7, num(options.chapterEndingAge, 7)));
     const tao = train && state.room.index === 7 && state.chapter.ending?.lampLit ? trainGarageTao(trainEndingAge) : null;
     const still=!!(options.paused||options.reducedMotion),events = combatEvents(state), motion = ending ? { x: 0, y: 0, flash: 0 } : combatMotion(events, still, coreRoom, route);
@@ -5025,6 +5117,7 @@
     const viewTop = num(options.view?.y), viewBottom = viewTop + num(options.view?.h, H);
     const local = state.players?.[localId];
     const storyDraw = state.status === 'playing' && typeof AdventureStoryDraw !== 'undefined' ? AdventureStoryDraw : null;
+    if (storyDraw && storyDraw.setReadableScale) storyDraw.setReadableScale(readableScale);
     const storyTells = storyDraw ? enemies.filter(e => storyDraw.owns(e.kind) && storyDraw.activeTell(e)) : [];
     const engine = globalThis.AdventureEngine;
     const dispatch = engine?.dispatchView?.(state);

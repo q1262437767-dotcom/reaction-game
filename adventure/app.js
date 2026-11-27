@@ -1650,7 +1650,7 @@
   function validStoryState(s, bounded) {
     if (!C.validStoryChapter(s.chapter, s.status, s.mission.id) || s.difficulty !== 1 || s.rooms.length < 2 || s.rooms.length > 8) return false;
     if (s.rooms.some((room, index) => !room || room.id !== s.mission.id + '-' + index)) return false;
-    const storyKinds = ['story-note', 'story-talk', 'story-home', 'story-lantern', 'story-flame', 'story-oil', 'story-valve', 'story-flash', 'story-read', 'story-link', 'story-tune', 'story-switch', 'story-drive', 'story-core', 'story-vent', 'story-bark', 'story-supply', 'story-cabinet', 'story-lamp', 'story-relic', 'story-order', 'story-smash', 'story-skip', 'story-goal', 'story-air', 'story-trial'];
+    const storyKinds = ['story-note', 'story-talk', 'story-home', 'story-lantern', 'story-flame', 'story-oil', 'story-valve', 'story-flash', 'story-read', 'story-link', 'story-tune', 'story-switch', 'story-drive', 'story-core', 'story-vent', 'story-bark', 'story-supply', 'story-cabinet', 'story-lamp', 'story-relic', 'story-order', 'story-smash', 'story-skip', 'story-goal', 'story-air', 'story-trial', 'story-device'];
     for (const item of s.interactables) {
       if (typeof item.kind !== 'string') return false;
       if (item.kind.startsWith('story-') && !storyKinds.includes(item.kind)) return false;
@@ -2049,7 +2049,7 @@
       if (event.type === 'player-hit' && (!['p1', 'p2'].includes(event.playerId) || !bounded(event.damage, 100) || !bounded(event.hp, 100) || !['combo', 'thrust', 'sweep', 'quake', 'rush', 'charge', 'melee', 'bullet', 'fire', 'fireball', 'hook'].includes(event.source))) return false;
       if (['enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit'].includes(event.type)) {
         if (event.enemyId !== null && !shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, ...weaponIds].includes(event.weapon)) return false;
-        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', ...weaponIds, 'furnace-core', 'rail'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
+        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', ...weaponIds, 'furnace-core', 'rail', 'device'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
         if (event.source === 'furnace-core') {
           if (!furnaceRoom || !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600)) return false;
           if (event.type === 'weakpoint-open') {
@@ -3075,7 +3075,9 @@
         if (!aim.guard && !aim.guardPulse) weaponCue = E.weaponCue(state, actor, aim.aimX, aim.aimY);
       }
     }
-    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined, weaponCue }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    const portraitScale = playMetrics && playMetrics.mode === 'portrait' && playView
+      ? L.portraitLabelScale(playMetrics.cssW, playView.w) : 1;
+    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), labelScale: portraitScale, portrait: !!(playMetrics && playMetrics.mode === 'portrait'), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined, weaponCue }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (hudEditing) placeMapEditor();
     if (now - lastHud > 100) { hud(weaponCue); lastHud = now; }

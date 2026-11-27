@@ -8,12 +8,13 @@
   var KINDS = { mistwarden: 1, shadeling: 1, listener: 1, program: 1, pulseling: 1, echoguard: 1, surveyor: 1, grandfurnace: 1, wardenblade: 1 };
   var WORDS = { gust: '吹灯', slash: '横斩', blink: '落点', ring: '扇火', vent: '炉口', lunge: '冲', beam: '扫描', slam: '砸地', hook: '钩索' };
   var FAN = [-0.42, -0.2, 0, 0.2, 0.42];
+  var readable = 1;
 
   function owns(kind) { return !!KINDS[kind]; }
   function num(value, fallback) { return typeof value === 'number' && isFinite(value) ? value : fallback || 0; }
   function box(c, x, y, w, h, color) { c.fillStyle = color; c.fillRect(x, y, w, h); }
   function words(c, text, x, y, color) {
-    c.font = '600 14px "Microsoft YaHei", "Noto Sans SC", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = '600 ' + Math.round(14 * readable) + 'px "Microsoft YaHei", "Noto Sans SC", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
     c.lineWidth = 3; c.strokeStyle = '#102028ee'; c.strokeText(text, x, y);
     c.fillStyle = color || '#f6e7bf'; c.fillText(text, x, y);
   }
@@ -201,5 +202,6 @@
     }
   }
 
-  return { owns: owns, activeTell: activeTell, telegraph: telegraph, offscreenWarning: offscreenWarning, body: body };
+  return { owns: owns, activeTell: activeTell, telegraph: telegraph, offscreenWarning: offscreenWarning, body: body,
+    setReadableScale: function (value) { readable = value > 0 ? value : 1; } };
 });

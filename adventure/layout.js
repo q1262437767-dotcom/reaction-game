@@ -116,6 +116,29 @@
       bufferH: Math.max(1, Math.round(viewH))
     };
   }
+  // Portrait text is authored for a phone held at arm's length. An 11-world-pixel
+  // label has to land at least 16 CSS pixels once the 440-wide view is fitted
+  // to the screen width. Thumbs stay in the band below the canvas.
+  function portraitLabelScale(cssW, worldW) {
+    var shown = cssW / Math.max(1, worldW || PORTRAIT_VIEW_W);
+    if (!(shown > 0)) return 1;
+    return clamp(16 / (11 * shown), 1, 1.85);
+  }
+  function portraitTextSafe(viewportW, viewportH, safe) {
+    safe = safe || { top: 0, right: 0, bottom: 0, left: 0 };
+    var top = Math.max(72, (safe.top || 0) + 64);
+    var bottom = Math.max(176, (safe.bottom || 0) + 164);
+    return {
+      width: viewportW,
+      promptMin: 16,
+      tellMin: 16,
+      objectiveMin: 16,
+      quietMin: 15,
+      top: top,
+      bottom: bottom,
+      playHeight: Math.max(0, viewportH - top - bottom)
+    };
+  }
   function portraitHintVisible(options) {
     options = options || {};
     return !!(options.handheld && options.portrait && options.runActive && !options.dismissed);
@@ -152,6 +175,7 @@
     hudOrientation: hudOrientation, hudStoreKey: hudStoreKey,
     defaultHudLayout: defaultHudLayout, normalizeHudLayout: normalizeHudLayout, clampHudLayout: clampHudLayout,
     portraitPlayBand: portraitPlayBand, landscapePlayView: landscapePlayView, portraitPlayView: portraitPlayView,
+    portraitLabelScale: portraitLabelScale, portraitTextSafe: portraitTextSafe,
     portraitHintVisible: portraitHintVisible, controlBounds: controlBounds,
     STICK_DEADZONE: STICK_DEADZONE, stickOutput: stickOutput
   };

@@ -58,7 +58,8 @@
         ] }),
         room('雾径', 'battle', 1, 0, [0, 2, 3], { dark: true, wind: true, walls: [[360, 150, 70, 90]], props: [['barrel', 700, 180]],
           foes: [foe('mistwarden', 640, 340, 'snuff', '雾巡卫'), foe('mistwarden', 760, 200, 'snuff', '雾巡卫'), foe('shadeling', 520, 430, 'shade', '暗栖')],
-          items: [{ kind: 'story-oil', x: 700, y: 250, label: '给提灯补油' }] }),
+          items: [{ kind: 'story-oil', x: 700, y: 250, label: '给提灯补油' },
+            { kind: 'story-device', verb: 'lamp-ward', x: 520, y: 340, label: '点起护火桩' }] }),
         room('雾中岔口', 'battle', 2, 0, [1, 4], { dark: true, walls: [[420, 360, 80, 70]],
           foes: [foe('chaser', 560, 220, 'seek', '追光巡卫'), foe('shadeling', 760, 420, 'shade', '暗栖'), foe('mistwarden', 300, 240, 'snuff', '雾巡卫')],
           items: [{ kind: 'story-oil', x: 220, y: 160, label: '壁龛里的灯油' }] }),
@@ -78,7 +79,8 @@
         room('哨站外', 'camp', 0, 0, [1], { dark: true, items: [{ kind: 'story-lantern', x: 420, y: 300, label: '点起带来的灯' }] }),
         room('熄灯站院', 'battle', 1, 0, [0, 2, 3, 5], { dark: true, walls: [[300, 400, 90, 60]],
           foes: [foe('shield', 620, 240, '', '守夜机械'), foe('mistwarden', 760, 400, 'snuff', '雾巡卫'), foe('shadeling', 480, 180, 'shade', '暗栖')],
-          items: [note('north-signal', 240, 170), { kind: 'story-supply', x: 760, y: 160, label: '取用小穗的给养' }] }),
+          items: [note('north-signal', 240, 170), { kind: 'story-supply', x: 760, y: 160, label: '取用小穗的给养' },
+            { kind: 'story-device', verb: 'gate-slam', x: 560, y: 250, label: '落下夹门' }] }),
         room('应答塔台', 'puzzle', 1, -1, [1], { dark: true, terminal: true,
           items: [{ kind: 'story-flash', x: 480, y: 260, label: '打出三短一长', pair: 3 }] }),
         room('塔下闸门', 'puzzle', 2, 0, [1, 4], { dark: true, terminal: true,
@@ -101,7 +103,8 @@
           { kind: 'story-talk', x: 560, y: 250, label: '听小穗说话', clue: 'xiaosui' }
         ] }),
         room('塔梯', 'battle', 1, 0, [0, 2, 3], { dark: true, walls: [[480, 140, 50, 120]],
-          foes: [foe('chaser', 720, 400, 'seek', '塔内巡卫'), foe('mistwarden', 280, 220, 'snuff', '雾巡卫'), foe('shadeling', 700, 180, 'shade', '暗栖')] }),
+          foes: [foe('chaser', 720, 400, 'seek', '塔内巡卫'), foe('mistwarden', 280, 220, 'snuff', '雾巡卫'), foe('shadeling', 700, 180, 'shade', '暗栖')],
+          items: [{ kind: 'story-device', verb: 'shade-lamp', x: 300, y: 360, label: '举起塔上的蓝灯' }] }),
         room('蓝光秘道', 'puzzle', 1, 1, [1, 4], { dark: true, secret: true, need: 'lit',
           items: [{ kind: 'story-oil', x: 400, y: 300, label: '秘道里的灯油' }] }),
         room('灯路图室', 'rescue', 2, 0, [1, 4], {
@@ -161,7 +164,8 @@
       rooms: [
         room('廊口', 'camp', 0, 0, [1], { listen: true, items: [note('quiet-log', 300, 200)] }),
         room('听声长廊', 'battle', 1, 0, [0, 2, 3, 4], { listen: true, walls: [[450, 140, 60, 320]],
-          foes: [foe('listener', 250, 220, 'listen', '听声巡卫'), foe('listener', 250, 420, 'listen', '听声巡卫'), foe('listener', 760, 180, 'listen', '听声枪卫')] }),
+          foes: [foe('listener', 250, 220, 'listen', '听声巡卫'), foe('listener', 250, 420, 'listen', '听声巡卫'), foe('listener', 760, 180, 'listen', '听声枪卫')],
+          items: [{ kind: 'story-device', verb: 'vent-hush', x: 680, y: 300, label: '开一声泄压' }] }),
         room('侧室', 'puzzle', 1, 1, [1], { items: [{ kind: 'story-bark', x: 480, y: 280, label: '让灰尾狐叫一声' }] }),
         room('旧登记库', 'secret', 1, -1, [1], { secret: true, need: 'quiet', terminal: false,
           items: [note('cut-order', 340, 200), { kind: 'story-lamp', x: 560, y: 320, label: '取下识别晶碎片', lamp: 'archive' }] }),
@@ -217,7 +221,8 @@
       rooms: [
         room('隔离炉外', 'camp', 0, 0, [1], { items: [note('core-hot', 300, 190)] }),
         room('炉外甬道', 'battle', 1, 0, [0, 2], { hot: true,
-          foes: [foe('pulseling', 420, 220, '', '脉卒'), foe('pulseling', 700, 400, '', '脉卒'), foe('pulseling', 760, 180, '', '脉卒')] }),
+          foes: [foe('pulseling', 420, 220, '', '脉卒'), foe('pulseling', 700, 400, '', '脉卒'), foe('pulseling', 760, 180, '', '脉卒')],
+          items: [{ kind: 'story-device', verb: 'low-pillar', x: 560, y: 320, label: '低潮撞柱' }] }),
         room('炉室', 'boss', 2, 0, [1, 3], { hot: true, foes: [foe('pulseling', 640, 260, 'returner', '守芯机', true)],
           items: [{ kind: 'story-core', x: 360, y: 340, label: '取回主芯' }] }),
         room('发车坪', 'rescue', 3, 0, [2], { need: 'core',
@@ -243,7 +248,8 @@
         room('前方信号房', 'puzzle', 1, 1, [1, 2, 4], { terminal: true,
           items: [{ kind: 'story-switch', x: 480, y: 260, label: '在低潮时开炉口', pair: 4 }] }),
         room('炉口', 'battle', 2, 1, [3, 5], { hot: true, need: 'mouth',
-          foes: [foe('pulseling', 520, 200, '', '脉卒'), foe('pulseling', 760, 400, '', '脉卒'), foe('charger', 700, 300, '', '炉口巡卫')] }),
+          foes: [foe('pulseling', 520, 200, '', '脉卒'), foe('pulseling', 760, 400, '', '脉卒'), foe('charger', 700, 300, '', '炉口巡卫')],
+          items: [{ kind: 'story-device', verb: 'mouth-vent', x: 280, y: 340, label: '低潮泄炉口' }] }),
         room('轨尾', 'rescue', 3, 1, [4], { items: [{ kind: 'story-goal', x: 680, y: 390, label: '把车停进收芯库外' }] })
       ]
     },
@@ -259,7 +265,8 @@
           items: [
           note('cabinet-names', 260, 170),
           note('heng-call', 700, 170),
-          { kind: 'story-cabinet', x: 480, y: 240, label: '点亮一格被收走的灯' }
+          { kind: 'story-cabinet', x: 480, y: 240, label: '点亮一格被收走的灯' },
+          { kind: 'story-device', verb: 'name-lamp', x: 620, y: 400, label: '点亮一格灭掉的营名' }
         ] }),
         room('陶铆的私藏', 'secret', 1, 1, [1], { secret: true, need: 'seat', terminal: true,
           items: [
@@ -324,7 +331,8 @@
           items: [
             { kind: 'story-order', x: 280, y: 200, label: '下完结令', ending: 'normal' },
             { kind: 'story-order', x: 280, y: 300, label: '下重明令', ending: 'true' },
-            { kind: 'story-smash', x: 280, y: 400, label: '砸毁炉心' }
+            { kind: 'story-smash', x: 280, y: 400, label: '砸毁炉心' },
+            { kind: 'story-device', verb: 'pulse-vent', x: 180, y: 470, label: '低潮泄压' }
           ] }),
         room('溢流阀室', 'puzzle', 1, 0, [0, 3], { deep: true, terminal: true,
           foes: [foe('program', 300, 400, 'damp', '程序哨'), foe('program', 720, 400, 'damp', '程序哨')],

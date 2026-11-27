@@ -261,6 +261,13 @@
     }
     return null;
   }
+  function deviceBook() {
+    if (typeof AdventureDevices !== 'undefined' && AdventureDevices && AdventureDevices.arm) return AdventureDevices;
+    if (typeof module === 'object' && module.exports) {
+      try { return require('./devices.js'); } catch (err) { return null; }
+    }
+    return null;
+  }
   function isStory(s) { return !!(s && s.mode === 'chapter' && s.chapter && storyBook() && storyBook().chapter(s.chapter.id)); }
   function storyDef(s) { var book = storyBook(); return book ? book.chapter(s.chapter.id) : null; }
   function storyPulseHigh(s) {
@@ -443,12 +450,19 @@
       });
       (src.items || []).forEach(function (item, index) {
         var noted = item.clue ? book.note(item.clue) : null;
-        data.interactables.push({ id: s.mission.id + '-' + room.index + '-' + item.kind + '-' + index, kind: item.kind,
+        var placed = { id: s.mission.id + '-' + room.index + '-' + item.kind + '-' + index, kind: item.kind,
           x: item.x, y: item.y, r: 26, label: item.label, active: true, used: false,
           clueId: item.clue || '', title: noted ? noted.title : '', text: noted ? noted.text : '',
           lamp: item.lamp || '', pair: item.pair == null ? -1 : item.pair, relic: item.relic || '',
           ending: item.ending || '', needClue: item.needClue || '', needDown: !!item.needDown,
-          description: noted ? noted.text : '' });
+          description: noted ? noted.text : '' };
+        if (item.verb) {
+          placed.verb = item.verb;
+          placed.zoneUntil = 0;
+          placed.readyAt = 0;
+          placed.hitIds = [];
+        }
+        data.interactables.push(placed);
       });
       data.enemies.forEach(function (e) { placeEnemyInRoom(data, e); });
       s.roomData[room.index] = data;
@@ -577,6 +591,7 @@
         q.description = !storyCartArrived(c) ? '先把运芯车送到泄压台。' : '先击退总归炉者。';
       }
       if (q.kind === 'story-vent') q.active = playing && s.enemies.some(function (e) { return e.storyBoss && e.hp > 0; });
+      if (q.kind === 'story-device') { q.active = playing; q.used = false; }
     });
   }
   function storyWin(s) {
@@ -587,6 +602,16 @@
   function interactStory(s, p, target) {
     var c = s.chapter, book = storyBook();
     if (!target || target.used && target.kind !== 'story-lantern' && target.kind !== 'story-valve' && target.kind !== 'story-drive' && target.kind !== 'story-smash') return false;
+    if (target.kind === 'story-device') {
+      var devices = deviceBook();
+      if (!devices || !foxSight(s, p, target, 3)) return false;
+      var armed = devices.arm(s, target, p, {
+        pulseHigh: function () { return storyPulseHigh(s); },
+        window: function () { return finaleWindow(s); }
+      });
+      if (armed) devices.tick(s, deviceApi(s));
+      return armed;
+    }
     if (target.kind === 'story-note' || target.kind === 'story-talk' || target.kind === 'story-home') {
       var clue = target.kind === 'story-home' ? (s.unlocks && s.unlocks.dawnEnding === 'true' ? 'home-true' : s.unlocks && s.unlocks.dawnEnding === 'ash' ? 'home-ash' : 'home-normal') : target.clueId;
       var noted = book && book.note(clue);
@@ -712,7 +737,12 @@
     }
     if (target.kind === 'story-cabinet') {
       storyRemember(s, 'cabinet-lit');
-      s.message = '有一格灯亮了。不点也出得去。'; s.messageTime = 3; return true;
+      if (c.id === 'chapter5_3') {
+        var dawn = s.unlocks && s.unlocks.dawnEnding;
+        s.message = dawn === 'true' ? '这一站应了。蓝灯和金灯都还在叫。' :
+          dawn === 'ash' ? '灯口是冷的。这一路没有应答。' : '营灯还在。中间的站没有应。';
+      } else s.message = '有一格灯亮了。不点也出得去。';
+      s.messageTime = 3; return true;
     }
     if (target.kind === 'story-lamp') {
       if (!target.lamp || c.lamp === target.lamp) return false;
@@ -756,8 +786,16 @@
     if (target.kind === 'story-air') { s.message = '气窝里能换一口气。别在深水里久留。'; s.messageTime = 2; return true; }
     return false;
   }
+  function deviceApi(s) {
+    return {
+      dist: dist,
+      open: function (enemy, owner, source, duration) { openWeakpoint(s, enemy, owner, source, duration); }
+    };
+  }
   function updateStory(s, dt) {
     if (!isStory(s) || s.status !== 'playing') return;
+    var devices = deviceBook();
+    if (devices) devices.tick(s, deviceApi(s));
     var c = s.chapter, globalStep = !s._split || !s._split.active || s._split.advanceGlobals;
     if (globalStep) {
       if (c.lit && c.oil > 0) {
