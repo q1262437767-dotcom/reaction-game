@@ -1,6 +1,7 @@
-/* Ruin Runners rendering. Pixel sheets draw when AdventureSprites has a frame.
-   Code-drawn art remains the fallback for bosses, the fox, barrels, and any
-   sheet that has not loaded. */
+/* Ruin Runners rendering. Devices, floors, common enemies, and the pistol /
+   scatter still use AdventureSprites. Traveler, Ahe, and the knife are
+   code-drawn: the static 48×48 stamps read as crude blocks, and a still
+   knife cannot swing. Bosses, the fox, and barrels stay code-drawn too. */
 (() => {
   'use strict';
   const W = 960, H = 600, TILE = 32;
@@ -2224,15 +2225,77 @@
     if (kind === 'scatter') { rect(c, 15, 3, 2, 2, '#d0aa75'); rect(c, length + 2, -4, 2, 2, '#aebdb2'); }
     c.restore();
   }
-  function blade(c, x, y, angle, guarding, striking, large = false) {
-    c.save(); c.translate(x, y); c.rotate(angle);
-    const length = large ? 43 : 30;
-    if (striking) {
-      c.strokeStyle = '#f7e5b8b0'; c.lineWidth = large ? 8 : 5;
-      c.beginPath(); c.arc(0, 0, length + 9, -.85, .85); c.stroke();
-      c.strokeStyle = '#fff2cd'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, length + 12, -.75, .75); c.stroke();
+  // Walk and idle offsets for the code-drawn traveler and Ahe. A still flag
+  // freezes the bob; a melee swing is sampled from meleeTime instead.
+  function actorMotion(time, moving, x, sneaking) {
+    const clock = num(time), origin = num(x);
+    const step = moving ? Math.sin(clock * (sneaking ? .012 : .02)) * (sneaking ? .85 : 2.4) : Math.sin(clock * .0025 + origin) * .4;
+    const breath = Math.sin(clock * (moving ? .016 : .0052) + origin * .01) * (moving ? .55 : 1.25);
+    return { step, breath };
+  }
+  // Knife (and the retired spear / hook) poses over one attack. meleeTime
+  // counts down from the engine window, so t = 0 is the wind-up and t = 1
+  // is the recovery landing on the ready angle.
+  function meleeSwing(weapon, meleeTime, guarding) {
+    const kind = weapon === 'blade' || weapon === 'spear' || weapon === 'hook' ? weapon : '';
+    const duration = kind === 'hook' ? 0.21 : kind === 'spear' ? 0.2 : kind === 'blade' ? 0.18 : 0;
+    const ready = { phase: 'ready', angle: 0, reach: 0, trail: 0, lean: 0, t: 1, duration };
+    if (!kind) return ready;
+    if (guarding) return { phase: 'guard', angle: -0.8, reach: 0, trail: 0, lean: -0.04, t: 0, duration };
+    const remaining = Math.max(0, num(meleeTime));
+    if (remaining <= 0) return ready;
+    const t = 1 - Math.min(1, remaining / duration);
+    const ease = value => { const p = Math.max(0, Math.min(1, value)); return p * p * (3 - 2 * p); };
+    if (kind === 'spear') {
+      if (t < 0.3) {
+        const p = ease(t / 0.3);
+        return { phase: 'windup', angle: 0, reach: -8 * p, trail: 0, lean: -0.05 * p, t, duration };
+      }
+      if (t < 0.62) {
+        const p = ease((t - 0.3) / 0.32);
+        return { phase: 'strike', angle: 0, reach: -8 + 22 * p, trail: p, lean: 0.07 * p, t, duration };
+      }
+      const p = ease((t - 0.62) / 0.38);
+      return { phase: 'recover', angle: 0, reach: 14 * (1 - p), trail: 1 - p, lean: 0.04 * (1 - p), t, duration };
     }
-    if (guarding) c.rotate(-.8);
+    const back = kind === 'hook' ? 0.95 : 1.2;
+    const forward = kind === 'hook' ? 1.05 : 1.35;
+    if (t < 0.28) {
+      const p = ease(t / 0.28);
+      return { phase: 'windup', angle: -back * p, reach: -6 * p, trail: 0, lean: -0.09 * p, t, duration };
+    }
+    if (t < 0.58) {
+      const p = ease((t - 0.28) / 0.3);
+      return { phase: 'strike', angle: -back + (back + forward) * p, reach: -6 + 13 * p, trail: 0.25 + 0.75 * p, lean: -0.09 + 0.2 * p, t, duration };
+    }
+    const p = ease((t - 0.58) / 0.42);
+    return { phase: 'recover', angle: forward * (1 - p), reach: 7 * (1 - p), trail: Math.max(0, 0.45 * (1 - p)), lean: 0.11 * (1 - p), t, duration };
+  }
+  function blade(c, x, y, angle, guarding, striking, large = false, swing = null) {
+    c.save(); c.translate(x, y);
+    const length = large ? 43 : 30;
+    if (swing) {
+      // The slash is painted in facing space, from the cocked angle through
+      // the current one, so the arc moves instead of sitting on the grip.
+      if (swing.trail > 0.05) {
+        c.save(); c.rotate(angle);
+        const tip = length + 10, from = Math.min(swing.angle, -0.35), to = Math.max(swing.angle, from + 0.22);
+        c.strokeStyle = `rgba(247,229,184,${0.28 + swing.trail * 0.55})`; c.lineWidth = large ? 8 : 5;
+        c.beginPath(); c.arc(0, 0, tip, from, to); c.stroke();
+        c.strokeStyle = '#fff2cdcc'; c.lineWidth = 2;
+        c.beginPath(); c.arc(0, 0, tip + 3, from + 0.08, to); c.stroke();
+        c.restore();
+      }
+      c.rotate(angle + swing.angle); c.translate(swing.reach, 0);
+    } else {
+      c.rotate(angle);
+      if (striking) {
+        c.strokeStyle = '#f7e5b8b0'; c.lineWidth = large ? 8 : 5;
+        c.beginPath(); c.arc(0, 0, length + 9, -.85, .85); c.stroke();
+        c.strokeStyle = '#fff2cd'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, length + 12, -.75, .75); c.stroke();
+      }
+      if (guarding) c.rotate(-.8);
+    }
     rect(c, 8, -3, length, 6, '#172b2b'); rect(c, 12, -2, length - 3, 4, '#b7c9bd');
     rect(c, 14, -2, length - 6, 1, '#f2eed0'); rect(c, length + 9, -1, 5, 2, '#f8eed1');
     rect(c, 9, -7, 4, 14, '#c7a265'); rect(c, 2, -2, 7, 4, '#776448'); rect(c, 4, -3, 5, 6, '#d4b28a');
@@ -2241,11 +2304,11 @@
     rect(c, 2, -2, 2, 4, '#3b3534'); rect(c, 5, -2, 1, 4, '#9e794e');
     c.restore();
   }
-  function spear(c, x, y, angle, guarding, striking) {
-    c.save(); c.translate(x, y); c.rotate(angle + (guarding ? -.8 : 0));
+  function spear(c, x, y, angle, guarding, striking, swing = null) {
+    c.save(); c.translate(x, y); c.rotate(angle + (swing ? swing.angle : (guarding ? -.8 : 0)));
     // Only the held polearm is drawn. The long, narrow steel head reads as a
     // thrusting weapon at half scale without resembling a second gun or blade.
-    const extension = striking && !guarding ? 6 : 0;
+    const extension = swing ? swing.reach : (striking && !guarding ? 6 : 0);
     path(c, [[-17 + extension, 0], [46 + extension, 0]], '#152c29', 7);
     path(c, [[-15 + extension, -1], [47 + extension, -1]], '#9c7c52', 3);
     path(c, [[-13 + extension, -2], [43 + extension, -2]], '#d0b57e', 1);
@@ -2260,9 +2323,9 @@
     rect(c, 37 + extension, -4, 2, 2, '#edd19c');
     c.restore();
   }
-  function hookBlade(c, x, y, angle, guarding, striking) {
-    c.save(); c.translate(x, y); c.rotate(angle + (guarding ? -.8 : 0));
-    const extension = striking && !guarding ? 4 : 0;
+  function hookBlade(c, x, y, angle, guarding, striking, swing = null) {
+    c.save(); c.translate(x, y); c.rotate(angle + (swing ? swing.angle : (guarding ? -.8 : 0)));
+    const extension = swing ? swing.reach : (striking && !guarding ? 4 : 0);
     c.translate(extension, 0);
     const hook = [[9, 1], [24, 1], [31, -3], [31, -9], [27, -13], [21, -13], [17, -9]];
     c.lineJoin = 'round';
@@ -2401,14 +2464,15 @@
       rect(c,x-width/2,ty-10,width,20,'#102823e8');label(c,caption,x,ty,active?'#e1d5a8':'#9aac95',active?10:9);
     }
   }
-  function player(c, p, time, localId, state) {
+  function player(c, p, time, localId, state, still = false) {
     if (!playerInRoom(state, p.id)) return;
     if (!p || p.dead) return;
     const x = num(p.x), y = num(p.y), isLocal = (p.id || '') === localId || (!localId && (p.id === 'p1' || !p.id));
     const second = p.id === 'p2' || p.color === '#f08c69', main = second ? '#ad695b' : '#538d87', light = second ? '#e3ad83' : '#acd0b4', dark = second ? '#654854' : '#2d5359';
     const movement = Math.hypot(num(p.vx), num(p.vy)) > 3 || p.moving;
     const shocked = railChapter(state) && p.railStun > 0;
-    const step = shocked ? 0 : movement ? Math.sin(time * (p.sneaking ? .012 : .02)) * (p.sneaking ? .85 : 2) : Math.sin(time * .0025 + x) * .5;
+    const motion = still || shocked ? { step: 0, breath: 0 } : actorMotion(time, !!movement, x, !!p.sneaking);
+    const step = motion.step;
     const isDash = p.dashing || p.dashTime > 0 || p.dashTimer > 0;
     shadow(c, x, y, num(p.r, 14));
     if (isDash) {
@@ -2427,11 +2491,22 @@
     const blink = p.invuln > 0 && Math.floor(time / 80) % 2 === 0;
     c.save(); if (blink) c.globalAlpha = .48; c.translate(Math.round(x), Math.round(y));
     const facing = num(p.facing);
-    const bodySheet = second ? 'ahe' : 'traveler';
-    const drewBody = blitSprite(c, bodySheet, 0, 14, { anchor: 'feet' });
-    if (!drewBody) {
+    const melee = p.weapon === 'blade' || p.weapon === 'spear' || p.weapon === 'hook';
+    const pose = melee ? meleeSwing(p.weapon, p.meleeTime, !!p.guarding) : { angle: 0, reach: 0, trail: 0, lean: 0, phase: 'ready' };
+    if (pose.lean) c.rotate(pose.lean);
+    c.translate(0, Math.round(motion.breath));
+    // Traveler and Ahe stay code-drawn. The 48×48 sheets are a crude still,
+    // and stamping one would hide the walk, the breath, and the knife arc.
     // Cut coat tails, layered boots and a leather harness keep the traveler
     // readable in a single small silhouette; highlights are clustered, not noise.
+    if (second) {
+      // Ahe's cloak hangs past the coat and sways, so she is not a recolor
+      // of the traveler or a one-frame stamp.
+      const hem = still ? 0 : Math.round(Math.sin(time * .007 + 1.1) * 2);
+      rect(c, -17, -8, 8, 26 + hem, '#3a2b28');
+      rect(c, -16, -6, 5, 22 + hem, '#8d5646');
+      rect(c, -15, -4, 2, 14 + hem, '#f0c3a2');
+    }
     for (const [bx, phase] of [[-8, 1], [3, -1]]) {
       const by = 4 + step * phase;
       rect(c, bx, by, 6, 9, '#15272e'); rect(c, bx + 1, by, 4, 6, '#695546');
@@ -2459,21 +2534,21 @@
     rect(c, -7, -31, 11, 2, light); rect(c, -6, -29, 3, 4, '#75ac9d'); rect(c, 5, -29, 3, 5, dark);
     rect(c, -12, -23, 25, 4, '#83b2a0'); rect(c, -11, -23, 20, 1, '#d9dfb9'); rect(c, -11, -21, 23, 2, dark);
     rect(c, -8, -25, 17, 2, '#51483c');     rect(c, 4, -30, 3, 6, '#dec68a'); rect(c, 5, -30, 1, 3, '#fff0c4');
-    }
-    const melee = p.weapon === 'blade' || p.weapon === 'spear' || p.weapon === 'hook';
-    const weaponSheet = { blade: 'weapon-knife', pistol: 'weapon-pistol', scatter: 'weapon-scatter' }[p.weapon];
-    const drewWeapon = weaponSheet && blitSprite(c, weaponSheet, Math.round(Math.cos(num(p.facing)) * 16), Math.round(-6 + Math.sin(num(p.facing)) * 10), { anchor: 'center', dw: 28, dh: 28 });
-    if (!drewWeapon) {
-    if (p.weapon === 'spear') spear(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
-    else if (p.weapon === 'blade') blade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
-    else if (p.weapon === 'hook') hookBlade(c, 0, -3, facing, p.guarding, p.meleeTime > 0);
-    else gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
+    if (second) rect(c, -3, -33, 7, 3, '#f0c3a2');
+    const hand = 2 + pose.reach * 0.12;
+    if (p.weapon === 'spear') spear(c, Math.cos(facing) * 2, -3, facing, !!p.guarding, pose.phase === 'strike', pose);
+    else if (p.weapon === 'blade') blade(c, Math.cos(facing) * hand, -4 + Math.sin(facing) * 2, facing, false, pose.trail > 0, false, pose);
+    else if (p.weapon === 'hook') hookBlade(c, Math.cos(facing) * 2, -3, facing, !!p.guarding, pose.phase === 'strike', pose);
+    else {
+      const weaponSheet = { pistol: 'weapon-pistol', scatter: 'weapon-scatter' }[p.weapon];
+      const drewWeapon = weaponSheet && blitSprite(c, weaponSheet, Math.round(Math.cos(facing) * 16), Math.round(-6 + Math.sin(facing) * 10), { anchor: 'center', dw: 28, dh: 28 });
+      if (!drewWeapon) gun(c, 0, -3, facing - (p.guarding ? .65 : 0), p.weapon, '#aebaa0');
     }
     if (state.runUpgrades && state.runUpgrades.tempered) {
       // Warm steel follows the equipped weapon; a stowed second weapon never
       // reappears on the player's back and the HUD gains no permanent panel.
       const reach = { spear: 62, blade: 30, hook: 25, scatter: 24, echo: 25, vent: 23 }[p.weapon] || 18;
-      c.save(); c.rotate(facing - (p.guarding && !melee ? .65 : p.guarding ? .8 : 0));
+      c.save(); c.rotate(facing + (melee ? pose.angle : (p.guarding ? -.65 : 0)));
       path(c,[[reach-5,-4],[reach+3,-4]],'#e8b467',1);
       rect(c,reach,-5,2,2,'#ffe0a0'); c.restore();
     }
@@ -5086,7 +5161,7 @@
       ...values(state.walls).filter(w => w.timberCart).map(w => ({ y: num(w.y) + num(w.h) / 2, draw: () => timberCart(c, w, state) })),
       ...values(state.interactables).map(item => ({ y: item.y, draw: () => timberInteractable(c, item, time, state, localId, still) })),
       ...values(state.enemies).map(e => ({ y: e.y, draw: () => e.timber ? timberBoss(c, e, state, events, still) : timberGuard(c, e, time, poses.get(e.id)) })),
-      ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) }))
+      ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state, still) }))
     ];
     sprites.sort((a, b) => num(a.y) - num(b.y)).forEach(s => s.draw());
     values(state.bullets).forEach(b => bullet(c, b, state));
@@ -5198,7 +5273,7 @@
       ...((rail || route || train || storyChapter(state)) && railAllyInRoom(state) ? [{
         y: state.railAlly.y, draw: () => railAlly(c, state.railAlly, enemyTime, still, viewTop, viewBottom, local)
       }] : []),
-      ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state) })),
+      ...roomPlayers(state).map(p => ({ y: p.y, draw: () => player(c, p, time, localId, state, still) })),
       ...(ending ? [
         { y: ending.lead.y, draw: () => chapterEndingCivilian(c, ending.lead.x, ending.lead.y, 'lead', ending.gait, ending.looking) },
         { y: ending.pair.y + 6, draw: () => chapterEndingPair(c, ending) },
@@ -5311,8 +5386,8 @@
     glow(c, 703, 376, 145, '#d69e5121');
     fire(c, { x: 703, y: 376, r: 24, active:true }, time);
     for (const [x,y] of [[676,376],[684,391],[705,396],[727,385],[729,369],[712,357],[689,357]]) { ellipse(c,x,y,7,4,'#182e2b'); rect(c,x-5,y-4,10,6,'#788369'); rect(c,x-4,y-4,8,2,'#9a9e7b'); }
-    player(c, { id:'p1',x:647,y:375,r:14,hp:100,maxHp:100,weapon:'pistol',facing:.2 }, time, '', { players:[],props:[] });
-    player(c, { id:'p2',x:754,y:411,r:14,hp:100,maxHp:100,weapon:'pistol',facing:-2.2 }, time, '', { players:[],props:[] });
+    player(c, { id:'p1',x:647,y:375,r:14,hp:100,maxHp:100,weapon:'pistol',facing:.2 }, time, '', { players:[],props:[] }, !!profile.reducedMotion);
+    player(c, { id:'p2',x:754,y:411,r:14,hp:100,maxHp:100,weapon:'pistol',facing:-2.2 }, time, '', { players:[],props:[] }, !!profile.reducedMotion);
     if(profile.companion&&profile.companion.kind==='fox'){
       shadow(c,679,439,10,.22);c.save();c.translate(679,439);
       foxBody(c,{id:'camp-fox',kind:'fox',ownerId:'p1',name:profile.companion.name,facing:-.4,mode:'idle',assistTime:0},time,!!profile.reducedMotion);c.restore();
@@ -5350,5 +5425,5 @@
     lantern(c, 904, 529, time, .85);
     previewAtmosphere(c, time); c.restore();
   }
-  window.AdventureRenderer = { draw, preview };
+  window.AdventureRenderer = { draw, preview, meleeSwing, actorMotion };
 })();

@@ -1,8 +1,10 @@
-/* Pixel sheets for Ruin Runners. Canonical actor and device frames are 48×48.
+/* Pixel sheets for Ruin Runners. Canonical frames are 48×48.
  * A 96×96 image is the nearest-neighbor 2× export, not a larger world sprite.
- * Locked palette only. Character frames are a swappable first pass: call
- * install('traveler', image) or install('ahe', image) to replace them.
- * Code-drawn fallbacks are listed on fallback(). */
+ * Locked palette only. Traveler, Ahe, and the knife sheets stay in the book
+ * for checks and a later approved portrait, but the renderer does not stamp
+ * them: those stills read as crude blocks and a still knife cannot swing.
+ * install(id, image) still replaces only that sheet inside this module.
+ * Code-drawn bosses, the fox, and barrels are listed on fallback(). */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.AdventureSprites = factory();
