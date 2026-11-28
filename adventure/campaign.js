@@ -29,23 +29,19 @@
     Object.freeze({ id: 'chapter3', name: '第三章 · 第一节 · 水下的线', description: '识别线的电缆埋在冷却渠里。涨水成桥，放水见底。', goal: '用水位找出还能接上的断头', reward: 60 }),
     Object.freeze({ id: 'chapter3_2', name: '第三章 · 第二节 · 听声的廊', description: '长廊里不能喧哗。惊动巡卫，就进不了旧登记库。', goal: '静步通过；可选一条不惊动的支路', reward: 60 }),
     Object.freeze({ id: 'chapter3_3', name: '第三章 · 第三节 · 登记厅', description: '守灯人说他剪过识别线。两端要在同一窗口里合闸。', goal: '听完真相，把一小段线接回去', reward: 60 }),
-    Object.freeze({ id: 'chapter3_4', name: '第三章 · 第四节 · 检线', description: '检线官先把人当货物。线接上之后，它的扫描会失效。', goal: '打开护舱，取走两份令稿', reward: 60 }),
+    Object.freeze({ id: 'chapter3_4', name: '第三章 · 第四节 · 检线', description: '检线官先把人当货物。外侧合闸，内侧看人落地。', goal: '合上两头，看巡线工自己走下秤台，再取令稿', reward: 60 }),
     Object.freeze({ id: 'chapter4', name: '第四章 · 第一节 · 再取主芯', description: '主芯比留下时更热。拿起来，追兵就会醒。', goal: '取回主芯，让运芯车出发', reward: 65 }),
     Object.freeze({ id: 'chapter4_2', name: '第四章 · 第二节 · 悬轨换线', description: '总炉的心跳按拍开门。高潮时炉口吞火。', goal: '低潮换道，把车送过悬轨', reward: 65 }),
     Object.freeze({ id: 'chapter4_3', name: '第四章 · 第三节 · 收芯库', description: '被收走的芯还刻着营名。私藏柜可以不打开。', goal: '穿过收芯库，芯还在车上', reward: 65 }),
     Object.freeze({ id: 'chapter4_4', name: '第四章 · 第四节 · 总归炉者', description: '它先追车，再抢芯。衡石在炉门前等着，这一节不打完他。', goal: '守住主芯，走到炉门', reward: 65 }),
-    Object.freeze({ id: 'chapter5', name: '第五章 · 第一节 · 炉门之前', description: '衡石要封死总炉。守灯人站在他对面。', goal: '听完，再用光、水和静步走过短廊', reward: 70 }),
+    Object.freeze({ id: 'chapter5', name: '第五章 · 第一节 · 炉门之前', description: '冷却回来了，线也接过了。在炉门前试一次灯，封炉只在这里辩论。', goal: '试灯一次，看中继亮一下就退回待命', reward: 70 }),
     Object.freeze({ id: 'chapter5_2', name: '第五章 · 第二节 · 停令或重明', description: '终端上有两份令。砸炉之前，会先把后果写明白。', goal: '顶住衡石，选定灯路的下一句', reward: 70 }),
     Object.freeze({ id: 'chapter5_3', name: '第五章 · 第三节 · 沿灯回家', description: '没有追兵。灯还亮着多少，取决于你写下的那一句。', goal: '沿灯路走回晨灯下的营地', reward: 40 })
   ]);
   var SECRETS = Object.freeze([
     Object.freeze({ id: 'secret_unlisted', name: '隐藏 · 未登记线', description: '小穗的图上没有这条鬼轨道。检修班在这里失踪。', goal: '在暗处和静步里走完，带回他们的灯芯', reward: 45 })
   ]);
-  var STORY_WEAPON_REWARDS = Object.freeze({
-    chapter2_4: '回声灯铳',
-    chapter3_4: '拖钩刃',
-    chapter4_4: '泄压筒'
-  });
+  var STORY_WEAPON_REWARDS = Object.freeze({});
   var CHAPTERS = Object.freeze(CHAPTER_ONE.concat(ARC));
   var STEADY_CART_HP = 10;
   var BADGES = Object.freeze([
@@ -271,21 +267,12 @@
       (c.bossDefeated ? c.phase === 'car' : c.repairerMet ? c.phase === 'guard' : ['arrive', 'track'].includes(c.phase));
   }
 
-  function canUseSpear(profile) {
-    return normalize(profile).missions.chapter1.clears > 0;
-  }
-
-  function canUseEcho(profile) {
-    return normalize(profile).missions.chapter2_4.clears > 0;
-  }
-
-  function canUseHook(profile) {
-    return normalize(profile).missions.chapter3_4.clears > 0;
-  }
-
-  function canUseVent(profile) {
-    return normalize(profile).missions.chapter4_4.clears > 0;
-  }
+  function resolveMelee() { return 'blade'; }
+  function resolveRanged(id) { return id === 'scatter' ? 'scatter' : 'pistol'; }
+  function canUseSpear() { return false; }
+  function canUseEcho() { return false; }
+  function canUseHook() { return false; }
+  function canUseVent() { return false; }
 
   function validRouteChapter(chapter, status) {
     var c = object(chapter);
@@ -541,7 +528,7 @@
         }
         grantChapterBadges();
         if (!chapterProgress(profile).completed) {
-          unlocks.push('第一节完成 · 归途灯重明', '武器解锁 · 遗迹长枪', '第二节解锁 · 木场求援');
+          unlocks.push('第一节完成 · 归途灯重明', '第二节解锁 · 木场求援');
         }
       }
       rememberRecords(p, chapter.clues);
@@ -671,7 +658,7 @@
   return Object.freeze({ MISSIONS: MISSIONS, CHAPTERS: CHAPTERS, CHAPTER_ONE: CHAPTER_ONE, ARC: ARC, SECRETS: SECRETS, DIFFICULTIES: DIFFICULTIES, BADGES: BADGES, RELICS: RELICS, STORY_RELICS: STORY_RELICS, LAMP_IDS: LAMP_IDS, RECORD_IDS: RECORD_IDS, CAMP_UPGRADES: CAMP_UPGRADES,
     normalize: normalize, progress: progress, canPlay: canPlay, applyResult: applyResult,
     chapterProgress: chapterProgress, journalView: journalView, validRailChapter: validRailChapter, validRouteChapter: validRouteChapter, validTrainChapter: validTrainChapter, validStoryChapter: validStoryChapter, validRescueRun: validRescueRun, secretOpen: secretOpen, lampsReady: lampsReady, readCoreSeat: readCoreSeat, canUseSpear: canUseSpear, canUnlockScatter: canUnlockScatter, unlockScatter: unlockScatter,
-    canUseEcho: canUseEcho, canUseHook: canUseHook, canUseVent: canUseVent,
+    canUseEcho: canUseEcho, canUseHook: canUseHook, canUseVent: canUseVent, resolveMelee: resolveMelee, resolveRanged: resolveRanged,
     canPurchaseUpgrade: canPurchaseUpgrade, purchaseUpgrade: purchaseUpgrade, equipRelic: equipRelic, departure: departure,
     validFoxName: validFoxName, rescueFox: rescueFox, renameFox: renameFox, equipFox: equipFox, companionDeparture: companionDeparture });
 });

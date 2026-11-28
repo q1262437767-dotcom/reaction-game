@@ -11,7 +11,7 @@
   var NOTES = {
     'north-oil': { title: '补过的灯油', text: '北口石灯的油壶是新的，壶底写着一个小字：穗。雾里有人刚走过，灰尾狐闻得到。' },
     'north-signal': { title: '三短一长', text: '哨站日志只剩一行：“南灯若重明，此塔应三短一长。”给养箱还没动过。' },
-    'xiaosui': { title: '小穗', text: '“这盏蓝灯是我点的。也是它自己在答你们。南边一亮，应答程序就响了——我只是没让它再灭。”' },
+    'xiaosui': { title: '小穗', text: '小穗两手抱着油壶。蓝灯自己回了讯。她说：“南边一亮，它就答。我只是没让它再灭。”' },
     'lamp-map': { title: '灯路图', text: '图上隔离炉那一点还在跳。小穗：“你们把主芯留在那儿，脉冲已经传到总炉了。”' },
     'heng-sign': { title: '副调度的签名', text: '旧牌上是守灯人当年的职签，下面另有一行：副调度衡石。他签过“继续回收”。' },
     'echo-note': { title: '真焰不闪', text: '应答灯的火焰是稳的。会抖的蓝光都是回声。水能浇灭它的灯腔。' },
@@ -20,19 +20,19 @@
     'quiet-log': { title: '两种主张', text: '一本湿账。有人写“把回收走完”，有人写“把线接回去”。后一页被撕掉了。' },
     'cut-order': { title: '剪线令原件', text: '守灯人的全令：“总炉将溢。剪断识别线，停下溢流。”页脚后来补了一句：回收令没有撤销。' },
     'heng-note': { title: '衡石的留言', text: '“应完成回收，不宜重接。火一旦交还总炉，溢炉会再来一次。”' },
-    'keeper-talk': { title: '守灯人', text: '“识别线是我剪的。当时总炉要溢，不剪，整条谷都会烧起来。我没想到回收令不会停。”' },
+    'keeper-talk': { title: '守灯人', text: '守灯人亲手打开线箱：“识别线是我剪的。当时总炉要溢，不剪，整条谷都会烧起来。我没想到回收令不会停。”' },
     drafts: { title: '两份令稿', text: '完结令：停止回收，封上总炉。重明令：接回识别线，让灯重新认人。陶铆：“这次不是借。是送它回家。”' },
     'core-hot': { title: '比留下时更热', text: '隔离炉的表针自己在跳。陶铆：“一拿起来，路上所有归炉者都会醒。我们还是拿。”' },
     'pulse-route': { title: '心跳开门', text: '先扳道岔，再叫陶铆发车。运芯车会在炉口前等信号。低潮时扳闸放行，千万别把车停在炉口红线里。' },
     'cabinet-names': { title: '被收走的营名', text: '柜上刻着已经灭掉的营：霜驿、西渡、北坡。有些芯还温着。点亮它们，不算完成任务。' },
     'heng-call': { title: '衡石的远话', text: '“完成回收，别把火交回那座炉。你们不确定它还认不认得人。”' },
-    'door-talk': { title: '炉门之前', text: '衡石：“再往前，就是把火重新交给那座炉。”守灯人站在他对面，没有退。' },
+    'door-talk': { title: '炉门之前', text: '封炉辩论只在这扇门前说一次。衡石要停火。守灯人要让灯重新认人。砸炉会留下这一盏。再往前，就是你自己选。' },
     proof: { title: '完整时它认得住人', text: '识别晶和剪线令对在一起。炉在识别线完整的时候，可以安全看管，不必当成坟。' },
     'ash-warn': { title: '砸炉之前', text: '终端写着警告：不下令稿、只砸炉心，回收会停，许多灯也会灭。营地可能只剩这一盏。再确认一次。' },
     'home-true': { title: '灯一盏盏接上', text: '回去的路上，灭掉的站自己亮了。蓝灯和金灯交错，像在互相叫名字。' },
     'home-normal': { title: '已经点着的还亮', text: '营灯和北塔还在。中间的站没有应答。阿禾还是会往北边看。' },
     'home-ash': { title: '路上是暗的', text: '大部分灯口是冷的。陶铆把主芯护在怀里，谁也没说话。' },
-    dawn: { title: '晨灯', text: '老岑把火拨旺了一点。小林能走路了。灰尾狐躺在灯下。这一夜的回答，写在灯还亮不亮上。' },
+    dawn: { title: '晨灯', text: '小林自己走到营灯下。老岑把火拨旺了一点。灰尾狐躺在灯下。这一夜的回答，写在灯还亮不亮上。' },
     'unlisted-log': { title: '没有登记的班组', text: '检修班的名册不在小穗的图上。他们想把线接回去，然后再也没有回营。' },
     'crew-core': { title: '迷途的灯芯', text: '芯座上还留着人的温度。若带着识别晶，连追芯的机器也会停半拍。' }
   };
@@ -58,7 +58,8 @@
         ] }),
         room('雾径', 'battle', 1, 0, [0, 2, 3], { dark: true, wind: true, walls: [[360, 150, 70, 90]], props: [['barrel', 700, 180]],
           foes: [foe('mistwarden', 640, 340, 'snuff', '雾巡卫'), foe('mistwarden', 760, 200, 'snuff', '雾巡卫'), foe('shadeling', 520, 430, 'shade', '暗栖')],
-          items: [{ kind: 'story-oil', x: 700, y: 250, label: '给提灯补油' }] }),
+          items: [{ kind: 'story-oil', x: 700, y: 250, label: '给提灯补油' },
+            { kind: 'story-device', verb: 'lamp-ward', x: 520, y: 340, label: '点起护火桩' }] }),
         room('雾中岔口', 'battle', 2, 0, [1, 4], { dark: true, walls: [[420, 360, 80, 70]],
           foes: [foe('chaser', 560, 220, 'seek', '追光巡卫'), foe('shadeling', 760, 420, 'shade', '暗栖'), foe('mistwarden', 300, 240, 'snuff', '雾巡卫')],
           items: [{ kind: 'story-oil', x: 220, y: 160, label: '壁龛里的灯油' }] }),
@@ -78,7 +79,8 @@
         room('哨站外', 'camp', 0, 0, [1], { dark: true, items: [{ kind: 'story-lantern', x: 420, y: 300, label: '点起带来的灯' }] }),
         room('熄灯站院', 'battle', 1, 0, [0, 2, 3, 5], { dark: true, walls: [[300, 400, 90, 60]],
           foes: [foe('shield', 620, 240, '', '守夜机械'), foe('mistwarden', 760, 400, 'snuff', '雾巡卫'), foe('shadeling', 480, 180, 'shade', '暗栖')],
-          items: [note('north-signal', 240, 170), { kind: 'story-supply', x: 760, y: 160, label: '取用小穗的给养' }] }),
+          items: [note('north-signal', 240, 170), { kind: 'story-supply', x: 760, y: 160, label: '取用小穗的给养' },
+            { kind: 'story-device', verb: 'gate-slam', x: 560, y: 250, label: '落下夹门' }] }),
         room('应答塔台', 'puzzle', 1, -1, [1], { dark: true, terminal: true,
           items: [{ kind: 'story-flash', x: 480, y: 260, label: '打出三短一长', pair: 3 }] }),
         room('塔下闸门', 'puzzle', 2, 0, [1, 4], { dark: true, terminal: true,
@@ -92,7 +94,7 @@
     },
     chapter2_3: {
       name: '第二章 · 第三节 · 霜塔相认', goal: '见到小穗，听她说出蓝灯的答案', coins: 55,
-      endWin: '小穗把灯路图推过来。北面已经听见隔离炉里那枚主芯。',
+      endWin: '小穗两手抱着油壶。蓝灯自己回了讯，把灯路图推过来。',
       endLose: '霜塔的门又合上了。',
       objective: '沿塔上行 · 灯外有暗栖 · 蓝灯照得出秘道',
       rooms: [
@@ -101,7 +103,8 @@
           { kind: 'story-talk', x: 560, y: 250, label: '听小穗说话', clue: 'xiaosui' }
         ] }),
         room('塔梯', 'battle', 1, 0, [0, 2, 3], { dark: true, walls: [[480, 140, 50, 120]],
-          foes: [foe('chaser', 720, 400, 'seek', '塔内巡卫'), foe('mistwarden', 280, 220, 'snuff', '雾巡卫'), foe('shadeling', 700, 180, 'shade', '暗栖')] }),
+          foes: [foe('chaser', 720, 400, 'seek', '塔内巡卫'), foe('mistwarden', 280, 220, 'snuff', '雾巡卫'), foe('shadeling', 700, 180, 'shade', '暗栖')],
+          items: [{ kind: 'story-device', verb: 'shade-lamp', x: 300, y: 360, label: '举起塔上的蓝灯' }] }),
         room('蓝光秘道', 'puzzle', 1, 1, [1, 4], { dark: true, secret: true, need: 'lit',
           items: [{ kind: 'story-oil', x: 400, y: 300, label: '秘道里的灯油' }] }),
         room('灯路图室', 'rescue', 2, 0, [1, 4], {
@@ -111,7 +114,7 @@
     },
     chapter2_4: {
       name: '第二章 · 第四节 · 护灯一晚', goal: '守住应答灯，停下回声灯卫', coins: 55,
-      endWin: '小穗把回声灯卫的灯腔卸下来，装进信号铳：“下回把假灯打到别处，让它们追错。你们留在隔离炉里的主芯已经惊动北面了。那头比归炉者还大。”',
+      endWin: '假光熄尽。小穗最后添了一次油，把壶放下，在台阶上坐了一会儿。',
       endLose: '应答灯灭了。蓝光不再往南边回。',
       objective: '真焰不闪 · 看落点和气口 · 水浇灯腔',
       rooms: [
@@ -161,7 +164,8 @@
       rooms: [
         room('廊口', 'camp', 0, 0, [1], { listen: true, items: [note('quiet-log', 300, 200)] }),
         room('听声长廊', 'battle', 1, 0, [0, 2, 3, 4], { listen: true, walls: [[450, 140, 60, 320]],
-          foes: [foe('listener', 250, 220, 'listen', '听声巡卫'), foe('listener', 250, 420, 'listen', '听声巡卫'), foe('listener', 760, 180, 'listen', '听声枪卫')] }),
+          foes: [foe('listener', 250, 220, 'listen', '听声巡卫'), foe('listener', 250, 420, 'listen', '听声巡卫'), foe('listener', 760, 180, 'listen', '听声枪卫')],
+          items: [{ kind: 'story-device', verb: 'vent-hush', x: 680, y: 300, label: '开一声泄压' }] }),
         room('侧室', 'puzzle', 1, 1, [1], { items: [{ kind: 'story-bark', x: 480, y: 280, label: '让灰尾狐叫一声' }] }),
         room('旧登记库', 'secret', 1, -1, [1], { secret: true, need: 'quiet', terminal: false,
           items: [note('cut-order', 340, 200), { kind: 'story-lamp', x: 560, y: 320, label: '取下识别晶碎片', lamp: 'archive' }] }),
@@ -191,9 +195,9 @@
     },
     chapter3_4: {
       name: '第三章 · 第四节 · 检线', goal: '救出被检线官扣住的巡线工，取回两份令稿', coins: 60,
-      endWin: '两份令稿收好了。陶铆把检线官的钩索改短，装到刃柄上：“这钩子原本就是搬货的，送芯的路上用得着。这次咱们是送它回家，按咱们的规矩。”',
+      endWin: '钩索卸了力。靴子落地，巡线工自己走出秤台。两份令稿还在桌上。',
       endLose: '检线官把人又标成了货物。',
-      objective: '巡线工被当成货物扣住了。合上两间房的终端，接回识别线',
+      objective: '外侧合闸，内侧看人落地。钩索卸力之后，再去拿两份令稿',
       rooms: [
         room('检线站口', 'camp', 0, 0, [1, 4], {}),
         room('邻房终端', 'puzzle', 1, 0, [0, 2], { terminal: true,
@@ -217,7 +221,8 @@
       rooms: [
         room('隔离炉外', 'camp', 0, 0, [1], { items: [note('core-hot', 300, 190)] }),
         room('炉外甬道', 'battle', 1, 0, [0, 2], { hot: true,
-          foes: [foe('pulseling', 420, 220, '', '脉卒'), foe('pulseling', 700, 400, '', '脉卒'), foe('pulseling', 760, 180, '', '脉卒')] }),
+          foes: [foe('pulseling', 420, 220, '', '脉卒'), foe('pulseling', 700, 400, '', '脉卒'), foe('pulseling', 760, 180, '', '脉卒')],
+          items: [{ kind: 'story-device', verb: 'low-pillar', x: 560, y: 320, label: '低潮撞柱' }] }),
         room('炉室', 'boss', 2, 0, [1, 3], { hot: true, foes: [foe('pulseling', 640, 260, 'returner', '守芯机', true)],
           items: [{ kind: 'story-core', x: 360, y: 340, label: '取回主芯' }] }),
         room('发车坪', 'rescue', 3, 0, [2], { need: 'core',
@@ -243,7 +248,8 @@
         room('前方信号房', 'puzzle', 1, 1, [1, 2, 4], { terminal: true,
           items: [{ kind: 'story-switch', x: 480, y: 260, label: '在低潮时开炉口', pair: 4 }] }),
         room('炉口', 'battle', 2, 1, [3, 5], { hot: true, need: 'mouth',
-          foes: [foe('pulseling', 520, 200, '', '脉卒'), foe('pulseling', 760, 400, '', '脉卒'), foe('charger', 700, 300, '', '炉口巡卫')] }),
+          foes: [foe('pulseling', 520, 200, '', '脉卒'), foe('pulseling', 760, 400, '', '脉卒'), foe('charger', 700, 300, '', '炉口巡卫')],
+          items: [{ kind: 'story-device', verb: 'mouth-vent', x: 280, y: 340, label: '低潮泄炉口' }] }),
         room('轨尾', 'rescue', 3, 1, [4], { items: [{ kind: 'story-goal', x: 680, y: 390, label: '把车停进收芯库外' }] })
       ]
     },
@@ -259,7 +265,8 @@
           items: [
           note('cabinet-names', 260, 170),
           note('heng-call', 700, 170),
-          { kind: 'story-cabinet', x: 480, y: 240, label: '点亮一格被收走的灯' }
+          { kind: 'story-cabinet', x: 480, y: 240, label: '点亮一格被收走的灯' },
+          { kind: 'story-device', verb: 'name-lamp', x: 620, y: 400, label: '点亮一格灭掉的营名' }
         ] }),
         room('陶铆的私藏', 'secret', 1, 1, [1], { secret: true, need: 'seat', terminal: true,
           items: [
@@ -271,7 +278,7 @@
     },
     chapter4_4: {
       name: '第四章 · 第四节 · 总归炉者', goal: '守住车上的芯，把它从总归炉者嘴里夺出来', coins: 65,
-      endWin: '陶铆把泄压台的备用气筒装上喷嘴，递了过来：“还是老办法，等护板抬起来再开阀。”衡石站在门槛上：“再往前，就得把火交回去。你们确定那座炉还认得人？”',
+      endWin: '陶铆扣紧车架固定栓。衡石先数人，再拦芯：“人都过来了。芯先放这儿。”',
       endLose: '主芯被它吞了回去。',
       objective: '先冲，再砸，再吞 · 泄压或招架 · 然后把芯搬走',
       rooms: [
@@ -289,12 +296,13 @@
     },
     chapter5: {
       name: '第五章 · 第一节 · 炉门之前', goal: '听衡石和守灯人把话说完，再走一段短途调度', coins: 70,
-      endWin: '炉门开着。接下来要下的令，还在终端上。',
+      endWin: '试灯退回待命。远处下一站还是暗的。封炉只在这扇门前辩论一次。',
       endLose: '调度错了拍，备用炉口喷了回来。',
-      objective: '先说话 · 灯照刻度，水短路溢流，静步过听卫',
+      objective: '合一次试灯闸 · 中继亮一下就松开 · 灯、水、静步走过短廊',
       rooms: [
         room('炉门谈话', 'camp', 0, 0, [1], { items: [
           { kind: 'story-talk', x: 420, y: 260, label: '听他们说完', clue: 'door-talk' },
+          { kind: 'story-trial', x: 640, y: 360, label: '合上试灯闸' },
           note('proof', 680, 180)
         ] }),
         room('调度短廊', 'puzzle', 1, 0, [0, 2, 3, 4], { dark: true, deep: true, listen: true,
@@ -323,7 +331,8 @@
           items: [
             { kind: 'story-order', x: 280, y: 200, label: '下完结令', ending: 'normal' },
             { kind: 'story-order', x: 280, y: 300, label: '下重明令', ending: 'true' },
-            { kind: 'story-smash', x: 280, y: 400, label: '砸毁炉心' }
+            { kind: 'story-smash', x: 280, y: 400, label: '砸毁炉心' },
+            { kind: 'story-device', verb: 'pulse-vent', x: 180, y: 470, label: '低潮泄压' }
           ] }),
         room('溢流阀室', 'puzzle', 1, 0, [0, 3], { deep: true, terminal: true,
           foes: [foe('program', 300, 400, 'damp', '程序哨'), foe('program', 720, 400, 'damp', '程序哨')],
@@ -345,7 +354,7 @@
     },
     chapter5_3: {
       name: '第五章 · 第三节 · 沿灯回家', goal: '沿着灯路走回营地，看这一夜留下什么', coins: 40,
-      endWin: '营地到了。老岑把火拨旺，谁也没有催你说话。',
+      endWin: '小林自己走到营灯下。老岑把火拨旺，谁也没有催你说话。',
       endLose: '这条路没有失败。',
       objective: '没有追兵 · 这一夜的灯会按结局亮 · 也可以直接回营',
       rooms: [

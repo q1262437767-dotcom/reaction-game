@@ -28,7 +28,7 @@
     trail: { title: '采集队的刻痕', text: '木牌上是阿禾的字：“灯突然灭了，小林脚上又有伤。我们去工坊找火，劳烦老岑把灯点回去。看得见灯，大家就能找回来。”' },
     cooling: { title: '停炉维修记录', text: '“主芯不在，备用炉烧红了。水闸拧不动就先去北边旧仓，抬起进水栅。别信守卫的绿灯，它的识别线早就断了。”' },
     'missing-core': { title: '空置的主炉芯座', text: '铜扣是从里面解开的，螺丝也整整齐齐放在地上。搬运车印一直伸向木场。老岑说过，工坊还剩一个知道怎么拆芯的维修匠。' },
-    'timber-tracks': { title: '压深的车辙', text: '带着铜屑的车辙出了木场，转进西边旧线。一只小手印留在车板上，旁边是新刻的字：“上车之后，别把毯子掀开。”' },
+    'timber-tracks': { title: '压深的车辙', text: '工人指了指西边那道深辙。车从那儿走的。' },
     'timber-bandage': { title: '带血的绑带', text: '干净的半卷留给后来的人，带血的半卷包成一团。木板背面写着：“陶师傅把人送上车了。我去把吊机断掉，别让它跟过来。”' },
     'rail-tracks': { title: '一路向西的车辙', text: '两道车印很沉，枕木下却没有拖人的痕迹，只有从车上掉下来的布条和几颗药片。开车的人一路都没敢停。' },
     'rail-order': { title: '守卫的调度单', text: '“目标离开炉座后继续追踪，以主芯的脉冲为准。”下边有一行新写的字：“借的，有伤员，回头再解释。陶铆。”' },
@@ -178,6 +178,10 @@
   }
   function isMeleeWeapon(value) { return value === 'blade' || value === 'spear' || value === 'hook'; }
   function isRangedWeapon(value) { return value === 'pistol' || value === 'scatter' || value === 'echo' || value === 'vent'; }
+  // The four story weapons are retired. Old saves and old loadout packets fall
+  // back here: melee to the base blade, ranged to the pistol. Scatter stays.
+  function resolveMelee() { return 'blade'; }
+  function resolveRanged(value) { return value === 'scatter' ? 'scatter' : 'pistol'; }
   function isPlayerWeapon(value) { return isMeleeWeapon(value) || isRangedWeapon(value); }
   function player(idValue, index, weapon, rangedWeapon, meleeWeapon) {
     return { id: idValue, name: index ? '萤火搭档' : '探险队长', x: 128, y: 275 + index * 52,
@@ -254,6 +258,13 @@
     if (typeof AdventureStory !== 'undefined' && AdventureStory && AdventureStory.chapter) return AdventureStory;
     if (typeof module === 'object' && module.exports) {
       try { return require('./story.js'); } catch (err) { return null; }
+    }
+    return null;
+  }
+  function deviceBook() {
+    if (typeof AdventureDevices !== 'undefined' && AdventureDevices && AdventureDevices.arm) return AdventureDevices;
+    if (typeof module === 'object' && module.exports) {
+      try { return require('./devices.js'); } catch (err) { return null; }
     }
     return null;
   }
@@ -439,12 +450,19 @@
       });
       (src.items || []).forEach(function (item, index) {
         var noted = item.clue ? book.note(item.clue) : null;
-        data.interactables.push({ id: s.mission.id + '-' + room.index + '-' + item.kind + '-' + index, kind: item.kind,
+        var placed = { id: s.mission.id + '-' + room.index + '-' + item.kind + '-' + index, kind: item.kind,
           x: item.x, y: item.y, r: 26, label: item.label, active: true, used: false,
           clueId: item.clue || '', title: noted ? noted.title : '', text: noted ? noted.text : '',
           lamp: item.lamp || '', pair: item.pair == null ? -1 : item.pair, relic: item.relic || '',
           ending: item.ending || '', needClue: item.needClue || '', needDown: !!item.needDown,
-          description: noted ? noted.text : '' });
+          description: noted ? noted.text : '' };
+        if (item.verb) {
+          placed.verb = item.verb;
+          placed.zoneUntil = 0;
+          placed.readyAt = 0;
+          placed.hitIds = [];
+        }
+        data.interactables.push(placed);
       });
       data.enemies.forEach(function (e) { placeEnemyInRoom(data, e); });
       s.roomData[room.index] = data;
@@ -495,10 +513,15 @@
       if (s.railAlly && s.railAlly.task === 'wire') s.railAlly.task = 'follow';
       if (c.clues.indexOf('worker-freed') < 0) {
         storyRemember(s, 'worker-freed');
-        var report = actor === s.railAlly ? '阿禾：它认出人了！巡线工快走，护舱也开了。' :
-          '检线官认出人了，钩索松开。巡线工快走，护舱也开了。';
-        railAllyReport(s, report);
-        releaseInspectionWorker(s, 'recognized', report);
+        var outsideLine = actor === s.railAlly ? '阿禾：我这边合了。你看一眼，他下来没？' : '我这边合了。你看一眼，他下来没？';
+        releaseInspectionWorker(s, 'recognized', '脚着地了。走！');
+        if (s.playerRooms) {
+          var outsideScene = splitRoomData(s, 1);
+          outsideScene.message = outsideLine;
+          outsideScene.messageTime = 5;
+        } else if (s.room.index !== 2) s.message = outsideLine;
+        else s.message = '阿禾：我这边合了。脚着地了。走！';
+        railAllyReport(s, s.playerRooms ? outsideLine : s.message);
       } else {
         railAllyReport(s, actor === s.railAlly ? '阿禾：合上了！趁现在打它露出来的护舱。' :
           '护舱打开了。趁它还没合上，打！');
@@ -568,6 +591,7 @@
         q.description = !storyCartArrived(c) ? '先把运芯车送到泄压台。' : '先击退总归炉者。';
       }
       if (q.kind === 'story-vent') q.active = playing && s.enemies.some(function (e) { return e.storyBoss && e.hp > 0; });
+      if (q.kind === 'story-device') { q.active = playing; q.used = false; }
     });
   }
   function storyWin(s) {
@@ -578,6 +602,16 @@
   function interactStory(s, p, target) {
     var c = s.chapter, book = storyBook();
     if (!target || target.used && target.kind !== 'story-lantern' && target.kind !== 'story-valve' && target.kind !== 'story-drive' && target.kind !== 'story-smash') return false;
+    if (target.kind === 'story-device') {
+      var devices = deviceBook();
+      if (!devices || !foxSight(s, p, target, 3)) return false;
+      var armed = devices.arm(s, target, p, {
+        pulseHigh: function () { return storyPulseHigh(s); },
+        window: function () { return finaleWindow(s); }
+      });
+      if (armed) devices.tick(s, deviceApi(s));
+      return armed;
+    }
     if (target.kind === 'story-note' || target.kind === 'story-talk' || target.kind === 'story-home') {
       var clue = target.kind === 'story-home' ? (s.unlocks && s.unlocks.dawnEnding === 'true' ? 'home-true' : s.unlocks && s.unlocks.dawnEnding === 'ash' ? 'home-ash' : 'home-normal') : target.clueId;
       var noted = book && book.note(clue);
@@ -656,7 +690,8 @@
       }
       if (storyPulseHigh(s)) { s.message = '高潮还没过去。炉口此刻吞火。'; s.messageTime = 3; return false; }
       storyRemember(s, 'code-set');
-      s.message = '低潮。炉口开了，快过。'; s.messageTime = 3; return true;
+      s.message = c.id === 'chapter4_2' ? '低潮。炉口开了。衡石压住车尾这一拍，发车还是你来。错过就等下一轮。' : '低潮。炉口开了，快过。';
+      s.messageTime = 3; return true;
     }
     if (target.kind === 'story-drive') {
       if (!storyCartSection(s) || c.cartRoom !== s.room.index || storyCartArrived(c)) return false;
@@ -666,9 +701,17 @@
       s.message = moving ? '陶铆：走。你们盯着脉冲。' : '陶铆：车停下了。';
       s.messageTime = 3; return true;
     }
+    if (target.kind === 'story-trial') {
+      target.readyAt = s.time + 1.35;
+      s.message = '中继亮了一下。远处下一站还是暗的。松开闸，它退回待命。';
+      s.messageTime = 4;
+      burst(s, 'spark', target.x, target.y, '#f0d7a2', 8);
+      return true;
+    }
     if (target.kind === 'story-core') {
       storyRemember(s, 'core-taken');
-      s.message = '主芯离开炉座了。该醒的都会醒。'; s.messageTime = 4;
+      s.message = c.id === 'chapter4' ? '主芯离座。远处红灯一盏接一盏转过来。' : '主芯离开炉座了。该醒的都会醒。';
+      s.messageTime = 4;
       burst(s, 'spark', target.x, target.y, '#ffb067', 12); target.used = true; target.active = false; return true;
     }
     if (target.kind === 'story-vent') {
@@ -694,7 +737,12 @@
     }
     if (target.kind === 'story-cabinet') {
       storyRemember(s, 'cabinet-lit');
-      s.message = '有一格灯亮了。不点也出得去。'; s.messageTime = 3; return true;
+      if (c.id === 'chapter5_3') {
+        var dawn = s.unlocks && s.unlocks.dawnEnding;
+        s.message = dawn === 'true' ? '这一站应了。蓝灯和金灯都还在叫。' :
+          dawn === 'ash' ? '灯口是冷的。这一路没有应答。' : '营灯还在。中间的站没有应。';
+      } else s.message = '有一格灯亮了。不点也出得去。';
+      s.messageTime = 3; return true;
     }
     if (target.kind === 'story-lamp') {
       if (!target.lamp || c.lamp === target.lamp) return false;
@@ -738,8 +786,16 @@
     if (target.kind === 'story-air') { s.message = '气窝里能换一口气。别在深水里久留。'; s.messageTime = 2; return true; }
     return false;
   }
+  function deviceApi(s) {
+    return {
+      dist: dist,
+      open: function (enemy, owner, source, duration) { openWeakpoint(s, enemy, owner, source, duration); }
+    };
+  }
   function updateStory(s, dt) {
     if (!isStory(s) || s.status !== 'playing') return;
+    var devices = deviceBook();
+    if (devices) devices.tick(s, deviceApi(s));
     var c = s.chapter, globalStep = !s._split || !s._split.active || s._split.advanceGlobals;
     if (globalStep) {
       if (c.lit && c.oil > 0) {
@@ -858,10 +914,10 @@
     var partnerUpgrades = options.practice ? [] : campUpgrades(options.partnerCamp);
     var startingRelic = hostUpgrades.indexOf('relicCase') >= 0 && options.camp && Object.keys(BUFFS).indexOf(options.camp.startingRelic) >= 0 ? options.camp.startingRelic : null;
     var s = { version: 1, combatVersion: 1, contentVersion: 1, weaponVersion: 1, tacticsVersion: 1, practice: !!options.practice, mode: mode, width: W, height: H, seed: seed, rng: seed || 1, serial: 0,
-      time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : isRangedWeapon(options.loadout) ? options.loadout : 'pistol',
-      meleeLoadout: !options.practice && isMeleeWeapon(options.meleeLoadout) ? options.meleeLoadout : 'blade',
-      partnerMeleeLoadout: !options.practice && isMeleeWeapon(options.partnerMeleeLoadout) ? options.partnerMeleeLoadout : 'blade',
-      rangedLoadout: isRangedWeapon(options.rangedLoadout) ? options.rangedLoadout : isRangedWeapon(options.loadout) ? options.loadout : 'pistol',
+      time: 0, elapsed: 0, status: 'playing', loadout: options.practice || options.loadout === 'blade' ? 'blade' : resolveRanged(options.loadout),
+      meleeLoadout: 'blade',
+      partnerMeleeLoadout: 'blade',
+      rangedLoadout: options.practice ? 'pistol' : resolveRanged(options.rangedLoadout != null ? options.rangedLoadout : options.loadout),
       difficulty: ['chapter', 'hunt', 'relay', 'rescue'].indexOf(mode) >= 0 ? 1 : Number(options.difficulty) === 2 ? 2 : 1,
       mission: { id: missionId, name: missionDef.name, goal: missionDef.goal, progress: 0,
         total: missionDef.total, phase: 'travel', wave: 0, waves: 3, caches: [], started: false, prep: 0 },
@@ -953,17 +1009,23 @@
     if (s.time >= valve.sprayUntil) return;
     var hit = false;
     s.enemies.forEach(function (e) {
-      if (e.hp <= 0 || e.elite || e.chapterWashedAt === valve.sprayUntil || dist(e, CHAPTER_WASH) > CHAPTER_WASH.r) return;
+      if (e.hp <= 0 || e.kind !== 'chaser') return;
+      if (e.stun <= 0) e.washLean = 0;
+      if (e.chapterWashedAt === valve.sprayUntil || dist(e, CHAPTER_WASH) > CHAPTER_WASH.r) return;
       e.chapterWashedAt = valve.sprayUntil;
       e.alerted = true;
       e.windup = 0; e.chargeTime = 0; e.rhythm = null;
-      e.stun = Math.max(finite(e.stun, 0), 1.05);
+      e.washLean = 1;
+      e.facing = 0;
+      move(s, e, 48, 0, false);
+      e.stun = Math.max(finite(e.stun, 0), 1.15);
       e.attackCd = Math.max(finite(e.attackCd, 0), 1.15);
       openWeakpoint(s, e, null, 'counter', Math.max(finite(e.weakTime, 0), 1.8));
-      burst(s, 'steam', e.x, e.y, '#a9d8de', 8);
+      burst(s, 'steam', e.x, e.y + e.r * 0.7, '#d7f6f8', 7);
+      burst(s, 'steam', e.x, e.y, '#a9d8de', 5);
       hit = true;
     });
-    if (hit) { s.message = '守卫被冷水压住了，趁它没站稳，打！'; s.messageTime = 2.5; }
+    if (hit) { s.message = '冷水打在刀兵脚上，它朝水流那边踉跄。趁它没站稳，打！'; s.messageTime = 2.5; }
   }
   function updateChapterOpening(s, dt) {
     if (!isChapterOpening(s)) return;
@@ -973,7 +1035,14 @@
       event(s, 'chapter-signal-out', { x: OPENING_SIGNAL.x, y: OPENING_SIGNAL.y });
     }
     var valve = chapterWashValve(s);
-    if (valve) splashChapterWash(s, valve);
+    if (!valve) return;
+    splashChapterWash(s, valve);
+    s.enemies.forEach(function (e) { if (e.stun <= 0) e.washLean = 0; });
+    if (valve.sprayUntil > 0 && s.time >= valve.sprayUntil && valve.flowNoted !== valve.sprayUntil) {
+      valve.flowNoted = valve.sprayUntil;
+      var soaked = s.enemies.some(function (e) { return e.chapterWashedAt === valve.sprayUntil; });
+      if (!soaked) { s.message = '水冲过了空地。等阀门回压，再把刀兵引进水圈。'; s.messageTime = 2.6; }
+    }
   }
   function createChapter(s) {
     var definitions = [
@@ -1020,7 +1089,7 @@
         var patrol = guard(data, 'chaser', 385, 300); patrol.alertRadius = 265; patrol.alerted = false;
         var gunner = guard(data, 'shooter', 755, 445); gunner.alertRadius = 265; gunner.alerted = false;
         var overseer = guard(data, 'duelist', 775, 135, true, 'riposte'); overseer.alertRadius = 180; overseer.alerted = false;
-        item(data, 'wash', 268, 382, '放冷水 · 打断巡炉刀兵', { readyAt: 0, sprayUntil: 0 });
+        item(data, 'wash', 268, 382, '外庭冲洗阀 · 打断巡炉刀兵', { readyAt: 0, sprayUntil: 0, flowNoted: 0 });
         note(data, 'trail', 290, 150);
       } else if (room.index === 2) {
         data.walls.push(rect(330, 140, 65, 105), rect(600, 365, 65, 105));
@@ -1083,7 +1152,7 @@
       if (q.kind === 'chapter-beacon') q.used = c.beaconLit;
       if (q.kind === 'chapter-wash') {
         q.active = s.time >= q.readyAt;
-        q.description = q.active ? '把巡炉刀兵引进水圈，再开阀。' : s.time < q.sprayUntil ? '冷水正在冲刷' : '冲洗阀正在回压';
+        q.description = q.active ? '战斗用冲洗阀。把巡炉刀兵引进浅水，再开阀。' : s.time < q.sprayUntil ? '冷水正在冲过湿痕' : '冲洗阀正在回压';
       }
       if (q.kind.indexOf('chapter-') === 0 && q.used) q.active = false;
       if (q.kind === 'relic' && s.runBuffs.indexOf(q.buff) >= 0) { q.used = true; q.active = false; }
@@ -1101,7 +1170,7 @@
       if (s.room.index !== 1 || s.time < target.readyAt || !foxSight(s, p, target, 3)) return false;
       target.readyAt = s.time + CHAPTER_WASH_COOLDOWN;
       target.sprayUntil = s.time + CHAPTER_WASH_TIME;
-      s.message = '冷水冲进外庭，把巡炉刀兵引进水圈。'; s.messageTime = 2.5;
+      s.message = '冷水沿着湿痕冲进外庭。刀兵踩进水里，才会被冲歪。'; s.messageTime = 2.5;
       event(s, 'chapter-wash', { playerId: p.id, x: target.x, y: target.y });
       splashChapterWash(s, target);
       syncChapter(s); setHint(s); return true;
@@ -1241,7 +1310,7 @@
     var c=s.chapter;if(!isTimber(s)||target.used||!target.active)return false;
     if(target.kind==='chapter-note'){if(c.clues.indexOf(target.clueId)<0)c.clues.push(target.clueId);target.used=true;target.active=false;s.message=target.title+'：'+target.text;}
     else if(target.kind==='timber-winch'){if(Math.abs(c.cart.position-c.cart.target)>.00001){s.message='绞盘还在转。先让车停稳，留开轨道。';s.messageTime=2;return false;}c.cart.target=c.cart.target?0:1;s.message='绞盘动了。留开轨道，让车过去。';}
-    else if(target.kind==='timber-worker'){c.workerFreed=true;c.shortcutOpen=true;target.used=true;target.active=false;s.message='工人：我没事。陶师傅的车往西走了，车上有伤员。装车坪有个安全卡，先落下它，吊钩就追不那么快了。';}
+    else if(target.kind==='timber-worker'){c.workerFreed=true;c.shortcutOpen=true;target.used=true;target.active=false;s.message='工人指了指西边那道深辙。先落下安全卡，吊钩落空时才能救人。';}
     else if(target.kind==='timber-brake'){c.brakeSet=true;s.message='吊链猛地一顿。工人：卡住了！它还在动，趁吊钩回收时过去。';burst(s,'spark',target.x,target.y,'#d4bf87',14);spawnTimberBoss(s);}
     else if(target.kind==='timber-supplies'){c.suppliesTaken=true;target.used=true;target.active=false;livingParty(s).forEach(function(q){q.hp=Math.min(q.maxHp,q.hp+3);});s.message='纱布和药都还能用。先把伤口包上。';burst(s,'heal',target.x,target.y,'#8ce6b0',12);}
     else if(target.kind==='timber-extraction'){if(!c.workerFreed||!c.brakeSet||!c.bossDefeated)return false;c.evacuated=true;c.phase='complete';target.used=true;target.active=false;finish(s,'won');return true;}
@@ -1393,7 +1462,7 @@
       s.message = target.text;
     } else if (target.kind === 'rail-repairer') {
       c.repairerMet = true;
-      s.message = '陶铆：小林冻得说不出话，我总不能看着他冻过去。主芯是我拆的，等送到避风站，我亲自装回去。先帮我接通配电廊的旁路。';
+      s.message = '陶铆：毯子底下是小林。车底那点暖光，是我拆下来的主芯。他冻得不行。先帮我接通配电廊的旁路。';
     } else if (target.kind === 'rail-switch') {
       if (c.railCooldown > 0) {
         s.message = '电闸还在复位。'; s.messageTime = 1.3; return false;
@@ -1563,6 +1632,13 @@
       if (q.kind === 'route-gate') { q.used = c.gateOpened; q.active = read && !q.used; }
       if (q.kind === 'route-signal') { q.used = c.signalLit; q.active = c.gateOpened && !q.used; }
     });
+    if (c.gateOpened && !c.signalLit) {
+      s.enemies.forEach(function (e) {
+        if (!e || e.hp <= 0) return;
+        e.facing = Math.atan2(300 - e.y, 160 - e.x);
+        e.aimX = 160; e.aimY = 300;
+      });
+    }
     if (s.railAlly) s.railAlly.task = c.signalLit ? 'done' : c.gateOpened ? 'signal' :
       c.bridgeRaised || c.wallBreached ? 'dispatch' : 'route';
   }
@@ -1575,7 +1651,7 @@
       c.clues.push(target.clueId);
       event(s, 'chapter-note', { clueId: target.clueId, title: target.title, text: target.text,
         playerId: p.id, x: target.x, y: target.y });
-      s.message = target.clueId === 'route-order' ? '阿禾：它们根本不知道车里有人……还有个大家伙在往棚里走。快开闸。' : target.text;
+      s.message = target.clueId === 'route-order' ? '阿禾按住令页，转向闸门。' : target.text;
     } else if (target.kind === 'route-repairer') {
       s.message = '陶铆：上边绞盘能把桥拉起来。下边的重工也能砸开货道，就是别站它正前头。我守车，你们去开闸。';
     } else if (target.kind === 'route-pin') {
@@ -1588,7 +1664,7 @@
     } else if (target.kind === 'route-gate') {
       if (c.clues.indexOf('route-order') < 0 || !c.bridgeRaised && !c.wallBreached) return false;
       c.gateOpened = true;
-      s.message = '主轨闸升起来了，岔口也能直接通行。去东边，把入口信号点亮。';
+      s.message = '车灯灭了。追兵的探头还是一盏盏转向主芯。闸已经升起，去东边点信号。';
       burst(s, 'spark', target.x, target.y, '#b4dbc9', 14);
     } else if (target.kind === 'route-supplies') {
       livingParty(s).forEach(function (q) { q.hp = Math.min(q.maxHp, q.hp + 2); });
@@ -1798,11 +1874,11 @@
       Object.keys(crew).map(function (key) { return crew[key]; }).concat(s.railAlly || []).forEach(function (actor) {
         if (!actor.downed && actor.hp > 0) actor.hp = Math.min(actor.maxHp, Math.max(actor.hp, 4));
       });
-      s.message = '陶铆：人进库了，先包扎。那台机器认的是主芯，咱们把芯送进隔离炉。';
+      s.message = '伤员先下车。主芯还在车上，等会儿再送进隔离炉。';
       burst(s, 'heal', target.x, target.y, '#b3ddc5', 12);
     } else if (target.kind === 'train-divert') {
       ending.diverted = true;
-      s.message = '阿禾：滑轨接上了！让它追着主芯往东走，别在车库门口跟它硬拼。';
+      s.message = '主芯沿滑轨进了隔离炉。追兵跟错了目标。芯留在炉里，谁也没把它揣走。';
       burst(s, 'spark', target.x, target.y, '#d2e7b9', 12);
     } else if (target.kind === 'train-vent') {
       var foe = s.enemies.find(function (e) { return e.trainReturner && e.hp > 0; });
@@ -2281,7 +2357,7 @@
     var circuit = target.kind === 'dispatch-light' ? 'light' : 'vent';
     if (d.circuit === circuit || d.circuit !== 'off' && s.time - d.changedAt < DISPATCH_SWITCH_DELAY) return false;
     d.circuit = circuit; d.changedAt = s.time;
-    s.message = circuit === 'light' ? '炉心地灯亮了，巡灯机正在靠过去。' : '炉心排风已通，气口按拍喷气。';
+    s.message = circuit === 'light' ? '照明线接上了。可以先接好再一起进，也可以留在站里把巡灯机引开。' : '气口按拍喷气。先接线再进更稳；留人在站里，也能把大怪引到气口。';
     s.messageTime = 3;
     burst(s, 'spark', target.x, target.y, circuit === 'light' ? '#eac08a' : '#9ad4d7', 8);
     return true;
@@ -2837,6 +2913,7 @@
     refreshProgress(s);
     event(s, 'room-enter', { room: index, name: s.room.name, playerId: key });
     cacheSplitScene(s);
+    captureFurnaceDoor(s, index);
     return true;
   }
   function restoreSplitHost(s, all, companions) {
@@ -3069,6 +3146,7 @@
       } else if (s.hunt.heardFrom !== null && s.room.neighbors.indexOf(s.hunt.heardFrom) < 0) s.hunt.heardFrom = null;
     }
     updateCarries(s); refreshProgress(s);
+    captureFurnaceDoor(s, index);
     event(s, 'room-enter', { room: index, name: s.room.name });
     s.message = s.room.name; s.messageTime = 2;
     if (s.mode === 'chapter' && initial) {
@@ -3950,6 +4028,57 @@
     syncMission(s);
     setHint(s);
   }
+  var FURNACE_DOORS = { chapter1: 4, chapter4_4: 1, chapter5_2: 0 };
+  function captureFurnaceDoor(s, index) {
+    if (!s || s._furnaceCheckpoint || s.mode !== 'chapter' || !s.chapter || FURNACE_DOORS[s.chapter.id] !== index) return;
+    var scene = {};
+    SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (key) { scene[key] = clone(s[key]); });
+    var players = {}, all = partyPlayers(s);
+    Object.keys(all).forEach(function (key) { players[key] = clone(all[key]); });
+    s._furnaceCheckpoint = { room: index, scene: scene, chapter: clone(s.chapter), players: players, runBuffs: (s.runBuffs || []).slice() };
+    s.doorRetry = { room: index, attempt: 0, offered: false };
+  }
+  function restoreFurnaceDoor(s) {
+    var cp = s && s._furnaceCheckpoint;
+    if (!cp || !s.doorRetry || !s.doorRetry.offered || s.status === 'won') return false;
+    var index = cp.room, all = partyPlayers(s);
+    s.status = 'playing';
+    s.chapter = clone(cp.chapter);
+    if (Array.isArray(cp.runBuffs)) s.runBuffs = cp.runBuffs.slice();
+    Object.keys(all).forEach(function (key, i) {
+      var p = all[key], saved = cp.players[key];
+      if (saved) {
+        p.hp = Math.max(1, saved.hp); p.maxHp = saved.maxHp; p.ward = saved.ward || 0;
+        p.weapons = clone(saved.weapons); p.weapon = saved.weapon; p.activeSlot = saved.activeSlot;
+        p.rangedBroken = !!saved.rangedBroken;
+      }
+      p.downed = false;
+      resetCombat(p);
+      p.x = 210 + (i % 2) * 46; p.y = 300;
+      p.invuln = 1.2; p.moving = false; p.vx = 0; p.vy = 0;
+      if (s.playerRooms) s.playerRooms[key] = index;
+    });
+    if (s.playerRooms) {
+      var companions = s._split.allCompanions || s.companions || [];
+      s._split.allPlayers = all; s._split.allCompanions = companions;
+      s.players = all; s.companions = companions;
+      selectSplitScene(s, index);
+    }
+    SCENE_ARRAYS.concat(SCENE_VALUES).forEach(function (key) { s[key] = clone(cp.scene[key]); });
+    s.bullets = []; s.particles = []; s.events = []; s.combatEvents = []; s.decoys = [];
+    s.room = clone(s.rooms[index]);
+    if (s.playerRooms) {
+      cacheSplitScene(s);
+      restoreSplitHost(s, all, s._split.allCompanions || []);
+    }
+    s.doorRetry.attempt += 1;
+    s.doorRetry.offered = false;
+    s.message = '从炉门再开打。危险区、特效和首领动作都清掉了。';
+    s.messageTime = 4;
+    s.objective = '已经拿走的东西不会再发一次';
+    if (s.mode === 'chapter') { syncChapter(s); setHint(s); }
+    return true;
+  }
   function finish(s, status) {
     if (s.status !== 'playing') return;
     s.status = status;
@@ -3983,7 +4112,7 @@
           isTrainChapter(s) ? '归炉者停在隔离炉边。灯亮起来，老岑从营地回了三下灯号：这回人都在。' :
           isRouteChapter(s) ? '信号亮起，轨道通了。维修棚的方向传来一声沉重的金属拖响。阿禾：快通知陶铆，得走了。' :
           isRailChapter(s) ? '陶铆：伤员还撑得住，炉火也没断。坏在前面，那截轨已经塌了。' :
-          isTimber(s) ? '工人回到灯下，终于松了口气：“你们也在找炉芯？那晚有人借了辆重车，走的西边旧线。”' : '采集队循着归途灯回了营，木场却又闪起求援信号。老岑递过巡路长枪：“拿着，去木场接人。”';
+          isTimber(s) ? '工人回到灯下，指了指西边那道深辙。' : '第一双沾泥的靴子走进灯里。老岑把人让进屋，自己还朝路上望。木场方向又闪了一下。';
         s.objective = storyEnd ? storyEnd.name : isTrainChapter(s) ? '第一章完成 · 归途灯已重新点亮' :
           isRouteChapter(s) ? '第四节完成 · 通往冷却站的轨道已接通' :
           isRailChapter(s) ? '第三节完成 · 已接应救援车' :
@@ -3991,7 +4120,14 @@
       }
     } else if (status === 'lost') {
       s.mission.phase = 'failed';
-      event(s, 'defeat'); s.message = '探险队倒下了'; s.objective = '重整装备，再试一次';
+      event(s, 'defeat');
+      if (s._furnaceCheckpoint && s.doorRetry) {
+        s.doorRetry.offered = true;
+        s.message = '全队倒在炉门里。可以从门口再试，也可以重玩本节。';
+        s.objective = '门口重试不会重发已经拿走的东西';
+      } else {
+        s.message = '探险队倒下了'; s.objective = '重整装备，再试一次';
+      }
     }
     s.messageTime = 999;
     if (s.rescue) syncRescue(s);
@@ -5096,9 +5232,10 @@
           e.chargeTime = 0; e.rhythm = null; e.stagger = coreExposed ? 3.5 : 2; e.posture = 0; e.attackCd = 1;
           if (coreExposed) e.coreExposed = true;
           openWeakpoint(s, e, null, coreExposed ? 'furnace-core' : 'counter', coreExposed ? 3.5 : 1.6);
-          particle(s, 'shockwave', e.x, e.y, { r: 108, ttl: 0.38, life: 0.38, color: '#f5bd76' });
+          particle(s, 'shockwave', e.x, e.y, { r: coreExposed ? 108 : 42, ttl: coreExposed ? 0.38 : 0.16, life: coreExposed ? 0.38 : 0.16, color: coreExposed ? '#f5bd76' : '#d7d3c4' });
           event(s, 'brute-wall-hit', { enemyId: e.id, x: e.x, y: e.y });
-          s.message = '柱子撞塌了！炉芯露出来了。'; s.messageTime = 2;
+          s.message = coreExposed ? '西柱撞开护板，炉芯露出来了。' : '东柱只碰出一声短响。它晃了一下，护板没开。';
+          s.messageTime = 2.4;
           return true;
         }
         var committedRush = r.opening || railGuard;
@@ -6544,7 +6681,7 @@
     // serialized before the next step.
     var result = {};
     for (var key in s) {
-      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData' || key === 'railAlly' || key === '_split') continue;
+      if (!Object.prototype.hasOwnProperty.call(s, key) || key === 'roomData' || key === 'railAlly' || key === '_split' || key === '_furnaceCheckpoint') continue;
       result[key] = s[key];
     }
     if (Object.keys(s.players).some(function (key) { return s.players[key].railShockLatch; })) {
@@ -6725,5 +6862,5 @@
 
   return { W: W, H: H, VERSION: 1, MISSIONS: clone(MISSIONS), CHAPTER_NOTES: clone(CHAPTER_NOTES), BUFFS: clone(BUFFS), STYLES: clone(STYLES), activeStyles: activeStyles, relicStyleHint: relicStyleHint, create: create, addPlayer: addPlayer,
     removePlayer: removePlayer, step: step, interact: interact, enterRoom: enterRoom,
-    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue, dispatchView: dispatchView, storyInspection: storyInspection, chapterOpeningView: chapterOpeningView };
+    snapshot: snapshot, viewForPlayer: viewForPlayer, syncPatch: syncPatch, syncBaseline: syncBaseline, syncDiff: syncDiff, expandSync: expandSync, applySync: applySync, linkageStamp: linkageStamp, networkStamp: networkStamp, getHint: getHint, lanternSource: lanternSource, weaponCue: weaponCue, dispatchView: dispatchView, storyInspection: storyInspection, chapterOpeningView: chapterOpeningView, restoreFurnaceDoor: restoreFurnaceDoor, resolveMelee: resolveMelee, resolveRanged: resolveRanged };
 });

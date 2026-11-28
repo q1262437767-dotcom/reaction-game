@@ -15,21 +15,17 @@
   const JOYSTICK_STORE = 'ruins-squad-joystick-v1';
   const MELEE_STORE = 'ruins-squad-melee-choice-v1';
   const MELEE_WEAPONS = {
-    blade: { name: '旅人短刃', short: '短刃', description: '近身快速出刀，精准化解后可接反击。' },
-    spear: { name: '遗迹长枪', short: '长枪', description: '枪尖刺得更远，精准化解后可接贯穿追刺。', chapter: '第一章第一节', unlocked: C.canUseSpear },
-    hook: { name: '拖钩刃', short: '拖钩刃', description: '对有标记的箱子或桶出刀。钩住后直接按闪避，就会向后拉。', chapter: '第三章第四节', unlocked: C.canUseHook }
+    blade: { name: '旅人短刃', short: '短刃', description: '近身快速出刀，精准化解后可接反击。' }
   };
   const RANGED_WEAPONS = {
     pistol: { name: '旅人手枪', short: '手枪', description: '连续射击，适合追打露出来的破绽。' },
-    scatter: { name: '散射枪', short: '散射枪', description: '贴身命中可击退敌人。', chapter: '营地工坊', unlocked: profile => profile.scatter },
-    echo: { name: '回声灯铳', short: '回声灯铳', description: '朝蓝色标记射击放出假灯，打中怪也能亮灯。用摇杆选方向。', chapter: '第二章第四节', unlocked: C.canUseEcho },
-    vent: { name: '泄压筒', short: '泄压筒', description: '靠近正在蓄力的重型机械，看到护板标记就按攻击。', chapter: '第四章第四节', unlocked: C.canUseVent }
+    scatter: { name: '散射枪', short: '散射枪', description: '贴身命中可击退敌人。', chapter: '营地工坊', unlocked: profile => profile.scatter }
   };
   const meleeIds = Object.keys(MELEE_WEAPONS), rangedIds = Object.keys(RANGED_WEAPONS), weaponIds = [...meleeIds, ...rangedIds];
   const eventWeapons = { 'echo-lamp': 'echo', 'hook-latch': 'hook', 'hook-drag': 'hook', 'vent-shot': 'vent', 'vent-break': 'vent' };
   const touchAttack = {
-    blade: ['斩', '攻击'], spear: ['刺', '刺击'], hook: ['钩', '出刀或钩住道具'],
-    pistol: ['射', '射击'], scatter: ['射', '射击'], echo: ['灯', '发射回声假灯'], vent: ['喷', '喷射泄压']
+    blade: ['斩', '攻击'],
+    pistol: ['射', '射击'], scatter: ['射', '射击']
   };
   const HUD_STORE = L.HUD_LANDSCAPE;
   let touchPreference = readTouchPreference(), touchSeen = false, joystickId = null;
@@ -101,7 +97,7 @@
   }
   function chapterEndingCaption() {
     const age = chapterEnding.age;
-    const line = state.chapter.id === 'chapter1_5' ? (age < 2 ? '陶铆：人都进来了。主芯也稳住了。' : age < 4.5 ? '老岑：看见灯了！慢慢走，营地这边有人接。' : '阿禾：灯路接上了。等等，北边那盏蓝灯是谁点的？') : age < 1.5 ? '灯亮了，东边传来了脚步声。' : age < 6.5 ? '阿禾：老岑！我们回来了！他腿伤了，快搭把手。' : age < 9 ? '老岑：哎，来了！先扶他坐下。' : age < 12 ? '阿禾：等等……旧木场那边，是不是有人在打灯？' : '老岑：拿上这杆巡路枪。木场还有人等着你们去接。';
+    const line = state.chapter.id === 'chapter1_5' ? (age < 2 ? '陶铆：人都进来了。主芯留在隔离炉。' : age < 4.5 ? '老岑：看见灯了。人先进来。' : '木场的下一趟还没开始。北边那盏蓝灯，是谁点的？') : age < 2 ? '灯亮了。第一双沾泥的靴子走进光里。' : age < 6 ? '老岑把人让进屋，自己还朝路上望。' : age < 10 ? '木场方向又闪了一下。' : '老岑：人先进来。下一趟，去木场。';
     if ($('chapter-ending-line').textContent !== line) $('chapter-ending-line').textContent = line;
   }
   function finishChapterEnding() {
@@ -949,7 +945,7 @@
       } else if (event.type === 'weapon-broken') {
         tone(155, .2, .03, 'sawtooth', 0, 45);
         if (event.playerId === localId()) {
-          const melee = MELEE_WEAPONS[state.players[localId()]?.weapons.melee || 'blade'].short;
+          const melee = (MELEE_WEAPONS[state.players[localId()]?.weapons.melee] || MELEE_WEAPONS.blade).short;
           toast(state.mode === 'random' ? `远程武器已损坏，已切回${melee}；封闭仓库可修复。` : `远程武器已损坏，已切回${melee}；下次出发恢复。`);
         }
       } else if (event.type === 'ranged-block') {
@@ -1506,9 +1502,30 @@
     if (gameMode === 'chapter') $('chapter-select').value = C.CHAPTERS.concat(C.SECRETS).some(chapter => chapter.id === mission) ? mission : 'chapter1';
     chooseMode(gameMode); hud();
   }
+  function doorRetryOffered() {
+    return !!(state && state.status === 'lost' && state.doorRetry && state.doorRetry.offered);
+  }
+  function showDoorRetry() {
+    const panel = $('door-retry');
+    const offer = doorRetryOffered();
+    if (panel) panel.hidden = !offer;
+    if (!offer) return false;
+    $('end-screen').hidden = true;
+    $('pause-screen').hidden = true;
+    const guest = mode === 'guest';
+    $('door-retry-again').disabled = guest;
+    $('door-retry-section').disabled = guest;
+    $('door-retry-again').textContent = guest ? '等待房主从炉门再试' : '从炉门再试';
+    $('door-retry-section').textContent = guest ? '等待房主重玩本节' : '重玩本节';
+    return true;
+  }
   function settle() {
     companionUpdates();
-    if (!state || state.status === 'playing' || finished === runId) return;
+    if (!state || state.status === 'playing' || finished === runId) {
+      if (state && state.status === 'playing') showDoorRetry();
+      return;
+    }
+    if (showDoorRetry()) return;
     finished = runId; clearInput(); paused = false; $('pause-screen').hidden = true; $('tutorial-panel').hidden = true;
     if (state.practice) {
       const parries = Math.max(0, Math.floor(state.practiceParries || 0));
@@ -1633,7 +1650,7 @@
   function validStoryState(s, bounded) {
     if (!C.validStoryChapter(s.chapter, s.status, s.mission.id) || s.difficulty !== 1 || s.rooms.length < 2 || s.rooms.length > 8) return false;
     if (s.rooms.some((room, index) => !room || room.id !== s.mission.id + '-' + index)) return false;
-    const storyKinds = ['story-note', 'story-talk', 'story-home', 'story-lantern', 'story-flame', 'story-oil', 'story-valve', 'story-flash', 'story-read', 'story-link', 'story-tune', 'story-switch', 'story-drive', 'story-core', 'story-vent', 'story-bark', 'story-supply', 'story-cabinet', 'story-lamp', 'story-relic', 'story-order', 'story-smash', 'story-skip', 'story-goal', 'story-air'];
+    const storyKinds = ['story-note', 'story-talk', 'story-home', 'story-lantern', 'story-flame', 'story-oil', 'story-valve', 'story-flash', 'story-read', 'story-link', 'story-tune', 'story-switch', 'story-drive', 'story-core', 'story-vent', 'story-bark', 'story-supply', 'story-cabinet', 'story-lamp', 'story-relic', 'story-order', 'story-smash', 'story-skip', 'story-goal', 'story-air', 'story-trial', 'story-device'];
     for (const item of s.interactables) {
       if (typeof item.kind !== 'string') return false;
       if (item.kind.startsWith('story-') && !storyKinds.includes(item.kind)) return false;
@@ -2032,7 +2049,7 @@
       if (event.type === 'player-hit' && (!['p1', 'p2'].includes(event.playerId) || !bounded(event.damage, 100) || !bounded(event.hp, 100) || !['combo', 'thrust', 'sweep', 'quake', 'rush', 'charge', 'melee', 'bullet', 'fire', 'fireball', 'hook'].includes(event.source))) return false;
       if (['enemy-hit', 'weakpoint-open', 'weakpoint-hit', 'posture-break', 'scatter-push', 'environment-hit'].includes(event.type)) {
         if (event.enemyId !== null && !shortId(event.enemyId) || ![null, 'p1', 'p2'].includes(event.playerId) || ![null, ...weaponIds].includes(event.weapon)) return false;
-        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', ...weaponIds, 'furnace-core', 'rail'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
+        if (event.amount != null && !bounded(event.amount, 1000) || event.source != null && !['parry', 'dodge', 'mikiri', 'counter', 'posture', 'rush', 'fireball', 'quake', 'explosion', ...weaponIds, 'furnace-core', 'rail', 'device'].includes(event.source) || event.propId != null && !shortId(event.propId) || event.target != null && !['prop', 'enemy'].includes(event.target) || event.volleyId != null && !shortId(event.volleyId)) return false;
         if (event.source === 'furnace-core') {
           if (!furnaceRoom || !shortId(event.enemyId) || !bounded(event.x, 960) || !bounded(event.y, 600)) return false;
           if (event.type === 'weakpoint-open') {
@@ -2547,6 +2564,19 @@
   });
   $('resume-game').onclick = () => pause(false);
   $('restart-game').onclick = $('end-restart').onclick = () => { if (mode !== 'guest') { if (state && state.practice) beginPractice(); else begin(mode === 'host'); } };
+  $('door-retry-again').onclick = () => {
+    if (mode === 'guest' || !state || !E.restoreFurnaceDoor(state)) return;
+    showDoorRetry();
+    if (mode === 'host' && net && net.connected) sendHostState(performance.now());
+    canvas.focus();
+  };
+  $('door-retry-section').onclick = () => {
+    if (mode === 'guest' || !state || !state.doorRetry) return;
+    state.doorRetry.offered = false;
+    showDoorRetry();
+    settle();
+    begin(mode === 'host');
+  };
   $('back-camp').onclick = $('end-camp').onclick = home;
   $('chapter-ending-skip').onclick = finishChapterEnding;
   $('end-next-action').onclick = () => {
@@ -2940,8 +2970,8 @@
     putText('hud-team', teamNotice);
     putAttr('hud-team', 'data-urgent', String(!!(ally?.downed || partner?.downed)));
     putHidden('hud-team', !teamNotice || !!(rescue?.guide === partnerId && separated && !partner?.downed));
-    const rangedName = RANGED_WEAPONS[p?.weapons.ranged || 'pistol'].short;
-    const meleeName = MELEE_WEAPONS[p?.weapons.melee || 'blade'].short;
+    const rangedName = (RANGED_WEAPONS[p?.weapons.ranged] || RANGED_WEAPONS.pistol).short;
+    const meleeName = (MELEE_WEAPONS[p?.weapons.melee] || MELEE_WEAPONS.blade).short;
     putText('hud-melee', meleeName);
     putText('hud-ranged', rangedName + (p && p.rangedBroken ? ' · 已损坏' : ''));
     putAttr('hud-melee', 'data-active', String(!!p && p.activeSlot === 'melee'));
@@ -2988,7 +3018,7 @@
     putText('touch-interact', relay && p && p.carry === state.relay.coreId ? state.room.index === state.relay.extractionRoom && Math.hypot(p.x - 120, p.y - 300) < 76 ? '交' : '掷' : storyLamp ? '灯' : 'E');
     putAttr('touch-interact', 'aria-label', relay ? '拾取、投掷或交付炉芯' : storyLamp ? '点灭提灯，或与眼前的东西互动' : '互动');
     putAttr('touch-guard', 'aria-label', relay ? '接住炉芯、格挡与静步' : '格挡与静步');
-    const [attackText, attackLabel] = touchAttack[p?.weapon || 'blade'];
+    const [attackText, attackLabel] = touchAttack[p?.weapon] || touchAttack.blade;
     putText('touch-shoot', attackText);
     putAttr('touch-shoot', 'aria-label', attackLabel);
     const switchDisabled = !p || p.rangedBroken;
@@ -3045,7 +3075,9 @@
         if (!aim.guard && !aim.guardPulse) weaponCue = E.weaponCue(state, actor, aim.aimX, aim.aimY);
       }
     }
-    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined, weaponCue }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
+    const portraitScale = playMetrics && playMetrics.mode === 'portrait' && playView
+      ? L.portraitLabelScale(playMetrics.cssW, playView.w) : 1;
+    try { if (state) R.draw(ctx, state, Object.assign({ localId: localId(), now, view: playView, uiScale: playUiScale(), labelScale: portraitScale, portrait: !!(playMetrics && playMetrics.mode === 'portrait'), paused: hudEditing || paused || rotateHold || remoteTutorialPending || hasDialog() || !!((state.practice || relayTutorial || huntTutorial) && tutorialPending), reducedMotion: reducedMotion(), chapterEndingAge: chapterEndingActive() ? chapterEnding.age : undefined, weaponCue }, mapPaintCache)); else R.preview(ctx, { ...C.progress(camp), chapter1: chapterProgress().completed, chapter2: !!chapterProgress().secondCompleted, companion: camp.camp.companion.rescued ? { kind: 'fox', name: camp.camp.companion.name } : null, now, reducedMotion: reducedMotion() }); }
     catch (error) { if (!frame.errorReported) { frame.errorReported = true; console.error(error); toast('画面绘制遇到问题，请刷新页面重试。'); } }
     if (hudEditing) placeMapEditor();
     if (now - lastHud > 100) { hud(weaponCue); lastHud = now; }

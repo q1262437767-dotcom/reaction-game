@@ -121,6 +121,23 @@ test('the joystick ignores the inner 12% and keeps the thumb graphic', () => {
   assert.equal(L.stickOutput(0, 0, 40).x, 0);
 });
 
+test('portrait labels stay readable at phone distance and clear of the thumb band', () => {
+  const safe = L.portraitTextSafe(phone.w, phone.h, { top: 47, right: 0, bottom: 34, left: 0 });
+  assert.ok(safe.tellMin >= 16);
+  assert.ok(safe.promptMin >= 16);
+  assert.ok(safe.objectiveMin >= 16);
+  assert.ok(safe.quietMin >= 15);
+  assert.ok(safe.top >= 47 + 64);
+  assert.ok(safe.bottom >= 34 + 164);
+  assert.ok(safe.playHeight >= 220);
+  const band = L.portraitPlayBand(phone.w, phone.h, { top: 0, right: 0, bottom: 0, left: 0 });
+  const view = L.portraitPlayView(band.width, band.height, 480, 300);
+  const scale = L.portraitLabelScale(band.width, view.w);
+  assert.ok(scale >= 1 && scale <= 1.85);
+  assert.ok(11 * scale * (band.width / view.w) >= 15.5);
+  assert.equal(L.portraitLabelScale(2000, 440), 1);
+});
+
 test('a safe-area inset still leaves the portrait playfield on screen', () => {
   const band = L.portraitPlayBand(390, 844, { top: 47, right: 0, bottom: 34, left: 0 });
   assert.ok(band.top >= 47 + 64);

@@ -57,25 +57,30 @@ test('story validation rejects a broken chapter and still pays a clean loss noth
   assert.equal(settled.profile.missions.chapter3.clears, 0);
 });
 
-test('story weapons follow their exact handoff sections and are available to older saves', () => {
+test('retired story weapons fall back and are not granted to old or new saves', () => {
   const chapters = [
-    ['chapter2_3', 'chapter2_4', C.canUseEcho, '回声灯铳'],
-    ['chapter3_3', 'chapter3_4', C.canUseHook, '拖钩刃'],
-    ['chapter4_3', 'chapter4_4', C.canUseVent, '泄压筒']
+    ['chapter2_3', 'chapter2_4', '回声灯铳'],
+    ['chapter3_3', 'chapter3_4', '拖钩刃'],
+    ['chapter4_3', 'chapter4_4', '泄压筒']
   ];
-  for (const [previous, section, canEquip, title] of chapters) {
+  assert.equal(C.resolveMelee('spear'), 'blade');
+  assert.equal(C.resolveMelee('hook'), 'blade');
+  assert.equal(C.resolveMelee('blade'), 'blade');
+  assert.equal(C.resolveRanged('echo'), 'pistol');
+  assert.equal(C.resolveRanged('vent'), 'pistol');
+  assert.equal(C.resolveRanged('pistol'), 'pistol');
+  assert.equal(C.resolveRanged('scatter'), 'scatter');
+  for (const [previous, section, title] of chapters) {
     const oldUncleared = { v: 2, missions: { [previous]: { clears: 1 } } };
     const oldCleared = { v: 2, missions: { [section]: { clears: 1 } } };
-    assert.equal(canEquip(oldUncleared), false, title);
-    assert.equal(canEquip(oldCleared), true, title);
-
+    assert.equal(C.canUseEcho(oldCleared), false, title);
+    assert.equal(C.canUseHook(oldCleared), false, title);
+    assert.equal(C.canUseVent(oldCleared), false, title);
     const lost = C.applyResult(oldUncleared, win(section, blank(section, { phase: 'failed' }), { status: 'lost' }), section + '-lost');
-    assert.equal(canEquip(lost.profile), false, title);
     assert.ok(!lost.unlocks.includes('武器解锁 · ' + title));
-
     const first = C.applyResult(lost.profile, win(section, blank(section)), section + '-first');
-    assert.equal(canEquip(first.profile), true, title);
-    assert.ok(first.unlocks.includes('武器解锁 · ' + title));
+    assert.equal(first.profile.missions[section].clears, 1, title);
+    assert.ok(!first.unlocks.includes('武器解锁 · ' + title));
     const replay = C.applyResult(first.profile, win(section, blank(section)), section + '-replay');
     assert.ok(!replay.unlocks.includes('武器解锁 · ' + title));
   }
